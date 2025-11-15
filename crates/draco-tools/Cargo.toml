@@ -1,0 +1,22 @@
+[package]
+name = "draco-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Command-line tools for Draco 3D compression library"
+
+[dependencies]
+draco-core = { workspace = true }
+draco-attributes = { path = "../draco-attributes" }
+draco-compression = { path = "../draco-compression" }
+draco-io = { path = "../draco-io" }
+draco-mesh = { path = "../draco-mesh" }
+draco-point-cloud = { path = "../draco-point-cloud" }
+thiserror = { workspace = true }
+clap = { version = "4.0", features = ["derive"] }
+
+[dev-dependencies]
+criterion = { workspace = true }
+proptest = { workspace = true }
+tempfile = "3.0"

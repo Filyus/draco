@@ -1,0 +1,16 @@
+# cbindgen configuration for draco-core
+
+language = "C"
+sys_includes = ["stddef.h", "stdint.h", "stdbool.h"]
+no_includes = false
+include_guard = "DRACO_CORE_H"
+pragma_once = false
+
+[export]
+include = ["draco_status_t"]
+
+[enum]
+rename_variants = "ScreamingSnakeCase"
+
+[const]
+allow_static_const = true

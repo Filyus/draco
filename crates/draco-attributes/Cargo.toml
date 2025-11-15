@@ -1,0 +1,16 @@
+[package]
+name = "draco-attributes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Geometry attribute handling for Draco 3D compression library"
+
+[dependencies]
+draco-core = { workspace = true }
+thiserror = { workspace = true }
+num-traits = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+proptest = { workspace = true }

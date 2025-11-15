@@ -1,0 +1,42 @@
+[workspace]
+members = [
+    "crates/draco-core",
+    "crates/draco-attributes",
+    "crates/draco-compression",
+    "crates/draco-io",
+    "crates/draco-mesh",
+    "crates/draco-point-cloud",
+    "crates/draco-tools",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+license = "Apache-2.0"
+homepage = "https://github.com/google/draco"
+repository = "https://github.com/google/draco"
+authors = ["Google Draco Authors"]
+description = "Rust implementation of Draco 3D geometry compression library"
+
+[workspace.dependencies]
+# Core utilities (will be our own implementations)
+draco-core = { path = "crates/draco-core", version = "0.1.0" }
+
+# External dependencies
+thiserror = "1.0"
+num-traits = "0.2"
+byteorder = "1.4"
+
+# For testing
+criterion = "0.5"
+proptest = "1.0"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.bench]
+debug = true

@@ -1,0 +1,17 @@
+[package]
+name = "draco-mesh"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Mesh data structures for Draco 3D compression library"
+
+[dependencies]
+draco-core = { workspace = true }
+draco-attributes = { path = "../draco-attributes" }
+thiserror = { workspace = true }
+num-traits = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+proptest = { workspace = true }

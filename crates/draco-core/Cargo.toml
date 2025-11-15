@@ -1,0 +1,31 @@
+[package]
+name = "draco-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Core utilities and data types for Draco 3D compression library"
+
+[lib]
+name = "draco_core"
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[dependencies]
+thiserror = { workspace = true }
+num-traits = { workspace = true }
+
+[features]
+default = []
+c-api = []
+capi = ["c-api"]
+
+[build-dependencies]
+cbindgen = "0.24.3"
+
+[dev-dependencies]
+criterion = { workspace = true }
+proptest = { workspace = true }
+
+# [[bench]]
+# name = "bit_utils"
+# harness = false
