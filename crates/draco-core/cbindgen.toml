@@ -6,8 +6,24 @@ no_includes = false
 include_guard = "DRACO_CORE_H"
 pragma_once = false
 
+# Add warning suppression for MSVC zero-sized arrays
+header = """
+// Suppress MSVC warning about zero-sized arrays (used for opaque FFI types)
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4200)  // nonstandard extension: zero-sized array
+#endif
+"""
+
+trailer = """
+// Restore warning level
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+"""
+
 [export]
-include = ["draco_status_t"]
+exclude = []
 
 [enum]
 rename_variants = "ScreamingSnakeCase"
