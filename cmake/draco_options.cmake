@@ -143,10 +143,16 @@ macro(draco_set_default_options)
     NAME DRACO_USE_RUST
     HELPSTRING "Enable Rust implementation components."
     VALUE OFF)
+  # Default enable DRACO_RUST_CORE when DRACO_USE_RUST is enabled
+  if(DRACO_USE_RUST)
+    set(DRACO_RUST_CORE_DEFAULT ON)
+  else()
+    set(DRACO_RUST_CORE_DEFAULT OFF)
+  endif()
   draco_option(
     NAME DRACO_RUST_CORE
     HELPSTRING "Enable Rust core utilities (bit utils, math utils, etc.)."
-    VALUE OFF)
+    VALUE ${DRACO_RUST_CORE_DEFAULT})
   draco_check_deprecated_options()
 endmacro()
 
