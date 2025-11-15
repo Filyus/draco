@@ -14,6 +14,8 @@
 //
 #include "draco/core/decoder_buffer.h"
 
+#ifndef DRACO_RUST_CORE
+// Only include these when not using Rust core
 #include "draco/core/macros.h"
 #include "draco/core/varint_decoding.h"
 
@@ -70,3 +72,5 @@ DecoderBuffer::BitDecoder::BitDecoder()
 DecoderBuffer::BitDecoder::~BitDecoder() {}
 
 }  // namespace draco
+
+#endif  // DRACO_RUST_CORE

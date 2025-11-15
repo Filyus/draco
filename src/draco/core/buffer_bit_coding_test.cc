@@ -18,6 +18,9 @@
 
 namespace draco {
 
+#ifndef DRACO_RUST_CORE
+// These tests directly access internal BitEncoder/BitDecoder classes
+// which are not available when using Rust core implementation
 class BufferBitCodingTest : public ::testing::Test {
  public:
   typedef DecoderBuffer::BitDecoder BitDecoder;
@@ -111,5 +114,7 @@ TEST_F(BufferBitCodingTest, TestMultipleBits) {
     ASSERT_EQ(32 + (i * 32), decoder.BitsDecoded());
   }
 }
+
+#endif  // DRACO_RUST_CORE
 
 }  // namespace draco

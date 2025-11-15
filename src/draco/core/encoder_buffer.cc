@@ -14,6 +14,8 @@
 //
 #include "draco/core/encoder_buffer.h"
 
+#ifndef DRACO_RUST_CORE
+// Only include these when not using Rust core
 #include <cstring>  // for memcpy
 
 #include "draco/core/varint_encoding.h"
@@ -91,3 +93,5 @@ void EncoderBuffer::EndBitEncoding() {
 }
 
 }  // namespace draco
+
+#endif  // DRACO_RUST_CORE
