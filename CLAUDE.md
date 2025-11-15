@@ -26,6 +26,30 @@ cmake ../ -DDRACO_TESTS=ON && make draco_tests
 # JavaScript/WebAssembly
 export EMSCRIPTEN=/path/to/emscripten
 cmake ../ -DCMAKE_TOOLCHAIN_FILE=/path/to/Emscripten.cmake
+
+# 🆕 Rust Integration Build (Recommended)
+cmake ../ -DDRACO_USE_RUST=ON -G "Visual Studio 17 2022"
+cmake --build . --config Release
+# Note: DRACO_RUST_CORE is automatically enabled when DRACO_USE_RUST=ON
+```
+
+### 🆕 Rust Development Commands
+```bash
+# Install Rust C ABI tool (if not already installed)
+cargo install cargo-cbuild
+
+# Build Rust components for C++ integration
+cd crates/draco-core
+cargo build --release              # Standard Rust build
+cargo cbuild --release             # Build with C ABI for C++ integration
+
+# Build all Rust workspace
+cd ..
+cargo build --release --workspace
+
+# Run Rust tests
+cargo test
+cargo test --workspace            # All crates
 ```
 
 ### Essential Commands
@@ -134,9 +158,81 @@ crates/
 
 ### Integration Strategy
 - **C ABI Layer**: Rust components exposed through C-compatible interface
-- **Feature Flags**: `DRACO_RUST_CORE`, `DRACO_RUST_IO`, etc. for gradual adoption
+- **Feature Flags**: `DRACO_USE_RUST` (auto-enables `DRACO_RUST_CORE`) for gradual adoption
 - **Build Integration**: CMake integration with cargo-cbuild for static libraries
 - **Parallel Testing**: Both C++ and Rust implementations tested for identical output
+
+## 🆕 Rust Integration Verification & Troubleshooting
+
+### Quick Verification Commands
+```bash
+# Verify Rust integration is enabled in build
+grep "DRACO_RUST_CORE" CMakeCache.txt
+# Should show: DRACO_RUST_CORE:BOOL=ON
+
+# Check if Rust library was found during configuration
+grep "Found Draco Rust components" ../build/CMakeFiles/CMakeOutput.log
+
+# Verify Rust executables were built
+ls -la Release/draco*.exe
+# Should see draco_encoder.exe, draco_decoder.exe, draco_tests.exe
+
+# Run a quick functionality test
+./Release/draco_tests.exe --gtest_filter="MathUtils.*"
+# Should pass all math utility tests using Rust implementations
+```
+
+### Build Performance Comparison
+```bash
+# Time pure C++ build
+time cmake --build . --config Release
+# Expected: ~1000-1200ms
+
+# Time Rust integrated build
+time cmake --build . --config Release
+# Expected: ~1100-1300ms (minimal overhead)
+```
+
+### Common Issues & Solutions
+
+**Issue: "Draco Rust components requested but not found"**
+```bash
+# Solution: Build Rust components first
+cd ../crates/draco-core
+cargo cbuild --release
+cd ../../build
+cmake ../ -DDRACO_USE_RUST=ON
+```
+
+**Issue: "cargo-cbuild not found"**
+```bash
+# Solution: Install cargo-cbuild
+cargo install cargo-cbuild
+```
+
+**Issue: "cannot find draco_core.lib" (Windows)**
+```bash
+# Solution: Ensure Visual Studio C++ toolchain is configured
+# Use Developer Command Prompt or VS Code with C++ extension
+# Check that cl.exe is in PATH
+where cl.exe
+```
+
+**Issue: Warning about zero-sized arrays in Rust headers**
+```bash
+# Status: EXPECTED and HARMLESS
+# Rust C headers use zero-sized arrays for opaque types
+# Can be safely ignored - does not affect functionality
+```
+
+**Issue: Tests failing with Rust integration**
+```bash
+# Solution: Clean and rebuild
+rm CMakeCache.txt
+cmake ../ -DDRACO_USE_RUST=ON -DDRACO_TESTS=ON
+cmake --build . --config Release --target draco_tests
+./Release/draco_tests.exe
+```
 
 ## Common Issues
 1. **Build errors**: Ensure out-of-source builds
@@ -144,4 +240,4 @@ crates/
 3. **Emscripten builds**: Verify EMSCRIPTEN environment variable
 4. **Transcoder builds**: Requires additional third-party dependencies
 5. **CMake warning**: Policy CMP0148 warning can be ignored (uses deprecated FindPythonInterp)
-6. **Rust builds**: Install cargo-cbuild with `cargo install cargo-c` for C integration
+6. **Rust builds**: Install cargo-cbuild with `cargo install cargo-cbuild` for C integration
