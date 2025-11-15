@@ -13,5 +13,11 @@ crates/*/include/
 # Generated headers
 draco_core.h
 
+# IDE and editor files
+.vscode/
+*.swp
+*.swo
+*~
+
 # Claude artifacts
 .claude/
