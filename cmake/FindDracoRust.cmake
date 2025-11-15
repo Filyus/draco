@@ -17,33 +17,53 @@ find_path(DRACO_RUST_INCLUDE_DIR
     PATHS
         ${CMAKE_CURRENT_SOURCE_DIR}/crates/draco-core/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../crates/draco-core/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/crates/draco-core/target/x86_64-pc-windows-msvc/release/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/crates/draco-core/target/x86_64-pc-windows-msvc/debug/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../crates/draco-core/target/x86_64-pc-windows-msvc/release/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../crates/draco-core/target/x86_64-pc-windows-msvc/debug/include
         ${DRACO_RUST_ROOT}/include
         ENV DRACO_RUST_ROOT/include
         /usr/local/include
         /usr/include
+    NO_DEFAULT_PATH
     DOC "Draco Rust include directory"
 )
 
 # Try to find the static library
 find_library(DRACO_RUST_CORE_LIBRARY
-    NAMES draco_core libdraco_core draco_core_static
+    NAMES draco_core libdraco_core draco_core_static draco_core.lib libdraco_core.a
     PATHS
-        ${CMAKE_CURRENT_SOURCE_DIR}/crates/draco-core/target/debug
+        ${CMAKE_CURRENT_SOURCE_DIR}/target/release
+        ${CMAKE_CURRENT_SOURCE_DIR}/target/debug
+        ${CMAKE_CURRENT_SOURCE_DIR}/crates/draco-core/target/x86_64-pc-windows-msvc/release
+        ${CMAKE_CURRENT_SOURCE_DIR}/crates/draco-core/target/x86_64-pc-windows-msvc/debug
         ${CMAKE_CURRENT_SOURCE_DIR}/crates/draco-core/target/release
-        ${CMAKE_CURRENT_SOURCE_DIR}/../crates/draco-core/target/debug
+        ${CMAKE_CURRENT_SOURCE_DIR}/crates/draco-core/target/debug
+        ${CMAKE_CURRENT_SOURCE_DIR}/../target/release
+        ${CMAKE_CURRENT_SOURCE_DIR}/../target/debug
+        ${CMAKE_CURRENT_SOURCE_DIR}/../crates/draco-core/target/x86_64-pc-windows-msvc/release
+        ${CMAKE_CURRENT_SOURCE_DIR}/../crates/draco-core/target/x86_64-pc-windows-msvc/debug
         ${CMAKE_CURRENT_SOURCE_DIR}/../crates/draco-core/target/release
+        ${CMAKE_CURRENT_SOURCE_DIR}/../crates/draco-core/target/debug
         ${DRACO_RUST_ROOT}/lib
         ENV DRACO_RUST_ROOT/lib
         /usr/local/lib
         /usr/lib
+    NO_DEFAULT_PATH
     DOC "Draco Rust core library"
 )
 
-# Check if we found the required components
-find_package_handle_standard_args(DracoRust
-    REQUIRED_VARS DRACO_RUST_INCLUDE_DIR DRACO_RUST_CORE_LIBRARY
-    VERSION_VAR DRACO_RUST_VERSION
-)
+# Set default version if not found
+if(NOT DRACO_RUST_VERSION)
+    set(DRACO_RUST_VERSION "1.0.0")
+endif()
+
+# Check if we found the required components manually
+if(DRACO_RUST_INCLUDE_DIR AND DRACO_RUST_CORE_LIBRARY)
+    set(DRACO_RUST_FOUND TRUE)
+else()
+    set(DRACO_RUST_FOUND FALSE)
+endif()
 
 if(DRACO_RUST_FOUND)
     # Set the standard variables
@@ -59,10 +79,17 @@ if(DRACO_RUST_FOUND)
             INTERFACE_COMPILE_DEFINITIONS "DRACO_RUST_CORE=1"
         )
 
+        # Suppress MSVC C4200 warnings for zero-sized arrays in Rust headers
+        if(MSVC)
+            target_compile_options(DracoRust::draco_core INTERFACE
+                $<$<COMPILE_LANGUAGE:CXX>:/wd4200>
+            )
+        endif()
+
         # Add link dependencies that Rust libraries might need
         if(WIN32)
             set_property(TARGET DracoRust::draco_core APPEND PROPERTY
-                INTERFACE_LINK_LIBRARIES "ws2_32;bcrypt;userenv")
+                INTERFACE_LINK_LIBRARIES "ws2_32;bcrypt;userenv;ntdll")
         elseif(APPLE)
             set_property(TARGET DracoRust::draco_core APPEND PROPERTY
                 INTERFACE_LINK_LIBRARIES "pthread;dl;m")
@@ -130,7 +157,7 @@ if(DRACO_RUST_FOUND)
         # Add dependencies for platform-specific libraries
         if(WIN32)
             set_property(TARGET draco_core_built APPEND PROPERTY
-                INTERFACE_LINK_LIBRARIES "ws2_32;bcrypt;userenv")
+                INTERFACE_LINK_LIBRARIES "ws2_32;bcrypt;userenv;ntdll")
         else()
             set_property(TARGET draco_core_built APPEND PROPERTY
                 INTERFACE_LINK_LIBRARIES "pthread;dl")
