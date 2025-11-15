@@ -5,6 +5,27 @@
 
 use crate::error::{DracoError, StatusResult};
 
+/// Maximum buffer size limit (1GB)
+pub const BUFFER_SIZE_LIMIT: usize = 1 << 30;
+
+// Thread-local buffer pointer for C API integration
+// Note: Documentation on thread_local! macro invocations is not supported by rustdoc
+thread_local! {
+    static BUFFER_PTR: std::cell::RefCell<*mut u8> = std::cell::RefCell::new(std::ptr::null_mut());
+}
+
+/// Get the current buffer pointer for bit encoding
+pub fn get_buffer_ptr() -> *mut u8 {
+    BUFFER_PTR.with(|ptr| *ptr.borrow())
+}
+
+/// Set the buffer pointer for bit encoding
+/// # Safety
+/// This function is unsafe and should only be used by the C API layer
+pub unsafe fn set_buffer_ptr(ptr: *mut u8) {
+    BUFFER_PTR.with(|cell| *cell.borrow_mut() = ptr);
+}
+
 /// A generic buffer for Draco operations
 ///
 /// This provides a safe interface for managing raw data buffers used throughout

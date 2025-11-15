@@ -8,6 +8,9 @@ pub mod error;
 pub mod bit_utils;
 pub mod math_utils;
 pub mod buffer;
+pub mod encoder_buffer;
+pub mod decoder_buffer;
+pub mod vector_extensions;
 
 #[cfg(feature = "c-api")]
 pub mod c_api;

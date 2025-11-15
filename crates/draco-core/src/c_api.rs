@@ -9,6 +9,9 @@ use std::ptr;
 
 use crate::bit_utils;
 use crate::math_utils;
+use crate::buffer;
+use crate::encoder_buffer;
+use crate::decoder_buffer;
 
 /// Error codes for C API
 #[repr(C)]
@@ -217,6 +220,459 @@ pub extern "C" fn draco_core_math_is_power_of_two_32(n: c_uint) -> bool {
 #[no_mangle]
 pub extern "C" fn draco_core_math_abs_diff_32(a: c_uint, b: c_uint) -> c_uint {
     math_utils::abs_diff_u32(a, b)
+}
+
+// ===== Buffer Management C API =====
+
+/// Opaque handle for EncoderBuffer
+#[repr(C)]
+pub struct draco_encoder_buffer_t {
+    _private: [u8; 0],
+}
+
+/// Opaque handle for DecoderBuffer
+#[repr(C)]
+pub struct draco_decoder_buffer_t {
+    _private: [u8; 0],
+}
+
+/// Opaque handle for DataBuffer
+#[repr(C)]
+pub struct draco_data_buffer_t {
+    _private: [u8; 0],
+}
+
+/// Creates a new encoder buffer
+#[no_mangle]
+pub extern "C" fn draco_encoder_buffer_create() -> *mut draco_encoder_buffer_t {
+    let buffer = Box::new(encoder_buffer::EncoderBuffer::new());
+    Box::into_raw(buffer) as *mut draco_encoder_buffer_t
+}
+
+/// Creates a new encoder buffer with initial capacity
+#[no_mangle]
+pub extern "C" fn draco_encoder_buffer_create_with_capacity(capacity: usize) -> *mut draco_encoder_buffer_t {
+    let buffer = Box::new(encoder_buffer::EncoderBuffer::with_capacity(capacity));
+    Box::into_raw(buffer) as *mut draco_encoder_buffer_t
+}
+
+/// Destroys an encoder buffer
+#[no_mangle]
+pub extern "C" fn draco_encoder_buffer_destroy(buffer: *mut draco_encoder_buffer_t) {
+    if !buffer.is_null() {
+        unsafe {
+            let _ = Box::from_raw(buffer as *mut encoder_buffer::EncoderBuffer);
+        }
+    }
+}
+
+/// Clears all data from an encoder buffer
+#[no_mangle]
+pub extern "C" fn draco_encoder_buffer_clear(buffer: *mut draco_encoder_buffer_t) -> draco_status_t {
+    if buffer.is_null() {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &mut *(buffer as *mut encoder_buffer::EncoderBuffer);
+        buf.clear();
+    }
+
+    draco_status_t::DRACO_STATUS_OK
+}
+
+/// Gets the size of the encoder buffer
+#[no_mangle]
+pub extern "C" fn draco_encoder_buffer_size(buffer: *const draco_encoder_buffer_t) -> usize {
+    if buffer.is_null() {
+        return 0;
+    }
+
+    unsafe {
+        let buf = &*(buffer as *const encoder_buffer::EncoderBuffer);
+        buf.size()
+    }
+}
+
+/// Gets a pointer to the encoder buffer data
+#[no_mangle]
+pub extern "C" fn draco_encoder_buffer_data(buffer: *const draco_encoder_buffer_t) -> *const u8 {
+    if buffer.is_null() {
+        return ptr::null();
+    }
+
+    unsafe {
+        let buf = &*(buffer as *const encoder_buffer::EncoderBuffer);
+        buf.data().as_ptr()
+    }
+}
+
+/// Encodes raw bytes into the encoder buffer
+#[no_mangle]
+pub extern "C" fn draco_encoder_buffer_encode(
+    buffer: *mut draco_encoder_buffer_t,
+    data: *const u8,
+    size: usize,
+) -> draco_status_t {
+    if buffer.is_null() || data.is_null() {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &mut *(buffer as *mut encoder_buffer::EncoderBuffer);
+        let data_slice = std::slice::from_raw_parts(data, size);
+        match buf.encode(data_slice) {
+            Ok(_) => draco_status_t::DRACO_STATUS_OK,
+            Err(e) => {
+                set_last_error(e);
+                draco_status_t::DRACO_STATUS_ERROR
+            }
+        }
+    }
+}
+
+/// Starts bit encoding in the encoder buffer
+#[no_mangle]
+pub extern "C" fn draco_encoder_buffer_start_bit_encoding(
+    buffer: *mut draco_encoder_buffer_t,
+    required_bits: usize,
+    encode_size: bool,
+) -> draco_status_t {
+    if buffer.is_null() {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &mut *(buffer as *mut encoder_buffer::EncoderBuffer);
+        match buf.start_bit_encoding(required_bits, encode_size) {
+            Ok(_) => draco_status_t::DRACO_STATUS_OK,
+            Err(e) => {
+                set_last_error(e);
+                draco_status_t::DRACO_STATUS_ERROR
+            }
+        }
+    }
+}
+
+/// Encodes least significant bits during bit encoding
+#[no_mangle]
+pub extern "C" fn draco_encoder_buffer_encode_bits(
+    buffer: *mut draco_encoder_buffer_t,
+    nbits: c_uint,
+    value: c_uint,
+) -> draco_status_t {
+    if buffer.is_null() || nbits > 32 {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &mut *(buffer as *mut encoder_buffer::EncoderBuffer);
+        match buf.encode_least_significant_bits_32(nbits as u8, value) {
+            Ok(_) => draco_status_t::DRACO_STATUS_OK,
+            Err(e) => {
+                set_last_error(e);
+                draco_status_t::DRACO_STATUS_ERROR
+            }
+        }
+    }
+}
+
+/// Ends bit encoding in the encoder buffer
+#[no_mangle]
+pub extern "C" fn draco_encoder_buffer_end_bit_encoding(buffer: *mut draco_encoder_buffer_t) -> draco_status_t {
+    if buffer.is_null() {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &mut *(buffer as *mut encoder_buffer::EncoderBuffer);
+        buf.end_bit_encoding();
+    }
+
+    draco_status_t::DRACO_STATUS_OK
+}
+
+/// Checks if bit encoder is active in the encoder buffer
+#[no_mangle]
+pub extern "C" fn draco_encoder_buffer_bit_encoder_active(buffer: *const draco_encoder_buffer_t) -> bool {
+    if buffer.is_null() {
+        return false;
+    }
+
+    unsafe {
+        let buf = &*(buffer as *const encoder_buffer::EncoderBuffer);
+        buf.bit_encoder_active()
+    }
+}
+
+/// Creates a new decoder buffer
+#[no_mangle]
+pub extern "C" fn draco_decoder_buffer_create() -> *mut draco_decoder_buffer_t {
+    let buffer = Box::new(decoder_buffer::DecoderBuffer::new());
+    Box::into_raw(buffer) as *mut draco_decoder_buffer_t
+}
+
+/// Destroys a decoder buffer
+#[no_mangle]
+pub extern "C" fn draco_decoder_buffer_destroy(buffer: *mut draco_decoder_buffer_t) {
+    if !buffer.is_null() {
+        unsafe {
+            let _ = Box::from_raw(buffer as *mut decoder_buffer::DecoderBuffer);
+        }
+    }
+}
+
+/// Initializes a decoder buffer with data
+#[no_mangle]
+pub extern "C" fn draco_decoder_buffer_init(
+    buffer: *mut draco_decoder_buffer_t,
+    data: *const u8,
+    size: usize,
+) -> draco_status_t {
+    if buffer.is_null() || data.is_null() {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &mut *(buffer as *mut decoder_buffer::DecoderBuffer);
+        buf.init(data, size);
+    }
+
+    draco_status_t::DRACO_STATUS_OK
+}
+
+/// Initializes a decoder buffer with data and version
+#[no_mangle]
+pub extern "C" fn draco_decoder_buffer_init_with_version(
+    buffer: *mut draco_decoder_buffer_t,
+    data: *const u8,
+    size: usize,
+    version: c_uint,
+) -> draco_status_t {
+    if buffer.is_null() || data.is_null() {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &mut *(buffer as *mut decoder_buffer::DecoderBuffer);
+        buf.init_with_version(data, size, version as u16);
+    }
+
+    draco_status_t::DRACO_STATUS_OK
+}
+
+/// Gets the current position in the decoder buffer
+#[no_mangle]
+pub extern "C" fn draco_decoder_buffer_position(buffer: *const draco_decoder_buffer_t) -> usize {
+    if buffer.is_null() {
+        return 0;
+    }
+
+    unsafe {
+        let buf = &*(buffer as *const decoder_buffer::DecoderBuffer);
+        buf.position()
+    }
+}
+
+/// Gets the remaining size in the decoder buffer
+#[no_mangle]
+pub extern "C" fn draco_decoder_buffer_remaining_size(buffer: *const draco_decoder_buffer_t) -> usize {
+    if buffer.is_null() {
+        return 0;
+    }
+
+    unsafe {
+        let buf = &*(buffer as *const decoder_buffer::DecoderBuffer);
+        buf.remaining_size()
+    }
+}
+
+/// Starts bit decoding in the decoder buffer
+#[no_mangle]
+pub extern "C" fn draco_decoder_buffer_start_bit_decoding(
+    buffer: *mut draco_decoder_buffer_t,
+    decode_size: bool,
+    out_size: *mut c_ulonglong,
+) -> draco_status_t {
+    if buffer.is_null() || out_size.is_null() {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &mut *(buffer as *mut decoder_buffer::DecoderBuffer);
+        let mut size = 0u64;
+        match buf.start_bit_decoding(decode_size, &mut size) {
+            Ok(_) => {
+                *out_size = size;
+                draco_status_t::DRACO_STATUS_OK
+            }
+            Err(e) => {
+                set_last_error(e);
+                draco_status_t::DRACO_STATUS_ERROR
+            }
+        }
+    }
+}
+
+/// Decodes least significant bits during bit decoding
+#[no_mangle]
+pub extern "C" fn draco_decoder_buffer_decode_bits(
+    buffer: *mut draco_decoder_buffer_t,
+    nbits: c_uint,
+    out_value: *mut c_uint,
+) -> draco_status_t {
+    if buffer.is_null() || out_value.is_null() || nbits > 32 {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &mut *(buffer as *mut decoder_buffer::DecoderBuffer);
+        match buf.decode_least_significant_bits_32(nbits as u8) {
+            Ok(value) => {
+                *out_value = value;
+                draco_status_t::DRACO_STATUS_OK
+            }
+            Err(e) => {
+                set_last_error(e);
+                draco_status_t::DRACO_STATUS_ERROR
+            }
+        }
+    }
+}
+
+/// Ends bit decoding in the decoder buffer
+#[no_mangle]
+pub extern "C" fn draco_decoder_buffer_end_bit_decoding(buffer: *mut draco_decoder_buffer_t) -> draco_status_t {
+    if buffer.is_null() {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &mut *(buffer as *mut decoder_buffer::DecoderBuffer);
+        buf.end_bit_decoding();
+    }
+
+    draco_status_t::DRACO_STATUS_OK
+}
+
+/// Checks if bit decoder is active in the decoder buffer
+#[no_mangle]
+pub extern "C" fn draco_decoder_buffer_bit_decoder_active(buffer: *const draco_decoder_buffer_t) -> bool {
+    if buffer.is_null() {
+        return false;
+    }
+
+    unsafe {
+        let buf = &*(buffer as *const decoder_buffer::DecoderBuffer);
+        buf.bit_decoder_active()
+    }
+}
+
+/// Peeks at data in the decoder buffer without advancing position
+#[no_mangle]
+pub extern "C" fn draco_decoder_buffer_peek(
+    buffer: *const draco_decoder_buffer_t,
+    out_data: *mut u8,
+    size_to_peek: usize,
+) -> draco_status_t {
+    if buffer.is_null() || out_data.is_null() {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &*(buffer as *const decoder_buffer::DecoderBuffer);
+        let data_slice = std::slice::from_raw_parts_mut(out_data, size_to_peek);
+
+        match buf.peek_slice(data_slice) {
+            Ok(_) => draco_status_t::DRACO_STATUS_OK,
+            Err(_) => draco_status_t::DRACO_STATUS_ERROR,
+        }
+    }
+}
+
+/// Decodes data from the decoder buffer and advances position
+#[no_mangle]
+pub extern "C" fn draco_decoder_buffer_decode(
+    buffer: *mut draco_decoder_buffer_t,
+    out_data: *mut u8,
+    size_to_decode: usize,
+) -> draco_status_t {
+    if buffer.is_null() || out_data.is_null() {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &mut *(buffer as *mut decoder_buffer::DecoderBuffer);
+        let data_slice = std::slice::from_raw_parts_mut(out_data, size_to_decode);
+
+        match buf.decode_slice(data_slice) {
+            Ok(_) => draco_status_t::DRACO_STATUS_OK,
+            Err(_) => draco_status_t::DRACO_STATUS_ERROR,
+        }
+    }
+}
+
+/// Creates a new data buffer
+#[no_mangle]
+pub extern "C" fn draco_data_buffer_create_with_capacity(capacity: usize) -> *mut draco_data_buffer_t {
+    let buffer = Box::new(buffer::DataBuffer::with_capacity(capacity));
+    Box::into_raw(buffer) as *mut draco_data_buffer_t
+}
+
+/// Destroys a data buffer
+#[no_mangle]
+pub extern "C" fn draco_data_buffer_destroy(buffer: *mut draco_data_buffer_t) {
+    if !buffer.is_null() {
+        unsafe {
+            let _ = Box::from_raw(buffer as *mut buffer::DataBuffer);
+        }
+    }
+}
+
+/// Gets the size of the data buffer
+#[no_mangle]
+pub extern "C" fn draco_data_buffer_size(buffer: *const draco_data_buffer_t) -> usize {
+    if buffer.is_null() {
+        return 0;
+    }
+
+    unsafe {
+        let buf = &*(buffer as *const buffer::DataBuffer);
+        buf.len()
+    }
+}
+
+/// Gets a pointer to the data buffer data
+#[no_mangle]
+pub extern "C" fn draco_data_buffer_data(buffer: *const draco_data_buffer_t) -> *const u8 {
+    if buffer.is_null() {
+        return ptr::null();
+    }
+
+    unsafe {
+        let buf = &*(buffer as *const buffer::DataBuffer);
+        buf.as_slice().as_ptr()
+    }
+}
+
+/// Appends data to the data buffer
+#[no_mangle]
+pub extern "C" fn draco_data_buffer_append(
+    buffer: *mut draco_data_buffer_t,
+    data: *const u8,
+    size: usize,
+) -> draco_status_t {
+    if buffer.is_null() || data.is_null() {
+        return draco_status_t::DRACO_STATUS_INVALID_PARAMETER;
+    }
+
+    unsafe {
+        let buf = &mut *(buffer as *mut buffer::DataBuffer);
+        let data_slice = std::slice::from_raw_parts(data, size);
+        buf.extend_from_slice(data_slice);
+    }
+
+    draco_status_t::DRACO_STATUS_OK
 }
 
 // ===== Error Handling C API =====
