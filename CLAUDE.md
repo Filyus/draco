@@ -75,6 +75,8 @@ cmake ../ -DCMAKE_TOOLCHAIN_FILE=/path/to/Emscripten.cmake
 - JavaScript builds require Emscripten SDK
 - Windows builds require Visual Studio 2022 with C++ development tools
 - On Windows, use Developer Command Prompt or ensure cl.exe is in PATH
+- Build produces static `draco.lib` and executables in `build/Release/`
+- No submodules required for basic library and tools builds
 
 ## Git Submodules
 
@@ -103,6 +105,7 @@ To update submodules: `git submodule update --init --recursive`
 
 ## Common Issues
 1. **Build errors**: Ensure out-of-source builds
-2. **Missing submodules**: Run `git submodule update --init`
+2. **Missing submodules**: Run `git submodule update --init --recursive`
 3. **Emscripten builds**: Verify EMSCRIPTEN environment variable
 4. **Transcoder builds**: Requires additional third-party dependencies
+5. **CMake warning**: Policy CMP0148 warning can be ignored (uses deprecated FindPythonInterp)
