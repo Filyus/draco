@@ -1,2 +1,17 @@
 docs/_site
 build/
+
+# Rust build artifacts
+target/
+Cargo.lock
+
+# Rust build outputs
+crates/*/install/
+crates/*/target/
+crates/*/include/
+
+# Generated headers
+draco_core.h
+
+# Claude artifacts
+.claude/
