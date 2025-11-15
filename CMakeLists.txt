@@ -18,6 +18,12 @@ if(DRACO_TRANSCODER_SUPPORTED)
 endif()
 project(draco C CXX)
 
+# Suppress CMP0148 warning about deprecated FindPythonInterp module
+# Use OLD behavior to maintain compatibility with existing build system
+if(POLICY CMP0148)
+  cmake_policy(SET CMP0148 OLD)
+endif()
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
@@ -1028,6 +1034,18 @@ else()
       INCLUDES ${draco_include_paths}
       OBJLIB_DEPS ${draco_object_library_deps}
       LIB_DEPS ${draco_lib_deps})
+
+    # Add Rust library dependency if enabled
+    if(DRACO_RUST_CORE)
+      # Add the Rust static library path
+      set(DRACO_RUST_LIB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/crates/draco-core/install/lib/draco_core.lib")
+      if(EXISTS ${DRACO_RUST_LIB_PATH})
+        target_link_libraries(draco PRIVATE ${DRACO_RUST_LIB_PATH})
+        target_include_directories(draco PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/crates/draco-core/install/include)
+      else()
+        message(WARNING "Draco Rust library not found. Please build it with: cd crates/draco-core && cargo capi install --release --library-type staticlib")
+      endif()
+    endif()
     add_library(draco::draco ALIAS draco)
 
   else()

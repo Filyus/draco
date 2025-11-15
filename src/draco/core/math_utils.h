@@ -19,6 +19,11 @@
 
 #include "draco/core/vector_d.h"
 
+// Rust integration - include C API header if Rust is enabled
+#ifdef DRACO_RUST_CORE
+#include "draco_core.h"
+#endif
+
 namespace draco {
 
 #define DRACO_INCREMENT_MOD(I, M) (((I) == ((M)-1)) ? 0 : ((I) + 1))
@@ -29,6 +34,9 @@ namespace draco {
 // replacement for std::sqrt() for general cases. IntSqrt is in fact about 3X
 // slower compared to most implementation of std::sqrt().
 inline uint64_t IntSqrt(uint64_t number) {
+#ifdef DRACO_RUST_CORE
+  return draco_core_math_int_sqrt(number);
+#else
   if (number == 0) {
     return 0;
   }
@@ -52,6 +60,7 @@ inline uint64_t IntSqrt(uint64_t number) {
     // estimated square root is larger than the input.
   } while (square_root * square_root > number);
   return square_root;
+#endif
 }
 
 // Performs the addition in unsigned type to avoid signed integer overflow. Note
@@ -61,6 +70,14 @@ template <
     typename std::enable_if<std::is_integral<DataTypeT>::value &&
                             std::is_signed<DataTypeT>::value>::type * = nullptr>
 inline DataTypeT AddAsUnsigned(DataTypeT a, DataTypeT b) {
+#ifdef DRACO_RUST_CORE
+  // For 32-bit integers, use Rust implementation
+  if (std::is_same<DataTypeT, int32_t>::value) {
+    return static_cast<DataTypeT>(draco_core_math_add_as_unsigned_32(a, b));
+  }
+#endif
+
+  // Fallback to C++ implementation for other types or when Rust is disabled
   typedef typename std::make_unsigned<DataTypeT>::type DataTypeUT;
   return static_cast<DataTypeT>(static_cast<DataTypeUT>(a) +
                                 static_cast<DataTypeUT>(b));
