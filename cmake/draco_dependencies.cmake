@@ -134,3 +134,30 @@ macro(draco_setup_tinygltf)
 
   list(APPEND draco_include_paths "${tinygltf_path}")
 endmacro()
+
+# Determines the location of Draco Rust components and updates the build
+# configuration accordingly.
+macro(draco_setup_rust)
+  if(DRACO_USE_RUST)
+    # Include the FindDracoRust module from the cmake directory
+    include(${draco_root}/cmake/FindDracoRust.cmake)
+
+    # The include file already defines DRACO_RUST_FOUND if components were found
+    if(DRACO_RUST_FOUND)
+      message(STATUS "Found Draco Rust components: ${DRACO_RUST_VERSION}")
+      list(APPEND draco_include_paths "${DRACO_RUST_INCLUDE_DIRS}")
+
+      # Add the Rust library to the link paths
+      list(APPEND draco_libraries "${DRACO_RUST_LIBRARIES}")
+
+      # Enable Rust features
+      if(DRACO_RUST_CORE)
+        message(STATUS "Draco Rust core utilities enabled")
+      endif()
+    else()
+      message(WARNING "Draco Rust components requested but not found. "
+                      "Build Rust components first with 'cargo build --release' "
+                      "or disable DRACO_USE_RUST.")
+    endif()
+  endif()
+endmacro()

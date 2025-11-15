@@ -72,9 +72,10 @@ macro(draco_set_build_definitions)
     draco_setup_eigen()
     draco_setup_filesystem()
     draco_setup_tinygltf()
-
-
   endif()
+
+  # Setup Rust components if enabled
+  draco_setup_rust()
 
 
   list(APPEND draco_defines "DRACO_CMAKE=1"

@@ -40,12 +40,13 @@ TEST(ShannonEntropyTest, TestStreamEntropy) {
         symbols.data(), i + 1, max_symbol, nullptr);
 
     // For now hardcoded tolerance of 2 bits.
-    ASSERT_NEAR(expected_entropy_bits, stream_entropy_bits, 2);
+    ASSERT_NEAR(static_cast<double>(expected_entropy_bits),
+                static_cast<double>(stream_entropy_bits), 2.0);
   }
 
   // Compare it also to the case when we add all symbols in one call.
   draco::ShannonEntropyTracker entropy_tracker_2;
-  entropy_tracker_2.Push(symbols.data(), symbols.size());
+  entropy_tracker_2.Push(symbols.data(), static_cast<int>(symbols.size()));
   const int64_t stream_2_entropy_bits = entropy_tracker_2.GetNumberOfDataBits();
   ASSERT_EQ(entropy_tracker.GetNumberOfDataBits(), stream_2_entropy_bits);
 

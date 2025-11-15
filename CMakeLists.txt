@@ -1036,15 +1036,12 @@ else()
       LIB_DEPS ${draco_lib_deps})
 
     # Add Rust library dependency if enabled
-    if(DRACO_RUST_CORE)
-      # Add the Rust static library path
-      set(DRACO_RUST_LIB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/crates/draco-core/install/lib/draco_core.lib")
-      if(EXISTS ${DRACO_RUST_LIB_PATH})
-        target_link_libraries(draco PRIVATE ${DRACO_RUST_LIB_PATH})
-        target_include_directories(draco PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/crates/draco-core/install/include)
-      else()
-        message(WARNING "Draco Rust library not found. Please build it with: cd crates/draco-core && cargo capi install --release --library-type staticlib")
-      endif()
+    if(DRACO_USE_RUST AND DRACO_RUST_FOUND AND TARGET DracoRust::draco_core)
+      target_link_libraries(draco PRIVATE DracoRust::draco_core)
+      message(STATUS "Linking Draco with Rust core library")
+    elseif(DRACO_USE_RUST)
+      message(WARNING "Draco Rust components requested but not found. "
+                      "Build Rust components first with: cd crates/draco-core && cargo build --release")
     endif()
     add_library(draco::draco ALIAS draco)
 
@@ -1058,6 +1055,12 @@ else()
       OBJLIB_DEPS ${draco_object_library_deps}
       LIB_DEPS ${draco_lib_deps})
 
+    # Add Rust library dependency if enabled (non-MSVC path)
+    if(DRACO_USE_RUST AND DRACO_RUST_FOUND AND TARGET DracoRust::draco_core)
+      target_link_libraries(draco_static PRIVATE DracoRust::draco_core)
+      message(STATUS "Linking Draco static with Rust core library")
+    endif()
+
     if(BUILD_SHARED_LIBS)
       draco_add_library(
         NAME draco_shared
@@ -1067,6 +1070,13 @@ else()
         DEFINES ${draco_defines}
         INCLUDES ${draco_include_paths}
         LIB_DEPS draco_static)
+      
+      # Add Rust library dependency if enabled (shared library)
+      if(DRACO_USE_RUST AND DRACO_RUST_FOUND AND TARGET DracoRust::draco_core)
+        target_link_libraries(draco_shared PRIVATE DracoRust::draco_core)
+        message(STATUS "Linking Draco shared with Rust core library")
+      endif()
+      
       add_library(draco::draco ALIAS draco_shared)
       set_target_properties(draco_shared PROPERTIES EXPORT_NAME draco)
     else()
