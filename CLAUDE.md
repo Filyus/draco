@@ -103,9 +103,45 @@ To update submodules: `git submodule update --init --recursive`
 - `testdata/` - Test geometry files
 - `cmake/` - Build system configuration
 
+## Rust Migration Plan
+
+Draco is undergoing a systematic migration from C++ to Rust for improved memory safety, type safety, and maintainability. This is a bottom-up migration strategy that maintains full C++ compatibility during the transition.
+
+### Key Documents
+- **[PLAN_DESCRIPTION.md](./PLAN_DESCRIPTION.md)** - Comprehensive migration strategy and phase breakdown
+- **[PLAN.yaml](./PLAN.yaml)** - Structured migration timeline and component mapping
+- **[CPP_INTEGRATION.md](./CPP_INTEGRATION.md)** - Detailed C++ integration patterns and ABI layer design
+
+### Migration Status
+- ✅ **Phase 1: Core Foundation** (Completed) - 47 tests passing
+- 🔄 **Phase 2: Buffer and Stream Management** (In Progress)
+- ⏳ **Phase 3: Attribute System** (Pending)
+- ⏳ **Phase 4: Data Structures** (Pending)
+- ⏳ **Phase 5: Compression Pipeline** (Pending)
+- ⏳ **Phase 6: I/O and Tools** (Pending)
+
+### Rust Workspace Structure
+```
+crates/
+├── draco-core/          # Core utilities (Phase 1)
+├── draco-attributes/    # Attribute system (Phase 3)
+├── draco-compression/   # Compression algorithms (Phase 5)
+├── draco-io/           # File I/O and parsers (Phase 6)
+├── draco-point-cloud/  # Point cloud structures (Phase 4)
+├── draco-mesh/         # Mesh structures (Phase 4)
+└── draco-tools/        # CLI tools (Phase 6)
+```
+
+### Integration Strategy
+- **C ABI Layer**: Rust components exposed through C-compatible interface
+- **Feature Flags**: `DRACO_RUST_CORE`, `DRACO_RUST_IO`, etc. for gradual adoption
+- **Build Integration**: CMake integration with cargo-cbuild for static libraries
+- **Parallel Testing**: Both C++ and Rust implementations tested for identical output
+
 ## Common Issues
 1. **Build errors**: Ensure out-of-source builds
 2. **Missing submodules**: Run `git submodule update --init --recursive`
 3. **Emscripten builds**: Verify EMSCRIPTEN environment variable
 4. **Transcoder builds**: Requires additional third-party dependencies
 5. **CMake warning**: Policy CMP0148 warning can be ignored (uses deprecated FindPythonInterp)
+6. **Rust builds**: Install cargo-cbuild with `cargo install cargo-c` for C integration

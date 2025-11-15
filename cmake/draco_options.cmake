@@ -139,6 +139,14 @@ macro(draco_set_default_options)
     NAME DRACO_BUILD_EXECUTABLES
     HELPSTRING "Enable executables build."
     VALUE ON)
+  draco_option(
+    NAME DRACO_USE_RUST
+    HELPSTRING "Enable Rust implementation components."
+    VALUE OFF)
+  draco_option(
+    NAME DRACO_RUST_CORE
+    HELPSTRING "Enable Rust core utilities (bit utils, math utils, etc.)."
+    VALUE OFF)
   draco_check_deprecated_options()
 endmacro()
 
@@ -242,6 +250,15 @@ macro(draco_set_optional_features)
 
   if(DRACO_TRANSCODER_SUPPORTED)
     draco_enable_feature(FEATURE "DRACO_TRANSCODER_SUPPORTED")
+  endif()
+
+  # Rust integration features
+  if(DRACO_USE_RUST)
+    draco_enable_feature(FEATURE "DRACO_USE_RUST")
+
+    if(DRACO_RUST_CORE)
+      draco_enable_feature(FEATURE "DRACO_RUST_CORE")
+    endif()
   endif()
 
 
