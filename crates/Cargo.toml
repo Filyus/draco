@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "draco-core",
+    "draco-io",
+]
+resolver = "2"

@@ -1,0 +1,120 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running tests\roundtrip.rs (C:\Projects\Draco\crates\target\debug\deps\roundtrip-4a3a81672d781851.exe)
+
+running 1 test
+Using input folder: C:\Projects\Draco\crates\draco-io\input
+Using output folder: C:\Projects\Draco\crates\draco-io\output
+Blender export output: Add-on not loaded: "io_scene_obj", cause: No module named 'io_scene_obj'
+Add-on not loaded: "io_mesh_ply", cause: No module named 'io_mesh_ply'
+
+FBX export starting... 'C:\\Projects\\Draco\\crates\\draco-io\\input\\scene.fbx'
+export finished in 0.0283 sec.
+INFO Draco mesh compression is available, use library at C:\Program Files\Blender Foundation\Blender 5.0\5.0\scripts\addons_core\io_scene_gltf2\extern_draco.dll
+17:57:01 | INFO: Starting glTF 2.0 export
+17:57:01 | INFO: Extracting primitive: Plane
+17:57:01 | INFO: Primitives created: 1
+17:57:01 | INFO: Extracting primitive: Icosphere
+17:57:01 | INFO: Primitives created: 1
+17:57:01 | INFO: Extracting primitive: Plane.001
+17:57:01 | INFO: Primitives created: 1
+17:57:01 | INFO: Extracting primitive: Circle
+17:57:01 | INFO: Primitives created: 1
+17:57:01 | INFO: Extracting primitive: Suzanne
+17:57:01 | INFO: Primitives created: 1
+17:57:01 | INFO: Extracting primitive: Torus
+17:57:01 | INFO: Primitives created: 1
+17:57:01 | INFO: Draco encoder: Encoding mesh Plane_SUB.
+17:57:01 | INFO: Draco encoder: Encoding mesh Ico_Sphere.
+17:57:01 | INFO: Draco encoder: Encoding mesh Plane_SUB_2.
+17:57:01 | INFO: Draco encoder: Encoding mesh Ngon_12.
+17:57:01 | INFO: Draco encoder: Encoding mesh Suzanne.
+17:57:01 | INFO: Draco encoder: Encoding mesh Torus.
+17:57:01 | INFO: Finished glTF 2.0 export in 0.06447076797485352 s
+
+{"paths": {"obj": "C:\\Projects\\Draco\\crates\\draco-io\\input\\scene.obj", "ply": "C:\\Projects\\Draco\\crates\\draco-io\\input\\scene.ply", "fbx": "C:\\Projects\\Draco\\crates\\draco-io\\input\\scene.fbx", "glb": "C:\\Projects\\Draco\\crates\\draco-io\\input\\scene.glb"}, "draco_used": true, "meshes": [{"name": "Plane_SUB", "faces": 4096, "verts": 4225, "max_face_verts": 4, "has_ngon": false}, {"name": "Ico_Sphere", "faces": 1280, "verts": 642, "max_face_verts": 3, "has_ngon": false}, {"name": "Plane_SUB_2", "faces": 4096, "verts": 4225, "max_face_verts": 4, "has_ngon": false}, {"name": "Ngon_12", "faces": 10, "verts": 12, "max_face_verts": 3, "has_ngon": false}, {"name": "Suzanne", "faces": 500, "verts": 507, "max_face_verts": 4, "has_ngon": false}, {"name": "Torus", "faces": 576, "verts": 576, "max_face_verts": 4, "has_ngon": false}], "has_ngon": false}
+Blender 5.0.0 (hash a37564c4df7a built 2025-11-18 11:06:54)
+DracoEncoder | Preserve triangle order: no
+DracoEncoder | Encoded 4225 vertices, 24576 indices, raw size: 184352, encoded size: 7606, compression ratio: 24.24
+DracoEncoder | Preserve triangle order: no
+DracoEncoder | Encoded 3840 vertices, 3840 indices, raw size: 130560, encoded size: 22213, compression ratio: 5.88
+DracoEncoder | Preserve triangle order: no
+DracoEncoder | Encoded 4225 vertices, 24576 indices, raw size: 184352, encoded size: 7606, compression ratio: 24.24
+DracoEncoder | Preserve triangle order: no
+DracoEncoder | Encoded 12 vertices, 30 indices, raw size: 444, encoded size: 225, compression ratio: 1.97
+DracoEncoder | Preserve triangle order: no
+DracoEncoder | Encoded 1966 vertices, 2904 indices, raw size: 68720, encoded size: 13089, compression ratio: 5.25
+DracoEncoder | Preserve triangle order: no
+DracoEncoder | Encoded 2304 vertices, 3456 indices, raw size: 80640, encoded size: 11304, compression ratio: 7.13
+
+Blender quit
+
+
+DEBUG: decoding transform for att_id=0 decoder_type=2
+DEBUG: calling decode_parameters for att_id=0 at pos=7295
+DEBUG: AttributeQuantizationTransform::decode_parameters start_pos=7295 end_pos=7312 num_components=3 min=[-0.91666675, 0.0, -0.91666675] range=1.8333335 bits=14
+DEBUG: finished decode_parameters for att_id=0 at pos=7312
+DEBUG: decoding transform for att_id=1 decoder_type=3
+DEBUG: decoding transform for att_id=2 decoder_type=2
+DEBUG: calling decode_parameters for att_id=2 at pos=7593
+DEBUG: AttributeQuantizationTransform::decode_parameters start_pos=7593 end_pos=7606 num_components=2 min=[0.0, -1.1920929e-7] range=1.0000001 bits=12
+DEBUG: finished decode_parameters for att_id=2 at pos=7606
+DEBUG: decoding transform for att_id=0 decoder_type=2
+DEBUG: calling decode_parameters for att_id=0 at pos=15948
+DEBUG: AttributeQuantizationTransform::decode_parameters start_pos=15948 end_pos=15965 num_components=3 min=[-0.99999994, -1.0, -0.99999994] range=2 bits=14
+DEBUG: finished decode_parameters for att_id=0 at pos=15965
+DEBUG: decoding transform for att_id=1 decoder_type=3
+DEBUG: decoding transform for att_id=2 decoder_type=2
+DEBUG: calling decode_parameters for att_id=2 at pos=22200
+DEBUG: AttributeQuantizationTransform::decode_parameters start_pos=22200 end_pos=22213 num_components=2 min=[0.0, 0.527618] range=1 bits=12
+DEBUG: finished decode_parameters for att_id=2 at pos=22213
+DEBUG: decoding transform for att_id=0 decoder_type=2
+DEBUG: calling decode_parameters for att_id=0 at pos=7295
+DEBUG: AttributeQuantizationTransform::decode_parameters start_pos=7295 end_pos=7312 num_components=3 min=[-0.91666675, 0.0, -0.91666675] range=1.8333335 bits=14
+DEBUG: finished decode_parameters for att_id=0 at pos=7312
+DEBUG: decoding transform for att_id=1 decoder_type=3
+DEBUG: decoding transform for att_id=2 decoder_type=2
+DEBUG: calling decode_parameters for att_id=2 at pos=7593
+DEBUG: AttributeQuantizationTransform::decode_parameters start_pos=7593 end_pos=7606 num_components=2 min=[0.0, -1.1920929e-7] range=1.0000001 bits=12
+DEBUG: finished decode_parameters for att_id=2 at pos=7606
+DEBUG: decoding transform for att_id=0 decoder_type=2
+DEBUG: calling decode_parameters for att_id=0 at pos=151
+DEBUG: AttributeQuantizationTransform::decode_parameters start_pos=151 end_pos=168 num_components=3 min=[-1.0, 0.0, -1.0] range=2 bits=14
+DEBUG: finished decode_parameters for att_id=0 at pos=168
+DEBUG: decoding transform for att_id=1 decoder_type=3
+DEBUG: decoding transform for att_id=2 decoder_type=2
+DEBUG: calling decode_parameters for att_id=2 at pos=210
+DEBUG: AttributeQuantizationTransform::decode_parameters start_pos=210 end_pos=223 num_components=2 min=[0.0, 0.0] range=0.00000000000000000000000000000000000000002278 bits=128
+Invalid quantization_bits=128 at buffer pos 223
+Warning: failed to read GLB 'C:\Projects\Draco\crates\draco-io\input\scene.glb': Draco decode error: DracoError("Failed to decode quantization parameters")
+Skipping GLB roundtrip write due to earlier GLB read failure
+OBJ roundtrip report: {"file":"C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx","has_ngon":false,"mesh_count":1,"meshes":[{"faces":1280,"has_ngon":false,"max_face_verts":3,"name":"Roundtrip","verts":642}],"total_faces":1280,"total_vertices":642}
+PLY roundtrip report: {"file":"C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx","has_ngon":false,"mesh_count":1,"meshes":[{"faces":1280,"has_ngon":false,"max_face_verts":3,"name":"Roundtrip","verts":642}],"total_faces":1280,"total_vertices":642}
+FBX roundtrip report: {"file":"C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx","has_ngon":false,"mesh_count":1,"meshes":[{"faces":1280,"has_ngon":false,"max_face_verts":3,"name":"Roundtrip","verts":642}],"total_faces":1280,"total_vertices":642}
+GLB roundtrip report: {"mesh_count":0,"meshes":[],"total_faces":0}
+Skipping basic sanity check: no meshes present in report
+Warning: could not find matching mesh for 'Plane_SUB' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Plane_SUB' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Plane_SUB' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Plane_SUB' in report Object {"mesh_count": Number(0), "meshes": Array [], "total_faces": Number(0)}
+Warning: could not find matching mesh for 'Ico_Sphere' in report Object {"mesh_count": Number(0), "meshes": Array [], "total_faces": Number(0)}
+Warning: could not find matching mesh for 'Plane_SUB_2' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Plane_SUB_2' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Plane_SUB_2' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Plane_SUB_2' in report Object {"mesh_count": Number(0), "meshes": Array [], "total_faces": Number(0)}
+Warning: could not find matching mesh for 'Ngon_12' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Ngon_12' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Ngon_12' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Ngon_12' in report Object {"mesh_count": Number(0), "meshes": Array [], "total_faces": Number(0)}
+Warning: could not find matching mesh for 'Suzanne' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Suzanne' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Suzanne' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Suzanne' in report Object {"mesh_count": Number(0), "meshes": Array [], "total_faces": Number(0)}
+Warning: could not find matching mesh for 'Torus' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Torus' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Torus' in report Object {"file": String("C:\\Projects\\Draco\\crates\\draco-io\\output\\scene_roundtrip.fbx"), "has_ngon": Bool(false), "mesh_count": Number(1), "meshes": Array [Object {"faces": Number(1280), "has_ngon": Bool(false), "max_face_verts": Number(3), "name": String("Roundtrip"), "verts": Number(642)}], "total_faces": Number(1280), "total_vertices": Number(642)}
+Warning: could not find matching mesh for 'Torus' in report Object {"mesh_count": Number(0), "meshes": Array [], "total_faces": Number(0)}
+Skipping GLB SceneReader checks due to earlier GLB read failure
+test roundtrip_with_blender ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.82s
+
