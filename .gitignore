@@ -1,1 +1,60 @@
 docs/_site
+
+# Build directories
+build/
+build-original/
+build-cmake/
+build_transcoder/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.pdb
+*.idb
+*.ilk
+*.aps
+*.ncb
+*.ipch
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Compiled binaries and libraries
+*.exe
+*.lib
+*.dll
+*.obj
+*.a
+*.o
+*.dylib
+*.so
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editors
+.claude/
+.vscode/
+
+# Backup files
+enhanced_io_test_backup.cpp
+
+# Rust
+crates/target/
+Cargo.lock
+
+# Temporary/debug files
+*.drc
+*.py
+duplicates.txt
+duplicates_clean.txt
+inspect_drc.py
+torus.obj.py
+simple_cpp.drc
