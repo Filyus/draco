@@ -234,6 +234,15 @@ _**Contents**_
   * [References](#references)
 
 
+Modularization
+==============
+Draco is now split into two main modules:
+*   **draco_core**: The core compression library (geometry, compression algorithms).
+*   **draco_io**: Input/Output library (file readers/writers).
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for details on the architecture and how to build the modules.
+
+
 Building
 ========
 See [BUILDING](BUILDING.md) for building instructions.
