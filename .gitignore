@@ -51,10 +51,14 @@ crates/target/
 Cargo.lock
 
 # Temporary/debug files
-*.drc
-*.py
-duplicates.txt
-duplicates_clean.txt
 inspect_drc.py
 torus.obj.py
-simple_cpp.drc
+
+# Generated .drc files (keep testdata/ and javascript/ tracked)
+/*.drc
+crates/**/*.drc
+
+# Python bytecode (keep .py source files tracked)
+__pycache__/
+*.pyc
+*.pyo
