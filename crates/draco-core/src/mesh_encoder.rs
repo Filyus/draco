@@ -255,18 +255,22 @@ impl MeshEncoder {
         let is_edgebreaker = method_int == 1;
 
         // Encode number of attribute decoders (u8).
-        // For sequential encoding, there's only ONE attribute encoder containing ALL attributes.
+        // For sequential encoding, there's only ONE attribute encoder containing ALL attributes (if any).
         // For edgebreaker, there may be multiple encoders.
-        if is_edgebreaker {
-            out_buffer.encode_u8(mesh.num_attributes() as u8);
+        let num_attributes = mesh.num_attributes();
+        let num_encoders = if is_edgebreaker {
+            num_attributes as usize
+        } else if num_attributes > 0 {
+            1
         } else {
-            out_buffer.encode_u8(1u8); // Sequential: single encoder with all attributes
-        }
+            0
+        };
+        
+        out_buffer.encode_u8(num_encoders as u8);
 
         // Phase 1: attributes decoder identifiers.
         // For sequential encoding, we only have one encoder so this is just one loop iteration.
         // For edgebreaker, we need one per attribute.
-        let num_encoders = if is_edgebreaker { mesh.num_attributes() as usize } else { 1 };
         for _ in 0..num_encoders {
             if is_edgebreaker {
                 // att_data_id (i8), encoder_type (u8), traversal_method (u8)
@@ -327,7 +331,7 @@ impl MeshEncoder {
                 out_buffer.encode_u8(decoder_type);
                 decoder_types.push(decoder_type);
             }
-        } else {
+        } else if num_encoders > 0 {
             // Sequential: single encoder with all attributes
             // Write num_attrs = total number of attributes
             if !uses_varint_encoding(major, minor) {
