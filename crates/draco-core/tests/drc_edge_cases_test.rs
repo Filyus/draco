@@ -64,7 +64,7 @@ fn decode_rejects_truncated_file() {
 }
 
 #[test]
-#[ignore = "Empty mesh encoding/decoding is an edge case - decoder expects at least one attribute"]
+// #[ignore = "Empty mesh encoding/decoding is an edge case - decoder expects at least one attribute"]
 fn encode_decode_empty_mesh() {
     let mesh = Mesh::new();
 
