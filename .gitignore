@@ -65,6 +65,10 @@ web/www/pkg/
 crates/**/*.drc
 !crates/testdata/*.drc
 
+# Generated decoded mesh files
+*.drc.ply
+*.drc.obj
+
 # Python bytecode (keep .py source files tracked)
 __pycache__/
 *.pyc
