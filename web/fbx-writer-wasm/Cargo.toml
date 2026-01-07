@@ -1,0 +1,20 @@
+[package]
+name = "fbx-writer-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+draco-core = { workspace = true }
+draco-io = { workspace = true }
+
+[profile.release]
+opt-level = "s"
+lto = true
