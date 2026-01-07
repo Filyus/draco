@@ -46,17 +46,24 @@ Thumbs.db
 # Backup files
 enhanced_io_test_backup.cpp
 
-# Rust
-crates/target/
+# Rust build artifacts (contains .fingerprint, incremental builds, etc.)
+**/target/
 Cargo.lock
 
-# Temporary/debug files
-inspect_drc.py
-torus.obj.py
+# WASM build output
+web/www/pkg/
+
+# Temporary/debug Python scripts (at root level)
+/analyze_*.py
+/compare_drc.py
+/inspect_*.py
+/parse_drc*.py
+/torus.obj.py
 
 # Generated .drc files (keep testdata/ and javascript/ tracked)
 /*.drc
 crates/**/*.drc
+!crates/testdata/*.drc
 
 # Python bytecode (keep .py source files tracked)
 __pycache__/
