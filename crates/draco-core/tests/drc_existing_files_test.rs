@@ -10,6 +10,7 @@ use draco_core::mesh_decoder::MeshDecoder;
 use draco_core::mesh_encoder::MeshEncoder;
 use draco_core::point_cloud::PointCloud;
 use draco_core::point_cloud_decoder::PointCloudDecoder;
+use draco_core::status::DracoError;
 
 fn repo_testdata_dir() -> PathBuf {
     // CARGO_MANIFEST_DIR = <repo>/crates/draco-core
@@ -110,7 +111,7 @@ fn decode_drc(bytes: &[u8]) -> (EncodedGeometryType, Option<Mesh>, Option<PointC
 }
 
 #[test]
-#[ignore = "Some testdata files use unsupported EdgeBreaker traversal types (e.g., bunny_cpp.drc uses type 2)"]
+// #[ignore = "Some testdata files use unsupported EdgeBreaker traversal types (e.g., bunny_cpp.drc uses type 2)"]
 fn decode_all_testdata_top_level_drc_files() {
     let dir = repo_testdata_dir();
     let mut drc_files = collect_drc_files_recursive(&dir);
@@ -135,6 +136,14 @@ fn decode_all_testdata_top_level_drc_files() {
                 let mut mesh = Mesh::new();
                 let mut decoder = MeshDecoder::new();
                 let status = decoder.decode(&mut buffer, &mut mesh);
+
+                if let Err(DracoError::DracoError(ref msg)) = status {
+                    if msg.starts_with("Unsupported Edgebreaker traversal decoder type") {
+                        println!("Skipping {} due to unsupported traversal: {}", path.display(), msg);
+                        continue;
+                    }
+                }
+
                 assert!(
                     status.is_ok(),
                     "mesh decode failed for {} (v{}.{}): {:?}",
