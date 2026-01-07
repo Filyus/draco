@@ -50,6 +50,12 @@ pub struct MeshEdgebreakerEncoder {
     // Boundary tracking
     init_face_configurations: Vec<bool>,
     encoded_faces: Vec<FaceIndex>,
+
+    // Hole tracking (for boundary vertices)
+    // Maps vertex index to hole id (-1 if not on a hole)
+    vertex_hole_id: Vec<i32>,
+    // Tracks which holes have been visited during encoding
+    visited_holes: Vec<bool>,
 }
 
 impl MeshEdgebreakerEncoder {
@@ -68,29 +74,47 @@ impl MeshEdgebreakerEncoder {
             symbol_to_encoder_corner: Vec::new(),
             init_face_configurations: Vec::new(),
             encoded_faces: Vec::new(),
+            vertex_hole_id: vec![-1; num_vertices],
+            visited_holes: Vec::new(),
         }
     }
 
     /// Find the starting corner for encoding a component.
     /// For boundary faces, returns the corner opposite to a boundary edge.
     /// This matches the C++ FindInitFaceConfiguration logic:
-    /// - First check all 3 corners for boundary edges (no opposite)
-    /// - Then check for boundary vertices (which would swing to a different face)
-    /// Important: We must check ALL corners for boundary edges BEFORE checking
-    /// for boundary vertices, to avoid swinging away from the current face prematurely.
-    fn find_start_corner(&self, corner_table: &CornerTable, face_id: FaceIndex) -> CornerIndex {
-        let first = corner_table.first_corner(face_id);
+    /// Find the start corner for a face following C++ FindInitFaceConfiguration logic:
+    /// - First check each corner for boundary edges (no opposite)
+    /// - Also check for boundary vertices (vertex_hole_id != -1) and swing to find boundary edge
+    /// - Returns (start_corner, is_interior) - interior is true if no boundary found
+    fn find_init_face_configuration(&self, corner_table: &CornerTable, face_id: FaceIndex) -> (CornerIndex, bool) {
+        let mut corner_index = corner_table.first_corner(face_id);
         
-        // First pass: Check all corners for boundary edges
-        let corners = [first, corner_table.next(first), corner_table.previous(first)];
-        for &c in &corners {
-            if corner_table.opposite(c) == INVALID_CORNER_INDEX {
-                return c;
+        for _ in 0..3 {
+            // Check for boundary edge
+            if corner_table.opposite(corner_index) == INVALID_CORNER_INDEX {
+                // Boundary edge found - exterior configuration
+                return (corner_index, false);
             }
+            
+            // Check for boundary vertex
+            let vert_id = corner_table.vertex(corner_index);
+            if self.vertex_hole_id.get(vert_id.0 as usize).copied().unwrap_or(-1) != -1 {
+                // Boundary vertex found. Find the first boundary edge attached to the point.
+                let mut right_corner = corner_index;
+                while right_corner != INVALID_CORNER_INDEX {
+                    corner_index = right_corner;
+                    right_corner = corner_table.swing_right(right_corner);
+                }
+                // corner_index now lies on a boundary edge and its previous corner is
+                // guaranteed to be the opposite corner of the boundary edge.
+                return (corner_table.previous(corner_index), false);
+            }
+            
+            corner_index = corner_table.next(corner_index);
         }
         
-        // If no boundary edge found, return first corner (interior face)
-        first
+        // Interior configuration: return the current corner (loops back to first after 3 iterations)
+        (corner_index, true)
     }
 
     pub fn encode_connectivity(
@@ -110,8 +134,15 @@ impl MeshEdgebreakerEncoder {
         self.init_face_connectivity_corners.clear();
         self.symbol_to_encoder_corner.clear();
         self.encoded_faces.clear();
+        
+        // Reset hole tracking
+        self.vertex_hole_id = vec![-1; corner_table.num_vertices()];
+        self.visited_holes.clear();
 
         self.point_ids.clear();
+
+        // Find all holes (boundary loops) in the mesh before encoding
+        self.find_holes(corner_table);
 
         // Traverse the surface starting from each unvisited corner (Draco C++ behavior).
         // For interior components, the init face is not represented by symbols; the
@@ -129,8 +160,7 @@ impl MeshEdgebreakerEncoder {
                 continue;
             }
 
-            let start_corner = self.find_start_corner(corner_table, face_id);
-            let interior_config = self.is_face_interior(corner_table, face_id);
+            let (start_corner, interior_config) = self.find_init_face_configuration(corner_table, face_id);
             self.init_face_configurations.push(interior_config);
 
             if interior_config {
@@ -159,6 +189,12 @@ impl MeshEdgebreakerEncoder {
                 }
             } else {
                 // Boundary configuration: start on the boundary.
+                // Mark the init face as visited first to prevent re-processing
+                // (Note: encode_component will also mark it when processing the first symbol)
+                // First encode the hole that's opposite to the start_corner.
+                let next_corner = corner_table.next(start_corner);
+                self.encode_hole(corner_table, next_corner, true);
+                // Start processing the face containing the start_corner.
                 self.encode_component(corner_table, start_corner)?;
             }
         }
@@ -629,20 +665,176 @@ impl MeshEdgebreakerEncoder {
         false
     }
 
-    fn is_face_interior(&self, corner_table: &CornerTable, face_id: FaceIndex) -> bool {
-        let start_corner = corner_table.first_corner(face_id);
-        for i in 0..3 {
-            let c = if i == 0 { start_corner } else if i == 1 { corner_table.next(start_corner) } else { corner_table.previous(start_corner) };
+    /// Finds all holes (boundary loops) in the mesh and assigns each boundary vertex
+    /// to its hole ID. This matches the C++ FindHoles() function.
+    fn find_holes(&mut self, corner_table: &CornerTable) {
+        let num_corners = corner_table.num_corners();
+        
+        // Go over all corners and detect non-visited open boundaries
+        for i in 0..num_corners {
+            let corner_i = CornerIndex(i as u32);
             
-            if corner_table.opposite(c) == INVALID_CORNER_INDEX {
-                return false;
+            // Skip degenerated faces
+            let face = corner_table.face(corner_i);
+            if face == crate::geometry_indices::INVALID_FACE_INDEX || corner_table.is_degenerated(face) {
+                continue;
             }
-            let v = corner_table.vertex(c);
-            if self.is_vertex_on_boundary(corner_table, v) {
-                return false;
+            
+            // Check if this corner is opposite to a boundary edge
+            if corner_table.opposite(corner_i) == INVALID_CORNER_INDEX {
+                // No opposite corner means no opposite face, so the opposite edge
+                // of the corner is an open boundary.
+                // Check whether we have already traversed the boundary.
+                let boundary_vert_id = corner_table.vertex(corner_table.next(corner_i));
+                if boundary_vert_id == crate::geometry_indices::INVALID_VERTEX_INDEX {
+                    continue;
+                }
+                let bv = boundary_vert_id.0 as usize;
+                if bv >= self.vertex_hole_id.len() {
+                    continue;
+                }
+                if self.vertex_hole_id[bv] != -1 {
+                    // Already assigned to a hole
+                    continue;
+                }
+                
+                // New open boundary found - traverse along it and mark all vertices
+                let boundary_id = self.visited_holes.len() as i32;
+                self.visited_holes.push(false);
+                
+                let mut corner_id = corner_i;
+                let mut current_boundary_vert = boundary_vert_id;
+                
+                // Safety limit for boundary traversal
+                let max_verts = corner_table.num_vertices();
+                let mut vert_count = 0;
+                
+                while self.vertex_hole_id[current_boundary_vert.0 as usize] == -1 {
+                    vert_count += 1;
+                    if vert_count > max_verts {
+                        break; // Safety exit
+                    }
+                    
+                    // Mark the vertex on the open boundary
+                    self.vertex_hole_id[current_boundary_vert.0 as usize] = boundary_id;
+                    
+                    // Move to next corner on the boundary
+                    corner_id = corner_table.next(corner_id);
+                    
+                    // Look for the next attached open boundary edge (with safety limit)
+                    let mut inner_iter = 0;
+                    while corner_table.opposite(corner_id) != INVALID_CORNER_INDEX {
+                        corner_id = corner_table.opposite(corner_id);
+                        corner_id = corner_table.next(corner_id);
+                        inner_iter += 1;
+                        if inner_iter > max_verts {
+                            break;
+                        }
+                    }
+                    
+                    // Get the next vertex on the hole
+                    current_boundary_vert = corner_table.vertex(corner_table.next(corner_id));
+                    if current_boundary_vert == crate::geometry_indices::INVALID_VERTEX_INDEX {
+                        break;
+                    }
+                    if (current_boundary_vert.0 as usize) >= self.vertex_hole_id.len() {
+                        break;
+                    }
+                }
             }
         }
-        true
+    }
+
+    /// Encodes all vertices of a hole starting at start_corner_id.
+    /// The vertex associated with the first corner is encoded only if encode_first_vertex is true.
+    /// Returns the number of encoded hole vertices.
+    /// This matches the C++ EncodeHole() function.
+    fn encode_hole(&mut self, corner_table: &CornerTable, start_corner_id: CornerIndex, encode_first_vertex: bool) -> i32 {
+        // We know that the start corner lies on a hole but we first need to find the
+        // boundary edge going from that vertex. It is the first edge in CW direction.
+        let mut corner_id = start_corner_id;
+        corner_id = corner_table.previous(corner_id);
+        
+        // Add safety limit to prevent infinite loops
+        let max_iters = corner_table.num_corners();
+        let mut iter_count = 0;
+        while corner_table.opposite(corner_id) != INVALID_CORNER_INDEX {
+            corner_id = corner_table.opposite(corner_id);
+            corner_id = corner_table.next(corner_id);
+            iter_count += 1;
+            if iter_count > max_iters {
+                // Safety exit - we're stuck in a loop
+                return 0;
+            }
+        }
+        
+        let start_vertex_id = corner_table.vertex(start_corner_id);
+        if start_vertex_id == crate::geometry_indices::INVALID_VERTEX_INDEX {
+            return 0;
+        }
+        
+        let mut num_encoded_hole_verts = 0;
+        if encode_first_vertex {
+            let sv = start_vertex_id.0 as usize;
+            if sv < self.visited_vertices.len() {
+                self.visited_vertices[sv] = true;
+            }
+            num_encoded_hole_verts += 1;
+        }
+        
+        // Mark the hole as visited
+        let start_vid = start_vertex_id.0 as usize;
+        if start_vid < self.vertex_hole_id.len() {
+            let hole_id = self.vertex_hole_id[start_vid];
+            if hole_id >= 0 && (hole_id as usize) < self.visited_holes.len() {
+                self.visited_holes[hole_id as usize] = true;
+            }
+        }
+        
+        // corner_id is now opposite to the boundary edge.
+        // Get the start vertex of the edge and use it as a reference.
+        let _start_vert_id = corner_table.vertex(corner_table.next(corner_id));
+        
+        // Get the end vertex of the edge.
+        let mut act_vertex_id = corner_table.vertex(corner_table.previous(corner_id));
+        
+        // Safety counter for the main loop
+        iter_count = 0;
+        while act_vertex_id != start_vertex_id {
+            if act_vertex_id == crate::geometry_indices::INVALID_VERTEX_INDEX {
+                break;
+            }
+            
+            iter_count += 1;
+            if iter_count > max_iters {
+                // Safety exit
+                break;
+            }
+            
+            // Mark the vertex as visited
+            let av = act_vertex_id.0 as usize;
+            if av < self.visited_vertices.len() {
+                self.visited_vertices[av] = true;
+            }
+            num_encoded_hole_verts += 1;
+            
+            corner_id = corner_table.next(corner_id);
+            
+            // Look for the next attached open boundary edge (with safety limit)
+            let mut inner_iter = 0;
+            while corner_table.opposite(corner_id) != INVALID_CORNER_INDEX {
+                corner_id = corner_table.opposite(corner_id);
+                corner_id = corner_table.next(corner_id);
+                inner_iter += 1;
+                if inner_iter > max_iters {
+                    break;
+                }
+            }
+            
+            act_vertex_id = corner_table.vertex(corner_table.previous(corner_id));
+        }
+        
+        num_encoded_hole_verts
     }
 
     fn encode_component(&mut self, corner_table: &CornerTable, start_corner: CornerIndex) -> Result<(), DracoError> {
@@ -676,7 +868,8 @@ impl MeshEdgebreakerEncoder {
                 if vert_id == crate::geometry_indices::INVALID_VERTEX_INDEX {
                     return Err(DracoError::DracoError("Invalid vertex during Edgebreaker traversal".to_string()));
                 }
-                let on_boundary = self.is_vertex_on_boundary(corner_table, vert_id);
+                // Check if vertex is on a boundary using the precomputed hole IDs
+                let on_boundary = self.vertex_hole_id.get(vert_id.0 as usize).copied().unwrap_or(-1) != -1;
 
                 // If this is a new vertex and it's not on boundary, emit C and go right.
                 if !self.visited_vertices[vert_id.0 as usize] {
@@ -747,6 +940,19 @@ impl MeshEdgebreakerEncoder {
                         // Split the traversal.
                         self.symbols.push(EdgebreakerSymbol::Split as u32);
                         self.symbol_to_encoder_corner.push(corner_id);
+                        
+                        // If the tip vertex is on a hole boundary and the hole hasn't been
+                        // visited yet, we need to encode it. This marks all vertices on
+                        // the hole as visited, which matches C++ EncodeHole behavior.
+                        if on_boundary {
+                            let hole_id = self.vertex_hole_id.get(vert_id.0 as usize).copied().unwrap_or(-1);
+                            if hole_id >= 0 && (hole_id as usize) < self.visited_holes.len() {
+                                if !self.visited_holes[hole_id as usize] {
+                                    self.encode_hole(corner_table, corner_id, false);
+                                }
+                            }
+                        }
+                        
                         self.face_to_split_symbol_map
                             .insert(face_id.0 as usize, self.last_encoded_symbol_id);
 
