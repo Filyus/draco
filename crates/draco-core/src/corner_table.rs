@@ -177,12 +177,18 @@ impl CornerTable {
         self.opposite(self.next(corner))
     }
 
+    /// Returns the corner on the adjacent face on the right that maps to
+    /// the same vertex as the given corner.
+    /// C++: Previous(Opposite(Previous(corner)))
     pub fn swing_right(&self, corner: CornerIndex) -> CornerIndex {
-        self.next(self.opposite(self.next(corner)))
+        self.previous(self.opposite(self.previous(corner)))
     }
 
+    /// Returns the corner on the left face that maps to the same vertex as the
+    /// given corner.
+    /// C++: Next(Opposite(Next(corner)))
     pub fn swing_left(&self, corner: CornerIndex) -> CornerIndex {
-        self.previous(self.opposite(self.previous(corner)))
+        self.next(self.opposite(self.next(corner)))
     }
 
     fn break_non_manifold_edges(&mut self) -> bool {
