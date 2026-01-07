@@ -138,6 +138,9 @@ impl MeshEdgebreakerDecoder {
         // connectivity decoding because split symbols can introduce temporary vertices
         // that are eliminated during deduplication.
         let max_num_vertices = (num_encoded_vertices as usize).saturating_add(num_split_symbols);
+        
+        eprintln!("DEBUG Decoder: num_encoded_vertices={}, num_split_symbols={}, max_num_vertices={}", 
+            num_encoded_vertices, num_split_symbols, max_num_vertices);
 
         self.reconstruct_mesh(
             &symbols,
@@ -415,6 +418,7 @@ impl MeshEdgebreakerDecoder {
 
         let mut get_next_point = || -> Result<PointIndex, DracoError> {
             if next_point_id as usize >= max_num_vertices {
+                eprintln!("DEBUG: Vertex overflow! next_point_id={}, max_num_vertices={}", next_point_id, max_num_vertices);
                 return Err(error_status("Unexpected number of decoded vertices"));
             }
             let p = PointIndex(next_point_id);
@@ -424,12 +428,42 @@ impl MeshEdgebreakerDecoder {
 
         let mut num_components = 0;
 
+        // DEBUG: Count symbols by type and predict vertex count
+        {
+            let mut end_count = 0;
+            let mut left_count = 0;
+            let mut right_count = 0;
+            let mut center_count = 0;
+            let mut split_count = 0;
+            for &s in symbols {
+                match EdgebreakerSymbol::from(s) {
+                    EdgebreakerSymbol::End => end_count += 1,
+                    EdgebreakerSymbol::Left => left_count += 1,
+                    EdgebreakerSymbol::Right => right_count += 1,
+                    EdgebreakerSymbol::Center => center_count += 1,
+                    EdgebreakerSymbol::Split => split_count += 1,
+                    EdgebreakerSymbol::Hole => {},
+                }
+            }
+            let predicted_vertices = end_count * 3 + left_count + right_count;
+            eprintln!("DEBUG Symbol counts: E={}, L={}, R={}, C={}, S={}", 
+                end_count, left_count, right_count, center_count, split_count);
+            eprintln!("DEBUG Predicted vertices from symbols: E*3+L+R = {}*3+{}+{} = {}", 
+                end_count, left_count, right_count, predicted_vertices);
+            eprintln!("DEBUG max_num_vertices allowed: {}", max_num_vertices);
+        }
+
         for symbol_id in 0..num_symbols {
             let face_idx = symbol_id;
             let corner = (face_idx * 3) as u32;
             let symbol = EdgebreakerSymbol::from(symbols[symbol_id]);
 
             let mut check_topology_split = false;
+
+            // DEBUG: Print stack state before each symbol (first 20 only)
+            if symbol_id < 20 {
+                eprintln!("DEBUG: symbol_id={}, symbol={:?}, stack_before={:?}", symbol_id, symbol, active_corner_stack);
+            }
 
             match symbol {
                 // TOPOLOGY_E in Draco C++ reverse decoding.
@@ -535,6 +569,7 @@ impl MeshEdgebreakerDecoder {
                 // TOPOLOGY_S in Draco C++ reverse decoding.
                 EdgebreakerSymbol::Split => {
                     if active_corner_stack.is_empty() {
+                        eprintln!("DEBUG: Empty stack on S at symbol_id={}", symbol_id);
                         return Err(error_status("Empty active corner stack on S"));
                     }
                     let corner_b = *active_corner_stack.last().unwrap();
@@ -543,9 +578,13 @@ impl MeshEdgebreakerDecoder {
                     // Corner "a" can correspond either to a normal active edge, or to an
                     // edge created from the topology split event.
                     if let Some(&split_corner) = topology_split_active_corners.get(&symbol_id) {
+                        eprintln!("DEBUG: S symbol_id={} has topology split, pushing corner {}", symbol_id, split_corner);
                         active_corner_stack.push(split_corner);
                     }
                     if active_corner_stack.is_empty() {
+                        eprintln!("DEBUG: Empty stack AFTER topology lookup on S at symbol_id={}, corner_b={}", symbol_id, corner_b);
+                        eprintln!("DEBUG: topology_split_active_corners has {} entries", topology_split_active_corners.len());
+                        eprintln!("DEBUG: This S had no topology event. Stack size was 1 before pop.");
                         return Err(error_status("Empty active corner stack after topology split on S"));
                     }
                     let corner_a = *active_corner_stack.last().unwrap();

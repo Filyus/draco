@@ -14,6 +14,15 @@ pub fn select_prediction_method(
     }
 
     if encoder.get_geometry_type() == EncodedGeometryType::TriangularMesh {
+        // CRITICAL: In C++, MeshSequentialEncoder does NOT override GetCornerTable(),
+        // so it returns nullptr. This means mesh prediction schemes (Parallelogram, etc.)
+        // are never created for sequential encoding - the factory falls back to Delta.
+        // We must match this behavior for C++ decoder compatibility.
+        let encoding_method = encoder.get_encoding_method();
+        if encoding_method == Some(0) {
+            // Sequential encoding (method = 0) - use Delta prediction only
+            return PredictionSchemeMethod::Difference;
+        }
         let att_quant = options.get_attribute_int(att_id, "quantization_bits", -1);
         let pc = encoder.point_cloud().unwrap(); // Should be safe if called from encoder
         let att = pc.attribute(att_id);

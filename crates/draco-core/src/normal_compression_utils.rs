@@ -235,32 +235,35 @@ impl OctahedronToolBox {
     }
 
     pub fn quantized_octahedral_coords_to_unit_vector(&self, s: i32, t: i32) -> [f32; 3] {
-        let s_val = s as f32 * self.dequantization_scale - 1.0;
-        let t_val = t as f32 * self.dequantization_scale - 1.0;
-        let abs_sum = s_val.abs() + t_val.abs();
+        // Scale s and t to [-1, 1] range
+        let in_s_scaled = s as f32 * self.dequantization_scale - 1.0;
+        let in_t_scaled = t as f32 * self.dequantization_scale - 1.0;
         
-        let mut v = [0.0; 3];
-        v[0] = s_val;
-        v[1] = t_val;
-        v[2] = 1.0 - abs_sum;
-
-        if v[2] < 0.0 {
-            let sign_s = if v[0] >= 0.0 { 1.0 } else { -1.0 };
-            let sign_t = if v[1] >= 0.0 { 1.0 } else { -1.0 };
-            v[0] = (1.0 - v[1].abs()) * sign_s;
-            v[1] = (1.0 - v[0].abs()) * sign_t;
+        // In the octahedral encoding:
+        //   s corresponds to y component
+        //   t corresponds to z component
+        //   x is computed from the octahedron constraint
+        let mut y = in_s_scaled;
+        let mut z = in_t_scaled;
+        
+        // Compute x from the octahedron surface constraint
+        let x = 1.0 - y.abs() - z.abs();
+        
+        // For points on the left hemisphere (x < 0), we need to unwrap them
+        // by mirroring along the diagonal edges of the diamond
+        if x < 0.0 {
+            let x_offset = -x;
+            y += if y < 0.0 { x_offset } else { -x_offset };
+            z += if z < 0.0 { x_offset } else { -x_offset };
         }
         
-        // Normalize
-        let len_sq = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
-        if len_sq > 1e-6 {
-            let len = len_sq.sqrt();
-            v[0] /= len;
-            v[1] /= len;
-            v[2] /= len;
+        // Normalize the vector
+        let norm_squared = x * x + y * y + z * z;
+        if norm_squared < 1e-6 {
+            [0.0, 0.0, 0.0]
+        } else {
+            let d = 1.0 / norm_squared.sqrt();
+            [x * d, y * d, z * d]
         }
-        // v[0] corresponds to s (y), v[1] corresponds to t (z), v[2] corresponds to x.
-        // We need to return [x, y, z].
-        [v[2], v[0], v[1]]
     }
 }

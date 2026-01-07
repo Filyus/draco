@@ -142,6 +142,10 @@ where
     fn get_transform_type(&self) -> PredictionSchemeTransformType {
         self.transform.get_type()
     }
+    
+    fn are_corrections_positive(&self) -> bool {
+        self.transform.are_corrections_positive()
+    }
 }
 
 impl<DataType, CorrType, Transform> PredictionSchemeEncoder<DataType, CorrType>
@@ -237,6 +241,10 @@ where
 
     fn get_transform_type(&self) -> PredictionSchemeTransformType {
         self.transform.get_type()
+    }
+    
+    fn are_corrections_positive(&self) -> bool {
+        self.transform.are_corrections_positive()
     }
 }
 

@@ -405,26 +405,35 @@ impl SequentialIntegerAttributeDecoder {
         };
 
         let mut symbols = vec![0u32; num_values];
+        
+        // Check if the prediction scheme produces positive corrections (no ZigZag needed)
+        // Octahedron transforms (for normals) produce positive corrections
+        let are_corrections_positive = match selected_transform {
+            Some(PredictionSchemeTransformType::NormalOctahedron) |
+            Some(PredictionSchemeTransformType::NormalOctahedronCanonicalized) => true,
+            _ => {
+                // Fallback: check self.prediction_scheme if it's set
+                if let Some(ref scheme) = self.prediction_scheme {
+                    scheme.are_corrections_positive()
+                } else {
+                    false
+                }
+            }
+        };
+        
         let needs_zigzag_conversion;
         if compressed > 0 {
-            needs_zigzag_conversion = true; // Entropy-coded symbols are always zigzag encoded
+            // Entropy-coded symbols are zigzag encoded UNLESS the prediction scheme
+            // guarantees positive corrections (e.g., normal octahedron transform)
+            needs_zigzag_conversion = !are_corrections_positive;
             let options = SymbolEncodingOptions::default();
             if !decode_symbols(num_values, num_components, &options, in_buffer, &mut symbols) {
                 return false;
             }
         } else {
             // Raw uncompressed integers. Read directly as bytes.
-            // C++ ConvertSymbolsToSignedInts is only called if prediction scheme
-            // doesn't guarantee positive corrections. Most schemes don't, so we
-            // need to convert unless the scheme explicitly says corrections are positive.
-            needs_zigzag_conversion = if self.prediction_scheme.is_some() {
-                // For now, assume all prediction schemes need conversion (AreCorrectionsPositive = false)
-                // TODO: add AreCorrectionsPositive() method to trait
-                true
-            } else {
-                // No prediction scheme means we convert
-                true
-            };
+            // ZigZag conversion is needed unless the scheme guarantees positive corrections.
+            needs_zigzag_conversion = !are_corrections_positive;
             
             let num_bytes = match in_buffer.decode_u8() {
                 Ok(v) => v as usize,

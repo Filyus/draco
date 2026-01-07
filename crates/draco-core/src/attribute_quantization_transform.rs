@@ -116,8 +116,10 @@ impl AttributeQuantizationTransform {
         let dst_buffer = target_attribute.buffer_mut();
 
         for i in 0..num_points {
-            let src_idx = if point_ids.is_empty() { i } else { point_ids[i].0 as usize };
-            let src_offset = src_idx * src_stride;
+            // Use mapped_index to get the correct AttributeValueIndex, matching C++ behavior
+            let point_idx = if point_ids.is_empty() { PointIndex(i as u32) } else { point_ids[i] };
+            let att_val_idx = attribute.mapped_index(point_idx);
+            let src_offset = att_val_idx.0 as usize * src_stride;
             let dst_offset = i * dst_stride;
 
             for c in 0..num_components as usize {
