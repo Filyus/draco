@@ -69,6 +69,10 @@ crates/**/*.drc
 *.drc.ply
 *.drc.obj
 
+# Test-generated input/output files
+crates/draco-io/input/scene.*
+crates/draco-io/output/scene_roundtrip.*
+
 # Python bytecode (keep .py source files tracked)
 __pycache__/
 *.pyc
