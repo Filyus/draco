@@ -34,9 +34,11 @@ fn compute_parallelogram_prediction<DataType: ParallelogramDataType>(
         return false;
     }
 
+    // Get entries from the OPPOSITE corner (oci), not the current corner (ci)
+    // This matches C++ GetParallelogramEntries which is called with oci
     let vert_opp = vertex_to_data_map[table.vertex(oci).0 as usize];
-    let vert_next = vertex_to_data_map[table.vertex(table.next(ci)).0 as usize];
-    let vert_prev = vertex_to_data_map[table.vertex(table.previous(ci)).0 as usize];
+    let vert_next = vertex_to_data_map[table.vertex(table.next(oci)).0 as usize];
+    let vert_prev = vertex_to_data_map[table.vertex(table.previous(oci)).0 as usize];
 
     if vert_opp >= 0 && vert_next >= 0 && vert_prev >= 0 && vert_opp < data_entry_id && vert_next < data_entry_id && vert_prev < data_entry_id {
         let v_opp_off = (vert_opp as usize) * num_components;

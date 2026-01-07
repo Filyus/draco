@@ -97,4 +97,9 @@ impl PredictionSchemeDecodingTransform<i32, i32> for PredictionSchemeNormalOctah
     fn get_type(&self) -> PredictionSchemeTransformType {
         PredictionSchemeTransformType::NormalOctahedronCanonicalized
     }
+    
+    fn are_corrections_positive(&self) -> bool {
+        // Corrections from octahedron transforms are always in [0, max_quantized_value]
+        true
+    }
 }

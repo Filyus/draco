@@ -681,10 +681,23 @@ impl SequentialIntegerAttributeEncoder {
             out_buffer.encode_u8(selected_transform_type as u8);
         }
 
-        // 5. Convert corrections to symbols (ZigZag)
-        let symbols: Vec<u32> = corrections.iter().map(|&c| {
-            ((c << 1) ^ (c >> 31)) as u32
-        }).collect();
+        // 5. Convert corrections to symbols (ZigZag) if needed
+        // For normal octahedron encoding, corrections are already positive, so skip ZigZag
+        let are_corrections_positive = if let Some(ref scheme) = self.prediction_scheme {
+            scheme.are_corrections_positive()
+        } else {
+            false
+        };
+        
+        let symbols: Vec<u32> = if are_corrections_positive {
+            // Corrections are already unsigned - just cast
+            corrections.iter().map(|&c| c as u32).collect()
+        } else {
+            // Apply ZigZag encoding
+            corrections.iter().map(|&c| {
+                ((c << 1) ^ (c >> 31)) as u32
+            }).collect()
+        };
         
         // 6. Encode symbols
         // Write compression level/type (1 = compressed with symbols)

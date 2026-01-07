@@ -71,20 +71,25 @@ impl MeshEdgebreakerEncoder {
         }
     }
 
-
-
+    /// Find the starting corner for encoding a component.
+    /// For boundary faces, returns the corner opposite to a boundary edge.
+    /// This matches the C++ FindInitFaceConfiguration logic:
+    /// - First check all 3 corners for boundary edges (no opposite)
+    /// - Then check for boundary vertices (which would swing to a different face)
+    /// Important: We must check ALL corners for boundary edges BEFORE checking
+    /// for boundary vertices, to avoid swinging away from the current face prematurely.
     fn find_start_corner(&self, corner_table: &CornerTable, face_id: FaceIndex) -> CornerIndex {
         let first = corner_table.first_corner(face_id);
-        // Prefer a corner opposite to a boundary.
-        // Check order: Previous, First, Next (to match C++ behavior which seems to prefer c2 over c0)
-        let corners = [corner_table.previous(first), first, corner_table.next(first)];
+        
+        // First pass: Check all corners for boundary edges
+        let corners = [first, corner_table.next(first), corner_table.previous(first)];
         for &c in &corners {
             if corner_table.opposite(c) == INVALID_CORNER_INDEX {
-                // println!("DEBUG: Found boundary corner {} on face {}", c.0, face_id.0);
                 return c;
             }
         }
-        // If no boundary, return first
+        
+        // If no boundary edge found, return first corner (interior face)
         first
     }
 

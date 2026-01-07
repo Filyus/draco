@@ -68,6 +68,14 @@ pub trait PredictionScheme {
     fn get_parent_attribute_type(&self, i: i32) -> GeometryAttributeType;
     fn set_parent_attribute(&mut self, att: &PointAttribute) -> bool;
     fn get_transform_type(&self) -> PredictionSchemeTransformType;
+    
+    /// Returns true if the correction values are always positive (non-negative).
+    /// This is used to determine whether to apply ZigZag encoding to corrections.
+    /// For normal octahedron transforms, corrections are already in [0, max_value],
+    /// so no ZigZag encoding is needed.
+    fn are_corrections_positive(&self) -> bool {
+        false
+    }
 }
 
 pub trait PredictionSchemeEncodingTransform<DataType, CorrType> {
@@ -80,6 +88,11 @@ pub trait PredictionSchemeEncodingTransform<DataType, CorrType> {
     );
     fn encode_transform_data(&mut self, buffer: &mut Vec<u8>) -> bool;
     fn get_type(&self) -> PredictionSchemeTransformType;
+    
+    /// Returns true if the corrections produced by this transform are always positive.
+    fn are_corrections_positive(&self) -> bool {
+        false
+    }
 }
 
 pub trait PredictionSchemeDecodingTransform<DataType, CorrType> {
@@ -92,6 +105,11 @@ pub trait PredictionSchemeDecodingTransform<DataType, CorrType> {
     );
     fn decode_transform_data(&mut self, buffer: &mut crate::decoder_buffer::DecoderBuffer) -> bool;
     fn get_type(&self) -> PredictionSchemeTransformType;
+    
+    /// Returns true if the corrections are always positive (no ZigZag encoding needed).
+    fn are_corrections_positive(&self) -> bool {
+        false
+    }
 }
 
 pub trait PredictionSchemeEncoder<DataType, CorrType>: PredictionScheme {
