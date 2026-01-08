@@ -189,7 +189,13 @@ fn test_decode_cpp_encoded_bunny() {
 #[test]
 fn test_glb_mesh_topology() {
     // Analyze the GLB mesh topology
-    let glb_path = Path::new("C:\\Projects\\Draco\\crates\\testdata\\IridescenceLamp.glb");
+    let glb_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("testdata")
+        .join("IridescenceLamp.glb");
     
     if !glb_path.exists() {
         println!("Skipping test - IridescenceLamp.glb not found at {:?}", glb_path);
