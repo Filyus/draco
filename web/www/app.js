@@ -56,14 +56,14 @@ async function init() {
 // Load all WASM modules
 async function loadAllModules() {
     const moduleConfigs = [
-        { key: 'objReader', path: './pkg/obj_reader_wasm.js', statusId: 'obj-reader-status' },
-        { key: 'objWriter', path: './pkg/obj_writer_wasm.js', statusId: 'obj-writer-status' },
-        { key: 'plyReader', path: './pkg/ply_reader_wasm.js', statusId: 'ply-reader-status' },
-        { key: 'plyWriter', path: './pkg/ply_writer_wasm.js', statusId: 'ply-writer-status' },
-        { key: 'gltfReader', path: './pkg/gltf_reader_wasm.js', statusId: 'gltf-reader-status' },
-        { key: 'gltfWriter', path: './pkg/gltf_writer_wasm.js', statusId: 'gltf-writer-status' },
-        { key: 'fbxReader', path: './pkg/fbx_reader_wasm.js', statusId: 'fbx-reader-status' },
-        { key: 'fbxWriter', path: './pkg/fbx_writer_wasm.js', statusId: 'fbx-writer-status' },
+        { key: 'objReader', path: './pkg/obj_reader.js', statusId: 'obj-reader-status' },
+        { key: 'objWriter', path: './pkg/obj_writer.js', statusId: 'obj-writer-status' },
+        { key: 'plyReader', path: './pkg/ply_reader.js', statusId: 'ply-reader-status' },
+        { key: 'plyWriter', path: './pkg/ply_writer.js', statusId: 'ply-writer-status' },
+        { key: 'gltfReader', path: './pkg/gltf_reader.js', statusId: 'gltf-reader-status' },
+        { key: 'gltfWriter', path: './pkg/gltf_writer.js', statusId: 'gltf-writer-status' },
+        { key: 'fbxReader', path: './pkg/fbx_reader.js', statusId: 'fbx-reader-status' },
+        { key: 'fbxWriter', path: './pkg/fbx_writer.js', statusId: 'fbx-writer-status' },
     ];
 
     const loadPromises = moduleConfigs.map(config => loadModule(config));
