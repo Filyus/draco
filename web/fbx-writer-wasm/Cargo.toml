@@ -12,9 +12,5 @@ js-sys = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
-draco-core = { workspace = true }
-draco-io = { workspace = true }
-
-[profile.release]
-opt-level = "s"
-lto = true
+draco-core = { path = "../../crates/draco-core", default-features = false, features = ["encoder"] }
+draco-io = { path = "../../crates/draco-io", default-features = false, features = ["encoder"] }
