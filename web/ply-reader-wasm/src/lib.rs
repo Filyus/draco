@@ -86,6 +86,7 @@ pub fn parse_ply_bytes(data: &[u8]) -> JsValue {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct PlyProperty {
     name: String,
     data_type: String,

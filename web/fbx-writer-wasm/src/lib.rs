@@ -236,6 +236,7 @@ fn write_node_with_children<W: Write + Seek>(
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 enum FbxProp {
     I64(i64),
     F64(f64),
