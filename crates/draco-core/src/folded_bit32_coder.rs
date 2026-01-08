@@ -1,13 +1,19 @@
+#[cfg(feature = "encoder")]
 use crate::encoder_buffer::EncoderBuffer;
+#[cfg(feature = "decoder")]
 use crate::decoder_buffer::DecoderBuffer;
+#[cfg(feature = "decoder")]
 use crate::rans_bit_decoder::RAnsBitDecoder;
+#[cfg(feature = "encoder")]
 use crate::rans_bit_encoder::RAnsBitEncoder;
 
+#[cfg(feature = "encoder")]
 pub struct FoldedBit32Encoder {
     folded_number_encoders: Vec<RAnsBitEncoder>,
     bit_encoder: RAnsBitEncoder,
 }
 
+#[cfg(feature = "encoder")]
 impl Default for FoldedBit32Encoder {
     fn default() -> Self {
         Self {
@@ -17,6 +23,7 @@ impl Default for FoldedBit32Encoder {
     }
 }
 
+#[cfg(feature = "encoder")]
 impl FoldedBit32Encoder {
     pub fn new() -> Self {
         Self::default()
@@ -51,11 +58,13 @@ impl FoldedBit32Encoder {
     }
 }
 
+#[cfg(feature = "decoder")]
 pub struct FoldedBit32Decoder<'a> {
     folded_number_decoders: Vec<RAnsBitDecoder<'a>>,
     bit_decoder: RAnsBitDecoder<'a>,
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> Default for FoldedBit32Decoder<'a> {
     fn default() -> Self {
         Self {
@@ -65,6 +74,7 @@ impl<'a> Default for FoldedBit32Decoder<'a> {
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> FoldedBit32Decoder<'a> {
     pub fn new() -> Self {
         Self::default()

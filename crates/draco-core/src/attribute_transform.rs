@@ -1,5 +1,7 @@
 use crate::attribute_transform_data::AttributeTransformData;
+#[cfg(feature = "decoder")]
 use crate::decoder_buffer::DecoderBuffer;
+#[cfg(feature = "encoder")]
 use crate::encoder_buffer::EncoderBuffer;
 use crate::geometry_attribute::PointAttribute;
 use crate::geometry_indices::PointIndex;
@@ -45,8 +47,10 @@ pub trait AttributeTransform {
         target_attribute: &mut PointAttribute,
     ) -> bool;
 
+    #[cfg(feature = "encoder")]
     fn encode_parameters(&self, encoder_buffer: &mut EncoderBuffer) -> bool;
 
+    #[cfg(feature = "decoder")]
     fn decode_parameters(
         &mut self,
         attribute: &PointAttribute,

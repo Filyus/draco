@@ -1,13 +1,15 @@
 use crate::corner_table::CornerTable;
-use crate::geometry_indices::{CornerIndex, INVALID_CORNER_INDEX};
 use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
+use crate::geometry_indices::{CornerIndex, INVALID_CORNER_INDEX};
 use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
-use crate::prediction_scheme::{
-    PredictionScheme, PredictionSchemeDecoder, PredictionSchemeDecodingTransform,
-    PredictionSchemeEncoder, PredictionSchemeEncodingTransform, PredictionSchemeMethod,
-    PredictionSchemeTransformType,
-};
+use crate::prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
 use std::marker::PhantomData;
+
+#[cfg(feature = "decoder")]
+use crate::prediction_scheme::{PredictionSchemeDecoder, PredictionSchemeDecodingTransform};
+
+#[cfg(feature = "encoder")]
+use crate::prediction_scheme::{PredictionSchemeEncoder, PredictionSchemeEncodingTransform};
 
 pub trait ParallelogramDataType: Copy + Default + 'static {
     fn compute_parallelogram_prediction(next: Self, prev: Self, opp: Self) -> Self;
@@ -57,10 +59,12 @@ fn compute_parallelogram_prediction<DataType: ParallelogramDataType>(
     false
 }
 
+#[cfg(feature = "encoder")]
 pub struct PredictionSchemeParallelogramEncodingTransform<DataType, CorrType> {
     _marker: PhantomData<(DataType, CorrType)>,
 }
 
+#[cfg(feature = "encoder")]
 impl<DataType, CorrType> PredictionSchemeParallelogramEncodingTransform<DataType, CorrType> {
     pub fn new() -> Self {
         Self {
@@ -69,6 +73,7 @@ impl<DataType, CorrType> PredictionSchemeParallelogramEncodingTransform<DataType
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<DataType, CorrType> PredictionSchemeEncodingTransform<DataType, CorrType>
     for PredictionSchemeParallelogramEncodingTransform<DataType, CorrType>
 where
@@ -108,10 +113,12 @@ where
     }
 }
 
+#[cfg(feature = "decoder")]
 pub struct PredictionSchemeParallelogramDecodingTransform<DataType, CorrType> {
     _marker: PhantomData<(DataType, CorrType)>,
 }
 
+#[cfg(feature = "decoder")]
 impl<DataType, CorrType> PredictionSchemeParallelogramDecodingTransform<DataType, CorrType> {
     pub fn new() -> Self {
         Self {
@@ -120,6 +127,7 @@ impl<DataType, CorrType> PredictionSchemeParallelogramDecodingTransform<DataType
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<DataType, CorrType> PredictionSchemeDecodingTransform<DataType, CorrType>
     for PredictionSchemeParallelogramDecodingTransform<DataType, CorrType>
 where
@@ -155,6 +163,7 @@ where
     }
 }
 
+#[cfg(feature = "encoder")]
 pub struct PredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform> {
     #[allow(dead_code)]
     attribute: &'a PointAttribute,
@@ -163,6 +172,7 @@ pub struct PredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transfor
     _marker: PhantomData<(DataType, CorrType)>,
 }
 
+#[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform>
     PredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform>
 {
@@ -180,6 +190,7 @@ impl<'a, DataType, CorrType, Transform>
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform> PredictionScheme
     for PredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
@@ -210,6 +221,7 @@ where
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform> PredictionSchemeEncoder<DataType, CorrType>
     for PredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
@@ -287,6 +299,7 @@ where
     }
 }
 
+#[cfg(feature = "decoder")]
 pub struct PredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform> {
     #[allow(dead_code)]
     attribute: &'a PointAttribute,
@@ -295,6 +308,7 @@ pub struct PredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transfor
     _marker: PhantomData<(DataType, CorrType)>,
 }
 
+#[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform>
     PredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform>
 {
@@ -312,6 +326,7 @@ impl<'a, DataType, CorrType, Transform>
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform> PredictionScheme
     for PredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
@@ -342,6 +357,7 @@ where
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform> PredictionSchemeDecoder<DataType, CorrType>
     for PredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform>
 where

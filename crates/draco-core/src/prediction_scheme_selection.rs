@@ -1,9 +1,15 @@
-use crate::encoder_options::EncoderOptions;
-use crate::point_cloud_encoder::GeometryEncoder;
-use crate::prediction_scheme::PredictionSchemeMethod;
-use crate::geometry_attribute::GeometryAttributeType;
+#[cfg(feature = "encoder")]
 use crate::compression_config::EncodedGeometryType;
+#[cfg(feature = "encoder")]
+use crate::encoder_options::EncoderOptions;
+#[cfg(feature = "encoder")]
+use crate::geometry_attribute::GeometryAttributeType;
+#[cfg(feature = "encoder")]
+use crate::point_cloud_encoder::GeometryEncoder;
+#[cfg(feature = "encoder")]
+use crate::prediction_scheme::PredictionSchemeMethod;
 
+#[cfg(feature = "encoder")]
 pub fn select_prediction_method(
     att_id: i32,
     options: &EncoderOptions,

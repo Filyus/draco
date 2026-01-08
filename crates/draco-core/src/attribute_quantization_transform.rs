@@ -1,7 +1,9 @@
 use crate::attribute_transform::{AttributeTransform, AttributeTransformType};
 use crate::attribute_transform_data::AttributeTransformData;
+#[cfg(feature = "decoder")]
 use crate::decoder_buffer::DecoderBuffer;
 use crate::draco_types::DataType;
+#[cfg(feature = "encoder")]
 use crate::encoder_buffer::EncoderBuffer;
 use crate::geometry_attribute::PointAttribute;
 use crate::geometry_indices::PointIndex;
@@ -240,6 +242,7 @@ impl AttributeTransform for AttributeQuantizationTransform {
         true
     }
 
+    #[cfg(feature = "encoder")]
     fn encode_parameters(&self, encoder_buffer: &mut EncoderBuffer) -> bool {
         for &val in &self.min_values {
             encoder_buffer.encode(val);
@@ -249,6 +252,7 @@ impl AttributeTransform for AttributeQuantizationTransform {
         true
     }
 
+    #[cfg(feature = "decoder")]
     fn decode_parameters(
         &mut self,
         attribute: &PointAttribute,

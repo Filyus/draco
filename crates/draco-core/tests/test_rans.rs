@@ -59,7 +59,7 @@ fn test_rans_symbol_single_symbol_consumes_probability_byte() {
     let mut dec_buffer = DecoderBuffer::new(data);
     dec_buffer.set_version(2, 2); // v2.2
     
-    let mut decoder: RAnsSymbolDecoder<12> = RAnsSymbolDecoder::new();
+    let mut decoder = RAnsSymbolDecoder::new(12);
     assert!(decoder.create(&mut dec_buffer), "Failed to create decoder");
     assert!(decoder.start_decoding(&mut dec_buffer), "Failed to start decoding");
     
@@ -93,7 +93,7 @@ fn test_rans_symbol_zero_symbols() {
     let mut dec_buffer = DecoderBuffer::new(data);
     dec_buffer.set_version(2, 2);
     
-    let mut decoder: RAnsSymbolDecoder<12> = RAnsSymbolDecoder::new();
+    let mut decoder = RAnsSymbolDecoder::new(12);
     assert!(decoder.create(&mut dec_buffer), "Failed to create decoder for 0 symbols");
     assert!(decoder.start_decoding(&mut dec_buffer), "Failed to start decoding for 0 symbols");
     
@@ -130,7 +130,7 @@ fn test_rans_symbol_malformed_probability_table_rejected() {
     let mut dec_buffer = DecoderBuffer::new(&malformed_data);
     dec_buffer.set_version(2, 2);
     
-    let mut decoder: RAnsSymbolDecoder<12> = RAnsSymbolDecoder::new();
+    let mut decoder = RAnsSymbolDecoder::new(12);
     // This should fail because probabilities sum to 6000 > 4096
     assert!(!decoder.create(&mut dec_buffer), "Should reject probability table where sum exceeds precision");
 }
@@ -161,7 +161,7 @@ fn test_rans_symbol_pre_v2_backward_compat() {
     let mut dec_buffer = DecoderBuffer::new(data);
     dec_buffer.set_version(1, 9); // Pre-v2.0
     
-    let mut decoder: RAnsSymbolDecoder<12> = RAnsSymbolDecoder::new();
+    let mut decoder = RAnsSymbolDecoder::new(12);
     assert!(decoder.create(&mut dec_buffer), "Failed to create decoder for pre-v2.0");
     assert!(decoder.start_decoding(&mut dec_buffer), "Failed to start decoding for pre-v2.0");
     

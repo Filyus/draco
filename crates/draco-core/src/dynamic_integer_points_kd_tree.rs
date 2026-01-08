@@ -1,9 +1,18 @@
+#[cfg(feature = "decoder")]
 use crate::direct_bit_decoder::DirectBitDecoder;
+#[cfg(feature = "encoder")]
 use crate::direct_bit_encoder::DirectBitEncoder;
+#[cfg(feature = "decoder")]
 use crate::decoder_buffer::DecoderBuffer;
+#[cfg(feature = "encoder")]
 use crate::encoder_buffer::EncoderBuffer;
-use crate::folded_bit32_coder::{FoldedBit32Decoder, FoldedBit32Encoder};
+#[cfg(feature = "decoder")]
+use crate::folded_bit32_coder::FoldedBit32Decoder;
+#[cfg(feature = "encoder")]
+use crate::folded_bit32_coder::FoldedBit32Encoder;
+#[cfg(feature = "decoder")]
 use crate::rans_bit_decoder::RAnsBitDecoder;
+#[cfg(feature = "encoder")]
 use crate::rans_bit_encoder::RAnsBitEncoder;
 
 fn most_significant_bit(value: u32) -> u32 {
@@ -85,12 +94,14 @@ impl PointDVector {
     }
 }
 
+#[cfg(feature = "encoder")]
 enum NumbersEncoder {
     Direct(DirectBitEncoder),
     RAns(RAnsBitEncoder),
     Folded(FoldedBit32Encoder),
 }
 
+#[cfg(feature = "encoder")]
 impl NumbersEncoder {
     fn start_encoding(&mut self) {
         match self {
@@ -117,6 +128,7 @@ impl NumbersEncoder {
     }
 }
 
+#[cfg(feature = "encoder")]
 pub struct DynamicIntegerPointsKdTreeEncoder {
     compression_level: u8,
     bit_length: u32,
@@ -132,6 +144,7 @@ pub struct DynamicIntegerPointsKdTreeEncoder {
     half_encoder: DirectBitEncoder,
 }
 
+#[cfg(feature = "encoder")]
 impl DynamicIntegerPointsKdTreeEncoder {
     pub fn new(compression_level: u8, dimension: u32) -> Self {
         assert!(compression_level <= 6);
@@ -335,12 +348,14 @@ impl DynamicIntegerPointsKdTreeEncoder {
     }
 }
 
+#[cfg(feature = "decoder")]
 enum NumbersDecoder<'a> {
     Direct(DirectBitDecoder),
     RAns(RAnsBitDecoder<'a>),
     Folded(FoldedBit32Decoder<'a>),
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> NumbersDecoder<'a> {
     fn start_decoding(&mut self, buffer: &mut DecoderBuffer<'a>) -> bool {
         match self {
@@ -373,6 +388,7 @@ impl<'a> NumbersDecoder<'a> {
     }
 }
 
+#[cfg(feature = "decoder")]
 pub struct DynamicIntegerPointsKdTreeDecoder<'a> {
     compression_level: u8,
     bit_length: u32,
@@ -389,6 +405,7 @@ pub struct DynamicIntegerPointsKdTreeDecoder<'a> {
     half_decoder: DirectBitDecoder,
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
     pub fn new(compression_level: u8, dimension: u32) -> Self {
         assert!(compression_level <= 6);

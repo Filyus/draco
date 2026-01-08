@@ -1,12 +1,14 @@
 use crate::attribute_transform::{AttributeTransform, AttributeTransformType};
 use crate::attribute_transform_data::AttributeTransformData;
-use crate::decoder_buffer::DecoderBuffer;
 use crate::draco_types::DataType;
-use crate::encoder_buffer::EncoderBuffer;
 use crate::geometry_attribute::PointAttribute;
 use crate::geometry_indices::PointIndex;
 use crate::normal_compression_utils::OctahedronToolBox;
 use crate::status::{DracoError, Status};
+#[cfg(feature = "decoder")]
+use crate::decoder_buffer::DecoderBuffer;
+#[cfg(feature = "encoder")]
+use crate::encoder_buffer::EncoderBuffer;
 
 pub struct AttributeOctahedronTransform {
     quantization_bits: i32,
@@ -173,6 +175,7 @@ impl AttributeTransform for AttributeOctahedronTransform {
         true
     }
 
+    #[cfg(feature = "encoder")]
     fn encode_parameters(&self, encoder_buffer: &mut EncoderBuffer) -> bool {
         if self.is_initialized() {
             encoder_buffer.encode(self.quantization_bits as u8);
@@ -182,6 +185,7 @@ impl AttributeTransform for AttributeOctahedronTransform {
         }
     }
 
+    #[cfg(feature = "decoder")]
     fn decode_parameters(
         &mut self,
         _attribute: &PointAttribute,

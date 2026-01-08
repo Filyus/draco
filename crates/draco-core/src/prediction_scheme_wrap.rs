@@ -1,6 +1,15 @@
-use crate::prediction_scheme::{PredictionSchemeEncodingTransform, PredictionSchemeTransformType};
+use crate::prediction_scheme::PredictionSchemeTransformType;
 use std::marker::PhantomData;
 
+#[cfg(feature = "decoder")]
+use crate::decoder_buffer::DecoderBuffer;
+#[cfg(feature = "decoder")]
+use crate::prediction_scheme::PredictionSchemeDecodingTransform;
+
+#[cfg(feature = "encoder")]
+use crate::prediction_scheme::PredictionSchemeEncodingTransform;
+
+#[cfg(feature = "encoder")]
 pub struct PredictionSchemeWrapEncodingTransform<DataType> {
     num_components: usize,
     min_value: DataType,
@@ -11,6 +20,7 @@ pub struct PredictionSchemeWrapEncodingTransform<DataType> {
     _marker: PhantomData<DataType>,
 }
 
+#[cfg(feature = "encoder")]
 impl<DataType> PredictionSchemeWrapEncodingTransform<DataType> 
 where DataType: Copy + Ord + Default
 {
@@ -27,6 +37,7 @@ where DataType: Copy + Ord + Default
     }
 }
 
+#[cfg(feature = "encoder")]
 impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeWrapEncodingTransform<i32> {
     fn get_type(&self) -> PredictionSchemeTransformType {
         PredictionSchemeTransformType::Wrap
@@ -95,9 +106,7 @@ impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeWrapEncodin
     }
 }
 
-use crate::prediction_scheme::PredictionSchemeDecodingTransform;
-use crate::decoder_buffer::DecoderBuffer;
-
+#[cfg(feature = "decoder")]
 pub struct PredictionSchemeWrapDecodingTransform<DataType> {
     num_components: usize,
     min_value: DataType,
@@ -106,6 +115,7 @@ pub struct PredictionSchemeWrapDecodingTransform<DataType> {
     _marker: PhantomData<DataType>,
 }
 
+#[cfg(feature = "decoder")]
 impl<DataType> PredictionSchemeWrapDecodingTransform<DataType> 
 where DataType: Copy + Default
 {
@@ -120,6 +130,7 @@ where DataType: Copy + Default
     }
 }
 
+#[cfg(feature = "decoder")]
 impl PredictionSchemeDecodingTransform<i32, i32> for PredictionSchemeWrapDecodingTransform<i32> {
     fn get_type(&self) -> PredictionSchemeTransformType {
         PredictionSchemeTransformType::Wrap
