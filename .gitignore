@@ -60,10 +60,9 @@ web/www/pkg/
 /parse_drc*.py
 /torus.obj.py
 
-# Generated .drc files (keep testdata/ and javascript/ tracked)
+# Generated .drc files (keep testdata/ tracked)
 /*.drc
 crates/**/*.drc
-!crates/testdata/*.drc
 
 # Generated decoded mesh files
 *.drc.ply
