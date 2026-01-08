@@ -3,9 +3,10 @@
 //! This module provides functions for encoding and decoding symbols using
 //! tagged and raw schemes with rANS entropy coding.
 
-use crate::rans_symbol_coding::{
-    approximate_rans_frequency_table_bits, compute_rans_precision_from_unique_symbols_bit_length,
-};
+use crate::rans_symbol_coding::compute_rans_precision_from_unique_symbols_bit_length;
+
+#[cfg(feature = "encoder")]
+use crate::rans_symbol_coding::approximate_rans_frequency_table_bits;
 
 #[cfg(feature = "decoder")]
 use crate::decoder_buffer::DecoderBuffer;

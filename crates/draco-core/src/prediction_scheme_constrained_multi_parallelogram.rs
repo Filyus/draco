@@ -88,23 +88,27 @@ where
     }
 }
 
+#[cfg(feature = "encoder")]
 struct Error {
     num_bits: i64,
     residual_error: i64,
 }
 
+#[cfg(feature = "encoder")]
 impl Error {
     fn new() -> Self {
         Self { num_bits: 0, residual_error: 0 }
     }
 }
 
+#[cfg(feature = "encoder")]
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
         self.num_bits == other.num_bits && self.residual_error == other.residual_error
     }
 }
 
+#[cfg(feature = "encoder")]
 impl PartialOrd for Error {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match self.num_bits.partial_cmp(&other.num_bits) {
