@@ -2,23 +2,34 @@ use crate::ans::AnsDecoder;
 use crate::decoder_buffer::DecoderBuffer;
 use crate::rans_symbol_coding::RAnsSymbol;
 
-pub struct RAnsSymbolDecoder<'a, const RANS_PRECISION_BITS: u32> {
+/// RAnsSymbolDecoder with runtime precision to avoid monomorphization bloat.
+/// Instead of const generics, we store the precision bits at runtime.
+/// Performance is preserved by storing `rans_precision_bits` and using bit 
+/// operations (shift/mask) instead of division/modulo.
+pub struct RAnsSymbolDecoder<'a> {
     pub ans: AnsDecoder<'a>,
     probability_table: Vec<RAnsSymbol>,
     lut: Vec<u32>,
     num_symbols: usize,
+    rans_precision_bits: u32,  // Store bits for shift operations
+    rans_precision_mask: u32,  // (1 << bits) - 1 for fast modulo
+    rans_precision: u32,
+    l_rans_base: u32,
 }
 
-impl<'a, const RANS_PRECISION_BITS: u32> RAnsSymbolDecoder<'a, RANS_PRECISION_BITS> {
-    const RANS_PRECISION: u32 = 1 << RANS_PRECISION_BITS;
-    const L_RANS_BASE: u32 = Self::RANS_PRECISION * 4;
-
-    pub fn new() -> Self {
+impl<'a> RAnsSymbolDecoder<'a> {
+    pub fn new(rans_precision_bits: u32) -> Self {
+        let rans_precision = 1u32 << rans_precision_bits;
+        let l_rans_base = rans_precision * 4;
         Self {
             ans: AnsDecoder::new(&[]),
             probability_table: Vec::new(),
             lut: Vec::new(),
             num_symbols: 0,
+            rans_precision_bits,
+            rans_precision_mask: rans_precision - 1,
+            rans_precision,
+            l_rans_base,
         }
     }
 
@@ -88,14 +99,14 @@ impl<'a, const RANS_PRECISION_BITS: u32> RAnsSymbolDecoder<'a, RANS_PRECISION_BI
         }
         
         // Compute cumulative probabilities and LUT
-        self.lut.resize(Self::RANS_PRECISION as usize, 0);
+        self.lut.resize(self.rans_precision as usize, 0);
         let mut cum_prob: u32 = 0;
         for i in 0..num_symbols {
             let prob = self.probability_table[i].prob;
             self.probability_table[i].cum_prob = cum_prob;
             // Bounds check: ensure we don't write past the LUT
             let end_idx = cum_prob.saturating_add(prob);
-            if end_idx > Self::RANS_PRECISION {
+            if end_idx > self.rans_precision {
                 // Malformed probability table - probabilities exceed precision
                 return false;
             }
@@ -105,7 +116,7 @@ impl<'a, const RANS_PRECISION_BITS: u32> RAnsSymbolDecoder<'a, RANS_PRECISION_BI
             cum_prob = end_idx;
         }
         
-        if cum_prob != Self::RANS_PRECISION {
+        if cum_prob != self.rans_precision {
             return false;
         }
         true
@@ -133,7 +144,7 @@ impl<'a, const RANS_PRECISION_BITS: u32> RAnsSymbolDecoder<'a, RANS_PRECISION_BI
         
         let rans_data = &data[..bytes_to_read];
         self.ans = AnsDecoder::new(rans_data);
-        if !self.ans.read_init(Self::L_RANS_BASE) {
+        if !self.ans.read_init(self.l_rans_base) {
             return false;
         }
         
@@ -141,15 +152,17 @@ impl<'a, const RANS_PRECISION_BITS: u32> RAnsSymbolDecoder<'a, RANS_PRECISION_BI
         true
     }
 
+    #[inline]
     pub fn decode_symbol(&mut self) -> u32 {
         if self.num_symbols <= 1 {
             return 0;
         }
         // Match Draco C++ (ans.h) rans_read(): normalize first, then use
-        // division/modulo by rans_precision (power of two).
+        // bit operations for division/modulo by rans_precision (power of two).
+        // Using shift/mask is equivalent to div/mod but much faster.
         self.ans.read_normalize();
-        let quo = self.ans.state / Self::RANS_PRECISION;
-        let rem = self.ans.state % Self::RANS_PRECISION;
+        let quo = self.ans.state >> self.rans_precision_bits;  // Fast division
+        let rem = self.ans.state & self.rans_precision_mask;   // Fast modulo
         let symbol_id = self.lut[rem as usize];
 
         let sym = &self.probability_table[symbol_id as usize];

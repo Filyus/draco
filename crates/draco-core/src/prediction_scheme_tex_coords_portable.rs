@@ -1,16 +1,28 @@
-use crate::prediction_scheme::{PredictionScheme, PredictionSchemeDecoder, PredictionSchemeMethod, PredictionSchemeTransformType, PredictionSchemeEncoder, PredictionSchemeEncodingTransform};
-use crate::prediction_scheme::PredictionSchemeDecodingTransform;
-use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
-use crate::decoder_buffer::DecoderBuffer;
-use crate::encoder_buffer::EncoderBuffer;
 use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
-use crate::math_utils::int_sqrt;
-use crate::rans_bit_decoder::RAnsBitDecoder;
-use crate::rans_bit_encoder::RAnsBitEncoder;
 use crate::geometry_indices::{CornerIndex, PointIndex};
-use crate::prediction_scheme_wrap::PredictionSchemeWrapDecodingTransform;
-use crate::prediction_scheme_wrap::PredictionSchemeWrapEncodingTransform;
+use crate::math_utils::int_sqrt;
+use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
+use crate::prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
 
+#[cfg(feature = "decoder")]
+use crate::decoder_buffer::DecoderBuffer;
+#[cfg(feature = "decoder")]
+use crate::prediction_scheme::{PredictionSchemeDecoder, PredictionSchemeDecodingTransform};
+#[cfg(feature = "decoder")]
+use crate::prediction_scheme_wrap::PredictionSchemeWrapDecodingTransform;
+#[cfg(feature = "decoder")]
+use crate::rans_bit_decoder::RAnsBitDecoder;
+
+#[cfg(feature = "encoder")]
+use crate::encoder_buffer::EncoderBuffer;
+#[cfg(feature = "encoder")]
+use crate::prediction_scheme::{PredictionSchemeEncoder, PredictionSchemeEncodingTransform};
+#[cfg(feature = "encoder")]
+use crate::prediction_scheme_wrap::PredictionSchemeWrapEncodingTransform;
+#[cfg(feature = "encoder")]
+use crate::rans_bit_encoder::RAnsBitEncoder;
+
+#[cfg(feature = "decoder")]
 pub struct PredictionSchemeTexCoordsPortableDecoder<'a> {
     transform: PredictionSchemeWrapDecodingTransform<i32>,
     mesh_data: Option<MeshPredictionSchemeData<'a>>,
@@ -18,6 +30,7 @@ pub struct PredictionSchemeTexCoordsPortableDecoder<'a> {
     pos_attribute: Option<&'a PointAttribute>,
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> PredictionSchemeTexCoordsPortableDecoder<'a> {
     pub fn new(transform: PredictionSchemeWrapDecodingTransform<i32>) -> Self {
         Self {
@@ -162,6 +175,7 @@ impl<'a> PredictionSchemeTexCoordsPortableDecoder<'a> {
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> PredictionScheme for PredictionSchemeTexCoordsPortableDecoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionTexCoordsPortable
@@ -215,6 +229,7 @@ impl<'a> PredictionScheme for PredictionSchemeTexCoordsPortableDecoder<'a> {
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> PredictionSchemeDecoder<i32, i32> for PredictionSchemeTexCoordsPortableDecoder<'a> {
     fn decode_prediction_data(&mut self, buffer: &mut DecoderBuffer) -> bool {
         let num_orientations: i32 = match buffer.decode::<i32>() {
@@ -384,10 +399,12 @@ fn vec2_div_scalar(a: &[i64; 2], s: i64) -> [i64; 2] {
     [a[0] / s, a[1] / s]
 }
 
+#[cfg(feature = "encoder")]
 pub struct PredictionSchemeTexCoordsPortableEncodingTransform {
     inner: PredictionSchemeWrapEncodingTransform<i32>,
 }
 
+#[cfg(feature = "encoder")]
 impl PredictionSchemeTexCoordsPortableEncodingTransform {
     pub fn new() -> Self {
         Self {
@@ -396,6 +413,7 @@ impl PredictionSchemeTexCoordsPortableEncodingTransform {
     }
 }
 
+#[cfg(feature = "encoder")]
 impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeTexCoordsPortableEncodingTransform {
     fn get_type(&self) -> PredictionSchemeTransformType {
         // In Draco, TexCoordsPortable is a prediction *method*, while the
@@ -422,6 +440,7 @@ impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeTexCoordsPo
     }
 }
 
+#[cfg(feature = "encoder")]
 pub struct PredictionSchemeTexCoordsPortableEncoder<'a> {
     transform: PredictionSchemeTexCoordsPortableEncodingTransform,
     mesh_data: Option<MeshPredictionSchemeData<'a>>,
@@ -429,6 +448,7 @@ pub struct PredictionSchemeTexCoordsPortableEncoder<'a> {
     pos_attribute: Option<&'a PointAttribute>,
 }
 
+#[cfg(feature = "encoder")]
 impl<'a> PredictionSchemeTexCoordsPortableEncoder<'a> {
     pub fn new(transform: PredictionSchemeTexCoordsPortableEncodingTransform) -> Self {
         Self {
@@ -561,6 +581,7 @@ impl<'a> PredictionSchemeTexCoordsPortableEncoder<'a> {
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<'a> PredictionScheme for PredictionSchemeTexCoordsPortableEncoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionTexCoordsPortable
@@ -596,6 +617,7 @@ impl<'a> PredictionScheme for PredictionSchemeTexCoordsPortableEncoder<'a> {
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<'a> PredictionSchemeEncoder<i32, i32> for PredictionSchemeTexCoordsPortableEncoder<'a> {
     fn encode_prediction_data(&mut self, buffer: &mut Vec<u8>) -> bool {
         let mut temp_buffer = EncoderBuffer::new();

@@ -95,6 +95,7 @@ pub trait PredictionSchemeEncodingTransform<DataType, CorrType> {
     }
 }
 
+#[cfg(feature = "decoder")]
 pub trait PredictionSchemeDecodingTransform<DataType, CorrType> {
     fn init(&mut self, num_components: usize);
     fn compute_original_value(
@@ -125,6 +126,7 @@ pub trait PredictionSchemeEncoder<DataType, CorrType>: PredictionScheme {
     fn encode_prediction_data(&mut self, buffer: &mut Vec<u8>) -> bool;
 }
 
+#[cfg(feature = "decoder")]
 pub trait PredictionSchemeDecoder<DataType, CorrType>: PredictionScheme {
     fn compute_original_values(
         &mut self,

@@ -1,17 +1,21 @@
 use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
-use crate::prediction_scheme::{
-    PredictionScheme, PredictionSchemeDecoder, PredictionSchemeDecodingTransform,
-    PredictionSchemeEncoder, PredictionSchemeEncodingTransform, PredictionSchemeMethod,
-    PredictionSchemeTransformType,
-};
+use crate::prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
 use std::marker::PhantomData;
 use std::ops::{Add, Sub};
 
+#[cfg(feature = "decoder")]
+use crate::prediction_scheme::{PredictionSchemeDecoder, PredictionSchemeDecodingTransform};
+
+#[cfg(feature = "encoder")]
+use crate::prediction_scheme::{PredictionSchemeEncoder, PredictionSchemeEncodingTransform};
+
+#[cfg(feature = "encoder")]
 pub struct PredictionSchemeDeltaEncodingTransform<DataType, CorrType> {
     num_components: usize,
     _marker: PhantomData<(DataType, CorrType)>,
 }
 
+#[cfg(feature = "encoder")]
 impl<DataType, CorrType> PredictionSchemeDeltaEncodingTransform<DataType, CorrType> {
     pub fn new() -> Self {
         Self {
@@ -21,6 +25,7 @@ impl<DataType, CorrType> PredictionSchemeDeltaEncodingTransform<DataType, CorrTy
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<DataType, CorrType> PredictionSchemeEncodingTransform<DataType, CorrType>
     for PredictionSchemeDeltaEncodingTransform<DataType, CorrType>
 where
@@ -51,11 +56,13 @@ where
     }
 }
 
+#[cfg(feature = "decoder")]
 pub struct PredictionSchemeDeltaDecodingTransform<DataType, CorrType> {
     num_components: usize,
     _marker: PhantomData<(DataType, CorrType)>,
 }
 
+#[cfg(feature = "decoder")]
 impl<DataType, CorrType> PredictionSchemeDeltaDecodingTransform<DataType, CorrType> {
     pub fn new() -> Self {
         Self {
@@ -65,6 +72,7 @@ impl<DataType, CorrType> PredictionSchemeDeltaDecodingTransform<DataType, CorrTy
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<DataType, CorrType> PredictionSchemeDecodingTransform<DataType, CorrType>
     for PredictionSchemeDeltaDecodingTransform<DataType, CorrType>
 where
@@ -95,11 +103,13 @@ where
     }
 }
 
+#[cfg(feature = "encoder")]
 pub struct PredictionSchemeDeltaEncoder<DataType, CorrType, Transform> {
     transform: Transform,
     _marker: PhantomData<(DataType, CorrType)>,
 }
 
+#[cfg(feature = "encoder")]
 impl<DataType, CorrType, Transform> PredictionSchemeDeltaEncoder<DataType, CorrType, Transform>
 where
     DataType: Copy + Default,
@@ -114,6 +124,7 @@ where
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<DataType, CorrType, Transform> PredictionScheme
     for PredictionSchemeDeltaEncoder<DataType, CorrType, Transform>
 where
@@ -148,6 +159,7 @@ where
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<DataType, CorrType, Transform> PredictionSchemeEncoder<DataType, CorrType>
     for PredictionSchemeDeltaEncoder<DataType, CorrType, Transform>
 where
@@ -195,11 +207,13 @@ where
     }
 }
 
+#[cfg(feature = "decoder")]
 pub struct PredictionSchemeDeltaDecoder<DataType, CorrType, Transform> {
     transform: Transform,
     _marker: PhantomData<(DataType, CorrType)>,
 }
 
+#[cfg(feature = "decoder")]
 impl<DataType, CorrType, Transform> PredictionSchemeDeltaDecoder<DataType, CorrType, Transform>
 where
     DataType: Copy + Default,
@@ -214,6 +228,7 @@ where
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<DataType, CorrType, Transform> PredictionScheme
     for PredictionSchemeDeltaDecoder<DataType, CorrType, Transform>
 where
@@ -248,6 +263,7 @@ where
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<DataType, CorrType, Transform> PredictionSchemeDecoder<DataType, CorrType>
     for PredictionSchemeDeltaDecoder<DataType, CorrType, Transform>
 where

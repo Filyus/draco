@@ -1,9 +1,20 @@
-use crate::decoder_buffer::DecoderBuffer;
-use crate::encoder_buffer::EncoderBuffer;
+//! Symbol encoding/decoding utilities for Draco compression.
+//!
+//! This module provides functions for encoding and decoding symbols using
+//! tagged and raw schemes with rANS entropy coding.
+
 use crate::rans_symbol_coding::{
     approximate_rans_frequency_table_bits, compute_rans_precision_from_unique_symbols_bit_length,
 };
+
+#[cfg(feature = "decoder")]
+use crate::decoder_buffer::DecoderBuffer;
+#[cfg(feature = "decoder")]
 use crate::rans_symbol_decoder::RAnsSymbolDecoder;
+
+#[cfg(feature = "encoder")]
+use crate::encoder_buffer::EncoderBuffer;
+#[cfg(feature = "encoder")]
 use crate::rans_symbol_encoder::RAnsSymbolEncoder;
 
 pub struct SymbolEncodingOptions {
@@ -18,6 +29,11 @@ impl Default for SymbolEncodingOptions {
     }
 }
 
+// ============================================================================
+// Encoder-only functions
+// ============================================================================
+
+#[cfg(feature = "encoder")]
 pub fn encode_symbols(
     symbols: &[u32],
     num_components: usize,
@@ -76,6 +92,7 @@ pub fn encode_symbols(
     }
 }
 
+#[cfg(feature = "encoder")]
 pub fn estimate_bits(symbols: &[u32], num_components: usize) -> u64 {
     if symbols.is_empty() {
         return 0;
@@ -113,6 +130,7 @@ pub fn estimate_bits(symbols: &[u32], num_components: usize) -> u64 {
     std::cmp::min(tagged_bits, raw_bits)
 }
 
+#[cfg(feature = "encoder")]
 fn compute_raw_scheme_bits(symbols: &[u32], max_value: u32) -> u64 {
     // Count frequencies
     let num_unique_symbols = (max_value + 1) as usize;
@@ -149,6 +167,7 @@ fn compute_raw_scheme_bits(symbols: &[u32], max_value: u32) -> u64 {
     (entropy_bits.ceil() as u64) + table_bits
 }
 
+#[cfg(feature = "encoder")]
 fn compute_tagged_scheme_bits(
     _symbols: &[u32],
     num_components: usize,
@@ -195,6 +214,7 @@ fn compute_tagged_scheme_bits(
     value_bits + (tag_entropy_bits.ceil() as u64) + table_bits
 }
 
+#[cfg(feature = "encoder")]
 pub fn encode_raw_symbols(symbols: &[u32], max_value: u32, target_buffer: &mut EncoderBuffer) -> bool {
     // num_values is known by decoder
 
@@ -249,6 +269,7 @@ pub fn encode_raw_symbols(symbols: &[u32], max_value: u32, target_buffer: &mut E
     }
 }
 
+#[cfg(feature = "encoder")]
 fn encode_raw_symbols_internal<const RANS_PRECISION_BITS: u32>(
     symbols: &[u32],
     frequencies: &[u64],
@@ -274,6 +295,7 @@ pub fn encode_raw_symbols_no_scheme(symbols: &[u32], max_value: u32, target_buff
 */
 
 
+#[cfg(feature = "encoder")]
 #[allow(dead_code)]
 fn encode_raw_symbols_typed<const PRECISION_BITS: u32>(
     symbols: &[u32],
@@ -294,6 +316,7 @@ fn encode_raw_symbols_typed<const PRECISION_BITS: u32>(
     true
 }
 
+#[cfg(feature = "encoder")]
 fn encode_tagged_symbols(
     symbols: &[u32],
     num_components: usize,
@@ -343,6 +366,11 @@ fn encode_tagged_symbols(
     true
 }
 
+// ============================================================================
+// Decoder-only functions
+// ============================================================================
+
+#[cfg(feature = "decoder")]
 pub fn decode_symbols(
     num_values: usize,
     num_components: usize,
@@ -368,6 +396,7 @@ pub fn decode_symbols(
     }
 }
 
+#[cfg(feature = "decoder")]
 pub fn decode_raw_symbols(num_values: usize, in_buffer: &mut DecoderBuffer, symbols: &mut [u32]) -> bool {
     // Read serialized symbol-bit-length header (written by encoder)
     let symbols_bit_length = match in_buffer.decode_u8() {
@@ -384,26 +413,8 @@ pub fn decode_raw_symbols(num_values: usize, in_buffer: &mut DecoderBuffer, symb
     let precision_bits =
         compute_rans_precision_from_unique_symbols_bit_length(unique_symbols_bit_length);
 
-    match precision_bits {
-        12 => decode_raw_symbols_typed::<12>(num_values, in_buffer, symbols),
-        13 => decode_raw_symbols_typed::<13>(num_values, in_buffer, symbols),
-        14 => decode_raw_symbols_typed::<14>(num_values, in_buffer, symbols),
-        15 => decode_raw_symbols_typed::<15>(num_values, in_buffer, symbols),
-        16 => decode_raw_symbols_typed::<16>(num_values, in_buffer, symbols),
-        17 => decode_raw_symbols_typed::<17>(num_values, in_buffer, symbols),
-        18 => decode_raw_symbols_typed::<18>(num_values, in_buffer, symbols),
-        19 => decode_raw_symbols_typed::<19>(num_values, in_buffer, symbols),
-        20 => decode_raw_symbols_typed::<20>(num_values, in_buffer, symbols),
-        _ => false,
-    }
-}
-
-fn decode_raw_symbols_typed<const PRECISION_BITS: u32>(
-    num_values: usize,
-    in_buffer: &mut DecoderBuffer,
-    symbols: &mut [u32],
-) -> bool {
-    let mut decoder = RAnsSymbolDecoder::<PRECISION_BITS>::new();
+    // Use runtime precision to avoid monomorphization bloat
+    let mut decoder = RAnsSymbolDecoder::new(precision_bits);
     if !decoder.create(in_buffer) {
         return false;
     }
@@ -416,6 +427,7 @@ fn decode_raw_symbols_typed<const PRECISION_BITS: u32>(
     true
 }
 
+#[cfg(feature = "decoder")]
 fn decode_tagged_symbols(
     num_values: usize,
     num_components: usize,
@@ -424,7 +436,7 @@ fn decode_tagged_symbols(
 ) -> bool {
     // C++ uses RAnsSymbolDecoder<5> where 5 is unique_symbols_bit_length.
     // This maps to precision_bits = 12 via ComputeRAnsPrecisionFromUniqueSymbolsBitLength.
-    let mut tag_decoder = RAnsSymbolDecoder::<12>::new();
+    let mut tag_decoder = RAnsSymbolDecoder::new(12);
 
     if !tag_decoder.create(in_buffer) {
         return false;

@@ -1,3 +1,12 @@
+//! Draco Core Library
+//!
+//! Core compression and decompression functionality for 3D geometric meshes
+//! and point clouds.
+
+// =============================================================================
+// Core modules - always available
+// =============================================================================
+
 pub mod ans;
 pub mod attribute_octahedron_transform;
 pub mod attribute_quantization_transform;
@@ -7,59 +16,100 @@ pub mod bit_utils;
 pub mod compression_config;
 pub mod corner_table;
 pub mod data_buffer;
-pub mod decoder_buffer;
 pub mod draco_types;
-pub mod direct_bit_decoder;
-pub mod direct_bit_encoder;
 pub mod dynamic_integer_points_kd_tree;
-pub mod encoder_buffer;
-pub mod encoder_options;
 pub mod folded_bit32_coder;
-pub mod kd_tree_attributes_decoder;
-pub mod kd_tree_attributes_encoder;
-pub mod math_utils;
 pub mod geometry_attribute;
 pub mod geometry_indices;
+pub mod math_utils;
 pub mod mesh;
-pub mod mesh_decoder;
-pub mod mesh_edgebreaker_decoder;
-pub mod mesh_edgebreaker_encoder;
 pub mod mesh_edgebreaker_shared;
-pub mod mesh_encoder;
 pub mod mesh_prediction_scheme_data;
 pub mod normal_compression_utils;
 pub mod point_cloud;
-pub mod point_cloud_decoder;
-pub mod point_cloud_encoder;
 pub mod prediction_scheme;
-pub mod prediction_scheme_delta;
-pub mod prediction_scheme_parallelogram;
 pub mod prediction_scheme_constrained_multi_parallelogram;
-pub mod prediction_scheme_tex_coords_portable;
+pub mod prediction_scheme_delta;
 pub mod prediction_scheme_geometric_normal;
+pub mod prediction_scheme_normal_octahedron_canonicalized_transform_base;
+pub mod prediction_scheme_normal_octahedron_transform_base;
+pub mod prediction_scheme_parallelogram;
 pub mod prediction_scheme_selection;
+pub mod prediction_scheme_tex_coords_portable;
 pub mod prediction_scheme_wrap;
 pub mod quantization_utils;
-pub mod rans_bit_decoder;
-pub mod rans_bit_encoder;
 pub mod rans_symbol_coding;
-pub mod rans_symbol_decoder;
-pub mod rans_symbol_encoder;
-pub mod prediction_scheme_normal_octahedron_transform_base;
-pub mod prediction_scheme_normal_octahedron_canonicalized_transform_base;
-pub mod prediction_scheme_normal_octahedron_canonicalized_encoding_transform;
-pub mod prediction_scheme_normal_octahedron_canonicalized_decoding_transform;
-pub mod sequential_normal_attribute_encoder;
-pub mod sequential_normal_attribute_decoder;
-pub mod sequential_generic_attribute_decoder;
-pub mod sequential_attribute_decoder;
-pub mod sequential_attribute_encoder;
-pub mod sequential_integer_attribute_decoder;
-pub mod sequential_integer_attribute_encoder;
-pub mod shannon_entropy;
 pub mod status;
 pub mod symbol_encoding;
 pub mod version;
+
+// =============================================================================
+// Decoder-only modules
+// =============================================================================
+
+#[cfg(feature = "decoder")]
+pub mod decoder_buffer;
+#[cfg(feature = "decoder")]
+pub mod direct_bit_decoder;
+#[cfg(feature = "decoder")]
+pub mod kd_tree_attributes_decoder;
+#[cfg(feature = "decoder")]
+pub mod mesh_decoder;
+#[cfg(feature = "decoder")]
+pub mod mesh_edgebreaker_decoder;
+#[cfg(feature = "decoder")]
+pub mod point_cloud_decoder;
+#[cfg(feature = "decoder")]
+pub mod prediction_scheme_normal_octahedron_canonicalized_decoding_transform;
+#[cfg(feature = "decoder")]
+pub mod rans_bit_decoder;
+#[cfg(feature = "decoder")]
+pub mod rans_symbol_decoder;
+#[cfg(feature = "decoder")]
+pub mod sequential_attribute_decoder;
+#[cfg(feature = "decoder")]
+pub mod sequential_generic_attribute_decoder;
+#[cfg(feature = "decoder")]
+pub mod sequential_integer_attribute_decoder;
+#[cfg(feature = "decoder")]
+pub mod sequential_normal_attribute_decoder;
+
+// =============================================================================
+// Encoder-only modules
+// =============================================================================
+
+#[cfg(feature = "encoder")]
+pub mod direct_bit_encoder;
+#[cfg(feature = "encoder")]
+pub mod encoder_buffer;
+#[cfg(feature = "encoder")]
+pub mod encoder_options;
+#[cfg(feature = "encoder")]
+pub mod kd_tree_attributes_encoder;
+#[cfg(feature = "encoder")]
+pub mod mesh_edgebreaker_encoder;
+#[cfg(feature = "encoder")]
+pub mod mesh_encoder;
+#[cfg(feature = "encoder")]
+pub mod point_cloud_encoder;
+#[cfg(feature = "encoder")]
+pub mod prediction_scheme_normal_octahedron_canonicalized_encoding_transform;
+#[cfg(feature = "encoder")]
+pub mod rans_bit_encoder;
+#[cfg(feature = "encoder")]
+pub mod rans_symbol_encoder;
+#[cfg(feature = "encoder")]
+pub mod sequential_attribute_encoder;
+#[cfg(feature = "encoder")]
+pub mod sequential_integer_attribute_encoder;
+#[cfg(feature = "encoder")]
+pub mod sequential_normal_attribute_encoder;
+#[cfg(feature = "encoder")]
+pub mod shannon_entropy;
+
+// =============================================================================
+// Core re-exports - always available
+// =============================================================================
 
 pub use ans::{AnsCoder, AnsDecoder};
 pub use attribute_octahedron_transform::AttributeOctahedronTransform;
@@ -69,23 +119,47 @@ pub use attribute_transform_data::AttributeTransformData;
 pub use bit_utils::{BitDecoder, BitEncoder};
 pub use corner_table::CornerTable;
 pub use data_buffer::DataBuffer;
-pub use decoder_buffer::DecoderBuffer;
 pub use draco_types::DataType;
-pub use direct_bit_decoder::DirectBitDecoder;
-pub use direct_bit_encoder::DirectBitEncoder;
-pub use encoder_buffer::EncoderBuffer;
-pub use encoder_options::EncoderOptions;
-pub use folded_bit32_coder::{FoldedBit32Decoder, FoldedBit32Encoder};
 pub use geometry_attribute::{GeometryAttribute, GeometryAttributeType, PointAttribute};
-pub use normal_compression_utils::OctahedronToolBox;
-pub use prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
-pub use geometry_indices::{AttributeValueIndex, PointIndex, FaceIndex};
+pub use geometry_indices::{AttributeValueIndex, FaceIndex, PointIndex};
 pub use mesh::Mesh;
-pub use mesh_decoder::MeshDecoder;
-pub use mesh_encoder::MeshEncoder;
+pub use normal_compression_utils::OctahedronToolBox;
 pub use point_cloud::PointCloud;
-pub use point_cloud_decoder::PointCloudDecoder;
-pub use point_cloud_encoder::{PointCloudEncoder, GeometryEncoder};
-pub use rans_bit_decoder::RAnsBitDecoder;
-pub use rans_bit_encoder::RAnsBitEncoder;
+pub use prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
 pub use status::{DracoError, Status};
+
+// =============================================================================
+// Decoder re-exports
+// =============================================================================
+
+#[cfg(feature = "decoder")]
+pub use decoder_buffer::DecoderBuffer;
+#[cfg(feature = "decoder")]
+pub use direct_bit_decoder::DirectBitDecoder;
+#[cfg(feature = "decoder")]
+pub use folded_bit32_coder::FoldedBit32Decoder;
+#[cfg(feature = "decoder")]
+pub use mesh_decoder::MeshDecoder;
+#[cfg(feature = "decoder")]
+pub use point_cloud_decoder::PointCloudDecoder;
+#[cfg(feature = "decoder")]
+pub use rans_bit_decoder::RAnsBitDecoder;
+
+// =============================================================================
+// Encoder re-exports
+// =============================================================================
+
+#[cfg(feature = "encoder")]
+pub use direct_bit_encoder::DirectBitEncoder;
+#[cfg(feature = "encoder")]
+pub use encoder_buffer::EncoderBuffer;
+#[cfg(feature = "encoder")]
+pub use encoder_options::EncoderOptions;
+#[cfg(feature = "encoder")]
+pub use folded_bit32_coder::FoldedBit32Encoder;
+#[cfg(feature = "encoder")]
+pub use mesh_encoder::MeshEncoder;
+#[cfg(feature = "encoder")]
+pub use point_cloud_encoder::{GeometryEncoder, PointCloudEncoder};
+#[cfg(feature = "encoder")]
+pub use rans_bit_encoder::RAnsBitEncoder;

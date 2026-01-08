@@ -1,15 +1,26 @@
-use crate::prediction_scheme::{PredictionScheme, PredictionSchemeDecoder, PredictionSchemeMethod, PredictionSchemeTransformType, PredictionSchemeDecodingTransform, PredictionSchemeEncoder, PredictionSchemeEncodingTransform};
-use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
-use crate::decoder_buffer::DecoderBuffer;
-use crate::encoder_buffer::EncoderBuffer;
-use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
-use crate::normal_compression_utils::OctahedronToolBox;
-use crate::geometry_indices::{CornerIndex, PointIndex, INVALID_CORNER_INDEX, INVALID_ATTRIBUTE_VALUE_INDEX};
 use crate::corner_table::CornerTable;
 use crate::draco_types::DataType;
-use crate::rans_bit_decoder::RAnsBitDecoder;
-use crate::rans_bit_encoder::RAnsBitEncoder;
+use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
+use crate::geometry_indices::{CornerIndex, PointIndex, INVALID_CORNER_INDEX, INVALID_ATTRIBUTE_VALUE_INDEX};
+use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
+use crate::normal_compression_utils::OctahedronToolBox;
+use crate::prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
+
+#[cfg(feature = "decoder")]
+use crate::decoder_buffer::DecoderBuffer;
+#[cfg(feature = "decoder")]
+use crate::prediction_scheme::{PredictionSchemeDecoder, PredictionSchemeDecodingTransform};
+#[cfg(feature = "decoder")]
 use crate::prediction_scheme_normal_octahedron_canonicalized_decoding_transform::PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform;
+#[cfg(feature = "decoder")]
+use crate::rans_bit_decoder::RAnsBitDecoder;
+
+#[cfg(feature = "encoder")]
+use crate::encoder_buffer::EncoderBuffer;
+#[cfg(feature = "encoder")]
+use crate::prediction_scheme::{PredictionSchemeEncoder, PredictionSchemeEncodingTransform};
+#[cfg(feature = "encoder")]
+use crate::rans_bit_encoder::RAnsBitEncoder;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NormalPredictionMode {
@@ -17,10 +28,12 @@ pub enum NormalPredictionMode {
     TriangleArea = 1,
 }
 
+#[cfg(feature = "decoder")]
 pub struct PredictionSchemeGeometricNormalDecodingTransform {
     octahedron_tool_box: OctahedronToolBox,
 }
 
+#[cfg(feature = "decoder")]
 impl PredictionSchemeGeometricNormalDecodingTransform {
     pub fn new() -> Self {
         Self {
@@ -29,6 +42,7 @@ impl PredictionSchemeGeometricNormalDecodingTransform {
     }
 }
 
+#[cfg(feature = "decoder")]
 impl PredictionSchemeDecodingTransform<i32, i32> for PredictionSchemeGeometricNormalDecodingTransform {
     fn get_type(&self) -> PredictionSchemeTransformType {
         PredictionSchemeTransformType::GeometricNormal
@@ -64,6 +78,7 @@ impl PredictionSchemeDecodingTransform<i32, i32> for PredictionSchemeGeometricNo
     }
 }
 
+#[cfg(feature = "decoder")]
 pub struct PredictionSchemeGeometricNormalDecoder<'a> {
     transform: PredictionSchemeGeometricNormalDecodingTransform,
     mesh_data: Option<MeshPredictionSchemeData<'a>>,
@@ -76,6 +91,7 @@ pub struct PredictionSchemeGeometricNormalDecoder<'a> {
 // Draco-compatible mesh geometric normal predictor used for normal attributes.
 // Unlike the legacy PredictionSchemeGeometricNormal*Transform types above (used by unit tests),
 // Draco bitstreams use the NormalOctahedronCanonicalized transform data for this scheme.
+#[cfg(feature = "decoder")]
 pub struct MeshPredictionSchemeGeometricNormalDecoder<'a> {
     transform: PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform,
     mesh_data: Option<MeshPredictionSchemeData<'a>>,
@@ -87,6 +103,7 @@ pub struct MeshPredictionSchemeGeometricNormalDecoder<'a> {
     flip_normal_bit_index: usize,
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
     pub fn new(transform: PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform) -> Self {
         Self {
@@ -247,6 +264,7 @@ impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> PredictionScheme for MeshPredictionSchemeGeometricNormalDecoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionGeometricNormal
@@ -284,6 +302,7 @@ impl<'a> PredictionScheme for MeshPredictionSchemeGeometricNormalDecoder<'a> {
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> PredictionSchemeDecoder<i32, i32> for MeshPredictionSchemeGeometricNormalDecoder<'a> {
     fn compute_original_values(
         &mut self,
@@ -406,6 +425,7 @@ impl<'a> PredictionSchemeDecoder<i32, i32> for MeshPredictionSchemeGeometricNorm
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> PredictionSchemeGeometricNormalDecoder<'a> {
     pub fn new(transform: PredictionSchemeGeometricNormalDecodingTransform) -> Self {
         Self {
@@ -506,6 +526,7 @@ impl<'a> PredictionSchemeGeometricNormalDecoder<'a> {
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> PredictionScheme for PredictionSchemeGeometricNormalDecoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionGeometricNormal
@@ -542,6 +563,7 @@ impl<'a> PredictionScheme for PredictionSchemeGeometricNormalDecoder<'a> {
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<'a> PredictionSchemeDecoder<i32, i32> for PredictionSchemeGeometricNormalDecoder<'a> {
     fn compute_original_values(
         &mut self,
@@ -702,10 +724,12 @@ impl VertexCornersIterator {
     }
 }
 
+#[cfg(feature = "encoder")]
 pub struct PredictionSchemeGeometricNormalEncodingTransform {
     octahedron_tool_box: OctahedronToolBox,
 }
 
+#[cfg(feature = "encoder")]
 impl PredictionSchemeGeometricNormalEncodingTransform {
     pub fn new() -> Self {
         Self {
@@ -722,6 +746,7 @@ impl PredictionSchemeGeometricNormalEncodingTransform {
     }
 }
 
+#[cfg(feature = "encoder")]
 impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeGeometricNormalEncodingTransform {
     fn init(&mut self, _orig_data: &[i32], _size: usize, _num_components: usize) {
     }
@@ -756,6 +781,7 @@ impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeGeometricNo
     }
 }
 
+#[cfg(feature = "encoder")]
 pub struct PredictionSchemeGeometricNormalEncoder<'a> {
     transform: PredictionSchemeGeometricNormalEncodingTransform,
     mesh_data: Option<MeshPredictionSchemeData<'a>>,
@@ -764,6 +790,7 @@ pub struct PredictionSchemeGeometricNormalEncoder<'a> {
     flip_normal_bit_encoder: RAnsBitEncoder,
 }
 
+#[cfg(feature = "encoder")]
 impl<'a> PredictionSchemeGeometricNormalEncoder<'a> {
     pub fn new(transform: PredictionSchemeGeometricNormalEncodingTransform) -> Self {
         Self {
@@ -865,6 +892,7 @@ impl<'a> PredictionSchemeGeometricNormalEncoder<'a> {
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<'a> PredictionScheme for PredictionSchemeGeometricNormalEncoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionGeometricNormal
@@ -901,6 +929,7 @@ impl<'a> PredictionScheme for PredictionSchemeGeometricNormalEncoder<'a> {
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<'a> PredictionSchemeEncoder<i32, i32> for PredictionSchemeGeometricNormalEncoder<'a> {
     fn compute_correction_values(
         &mut self,

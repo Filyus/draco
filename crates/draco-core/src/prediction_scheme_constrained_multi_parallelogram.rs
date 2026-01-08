@@ -1,21 +1,29 @@
-use crate::geometry_indices::{CornerIndex, INVALID_CORNER_INDEX};
 use crate::geometry_attribute::PointAttribute;
+use crate::geometry_indices::{CornerIndex, INVALID_CORNER_INDEX};
 use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
-use crate::prediction_scheme::{
-    PredictionScheme, PredictionSchemeDecoder, PredictionSchemeDecodingTransform,
-    PredictionSchemeEncoder, PredictionSchemeEncodingTransform, PredictionSchemeMethod,
-    PredictionSchemeTransformType,
-};
+use crate::prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
 use crate::prediction_scheme_parallelogram::ParallelogramDataType;
-use crate::rans_bit_encoder::RAnsBitEncoder;
-use crate::rans_bit_decoder::RAnsBitDecoder;
-use crate::decoder_buffer::DecoderBuffer;
-use crate::encoder_buffer::EncoderBuffer;
-use crate::shannon_entropy::ShannonEntropyTracker;
 use std::marker::PhantomData;
+
+#[cfg(feature = "decoder")]
+use crate::decoder_buffer::DecoderBuffer;
+#[cfg(feature = "decoder")]
+use crate::prediction_scheme::{PredictionSchemeDecoder, PredictionSchemeDecodingTransform};
+#[cfg(feature = "decoder")]
+use crate::rans_bit_decoder::RAnsBitDecoder;
+
+#[cfg(feature = "encoder")]
+use crate::encoder_buffer::EncoderBuffer;
+#[cfg(feature = "encoder")]
+use crate::prediction_scheme::{PredictionSchemeEncoder, PredictionSchemeEncodingTransform};
+#[cfg(feature = "encoder")]
+use crate::rans_bit_encoder::RAnsBitEncoder;
+#[cfg(feature = "encoder")]
+use crate::shannon_entropy::ShannonEntropyTracker;
 
 pub const MAX_NUM_PARALLELOGRAMS: usize = 4;
 
+#[cfg(feature = "encoder")]
 pub struct PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform> {
     mesh_data: MeshPredictionSchemeData<'a>,
     transform: Transform,
@@ -24,6 +32,7 @@ pub struct PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, Co
     _marker: PhantomData<(DataType, CorrType)>,
 }
 
+#[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform>
     PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
@@ -48,6 +57,7 @@ where
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform> PredictionScheme
     for PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
@@ -104,6 +114,7 @@ impl PartialOrd for Error {
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform> PredictionSchemeEncoder<DataType, CorrType>
     for PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
@@ -526,6 +537,7 @@ where
     }
 }
 
+#[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform>
     PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
 {
@@ -547,6 +559,7 @@ impl<'a, DataType, CorrType, Transform>
     }
 }
 
+#[cfg(feature = "decoder")]
 pub struct PredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform> {
     mesh_data: MeshPredictionSchemeData<'a>,
     transform: Transform,
@@ -554,6 +567,7 @@ pub struct PredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, Co
     _marker: PhantomData<(DataType, CorrType)>,
 }
 
+#[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform>
     PredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
@@ -569,6 +583,7 @@ where
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform> PredictionScheme
     for PredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
@@ -599,6 +614,7 @@ where
     }
 }
 
+#[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform> PredictionSchemeDecoder<DataType, CorrType>
     for PredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
