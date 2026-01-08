@@ -2,12 +2,15 @@
 //!
 //! Provides glTF 2.0 file parsing functionality for web applications.
 //! Supports both .gltf (JSON) and .glb (binary) formats with Draco compression.
+//!
+//! Uses nanoserde for minimal WASM binary size (no serde_json monomorphization).
 
 use wasm_bindgen::prelude::*;
-use serde::{Deserialize, Serialize};
+use nanoserde::{DeJson, SerJson};
+use std::collections::HashMap;
 
 /// Mesh data structure for JavaScript interop.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(SerJson, Clone, Default)]
 pub struct MeshData {
     /// Mesh name
     pub name: Option<String>,
@@ -24,42 +27,44 @@ pub struct MeshData {
 }
 
 /// Node in the scene graph.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(SerJson, Clone, Default)]
 pub struct SceneNode {
     pub name: Option<String>,
+    #[nserde(rename = "meshIndex")]
     pub mesh_index: Option<usize>,
-    pub translation: Option<[f32; 3]>,
-    pub rotation: Option<[f32; 4]>,
-    pub scale: Option<[f32; 3]>,
+    pub translation: Option<Vec<f32>>,
+    pub rotation: Option<Vec<f32>>,
+    pub scale: Option<Vec<f32>>,
     pub children: Vec<usize>,
 }
 
 /// Scene data.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(SerJson, Clone, Default)]
 pub struct SceneData {
     pub name: Option<String>,
     pub nodes: Vec<usize>,
 }
 
 /// Parse result containing meshes and scene graph.
-#[derive(Serialize, Deserialize)]
+#[derive(SerJson, Default)]
 pub struct ParseResult {
     pub success: bool,
     pub meshes: Vec<MeshData>,
     pub scenes: Vec<SceneData>,
     pub nodes: Vec<SceneNode>,
+    #[nserde(rename = "defaultScene")]
     pub default_scene: Option<usize>,
     pub error: Option<String>,
     pub warnings: Vec<String>,
     /// Whether the file uses Draco compression
+    #[nserde(rename = "usesDraco")]
     pub uses_draco: bool,
 }
 
 /// Initialize panic hook for better error messages in browser console.
 #[wasm_bindgen(start)]
 pub fn init() {
-    #[cfg(feature = "console_error_panic_hook")]
-    console_error_panic_hook::set_once();
+    // Panic hook removed for smaller binary size
 }
 
 /// Get the version of this WASM module.
@@ -80,25 +85,31 @@ pub fn supported_extensions() -> Vec<String> {
     vec!["gltf".to_string(), "glb".to_string()]
 }
 
+/// Helper to convert a ParseResult to JsValue via JSON.
+fn to_js_value(result: &ParseResult) -> JsValue {
+    let json = SerJson::serialize_json(result);
+    js_sys::JSON::parse(&json).unwrap_or(JsValue::NULL)
+}
+
 /// Parse glTF JSON content.
 #[wasm_bindgen]
 pub fn parse_gltf(json_content: &str) -> JsValue {
     let result = parse_gltf_json(json_content, None);
-    serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
+    to_js_value(&result)
 }
 
 /// Parse GLB binary content.
 #[wasm_bindgen]
 pub fn parse_glb(data: &[u8]) -> JsValue {
     let result = parse_glb_internal(data);
-    serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
+    to_js_value(&result)
 }
 
 /// Parse glTF with external binary buffer.
 #[wasm_bindgen]
 pub fn parse_gltf_with_buffer(json_content: &str, buffer: &[u8]) -> JsValue {
     let result = parse_gltf_json(json_content, Some(buffer));
-    serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
+    to_js_value(&result)
 }
 
 // GLB magic and header
@@ -110,13 +121,8 @@ fn parse_glb_internal(data: &[u8]) -> ParseResult {
     if data.len() < 12 {
         return ParseResult {
             success: false,
-            meshes: vec![],
-            scenes: vec![],
-            nodes: vec![],
-            default_scene: None,
             error: Some("Invalid GLB: file too small".to_string()),
-            warnings: vec![],
-            uses_draco: false,
+            ..Default::default()
         };
     }
 
@@ -125,13 +131,8 @@ fn parse_glb_internal(data: &[u8]) -> ParseResult {
     if magic != GLB_MAGIC {
         return ParseResult {
             success: false,
-            meshes: vec![],
-            scenes: vec![],
-            nodes: vec![],
-            default_scene: None,
             error: Some("Invalid GLB: wrong magic number".to_string()),
-            warnings: vec![],
-            uses_draco: false,
+            ..Default::default()
         };
     }
 
@@ -182,109 +183,138 @@ fn parse_glb_internal(data: &[u8]) -> ParseResult {
         Some(json) => parse_gltf_json(&json, bin_data),
         None => ParseResult {
             success: false,
-            meshes: vec![],
-            scenes: vec![],
-            nodes: vec![],
-            default_scene: None,
             error: Some("Invalid GLB: no JSON chunk found".to_string()),
-            warnings: vec![],
-            uses_draco: false,
+            ..Default::default()
         },
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+// glTF data structures using nanoserde
+#[derive(DeJson, Default)]
 struct GltfRoot {
-    #[serde(default)]
+    #[nserde(default)]
     accessors: Vec<Accessor>,
-    #[serde(default)]
+    #[nserde(default, rename = "bufferViews")]
     buffer_views: Vec<BufferView>,
-    #[serde(default)]
+    #[nserde(default)]
+    #[allow(dead_code)]
     buffers: Vec<Buffer>,
-    #[serde(default)]
+    #[nserde(default)]
     meshes: Vec<GltfMesh>,
-    #[serde(default)]
+    #[nserde(default)]
     nodes: Vec<GltfNode>,
-    #[serde(default)]
+    #[nserde(default)]
     scenes: Vec<GltfScene>,
+    #[nserde(default)]
     scene: Option<usize>,
-    #[serde(default)]
+    #[nserde(default, rename = "extensionsUsed")]
     extensions_used: Vec<String>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(DeJson, Default)]
 struct Accessor {
+    #[nserde(default, rename = "bufferView")]
     buffer_view: Option<usize>,
+    #[nserde(default, rename = "byteOffset")]
     byte_offset: Option<usize>,
+    #[nserde(default, rename = "componentType")]
     component_type: u32,
+    #[nserde(default)]
     count: usize,
-    #[serde(rename = "type")]
+    #[nserde(default, rename = "type")]
+    #[allow(dead_code)]
     accessor_type: String,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(DeJson, Default)]
 struct BufferView {
+    #[nserde(default)]
+    #[allow(dead_code)]
     buffer: usize,
+    #[nserde(default, rename = "byteOffset")]
     byte_offset: Option<usize>,
+    #[nserde(default, rename = "byteLength")]
     byte_length: usize,
+    #[nserde(default, rename = "byteStride")]
+    #[allow(dead_code)]
     byte_stride: Option<usize>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(DeJson, Default)]
 struct Buffer {
+    #[nserde(default, rename = "byteLength")]
+    #[allow(dead_code)]
     byte_length: usize,
+    #[nserde(default)]
+    #[allow(dead_code)]
     uri: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(DeJson, Default)]
 struct GltfMesh {
+    #[nserde(default)]
     name: Option<String>,
+    #[nserde(default)]
     primitives: Vec<Primitive>,
 }
 
-#[derive(Deserialize)]
+#[derive(DeJson, Default)]
 struct Primitive {
-    attributes: std::collections::HashMap<String, usize>,
+    #[nserde(default)]
+    attributes: HashMap<String, usize>,
+    #[nserde(default)]
     indices: Option<usize>,
-    #[serde(default)]
-    extensions: Option<serde_json::Value>,
+    #[nserde(default)]
+    extensions: Option<PrimitiveExtensions>,
 }
 
-#[derive(Deserialize)]
+#[derive(DeJson, Default)]
+struct PrimitiveExtensions {
+    #[nserde(default, rename = "KHR_draco_mesh_compression")]
+    khr_draco: Option<DracoExtension>,
+}
+
+#[derive(DeJson, Default)]
+struct DracoExtension {
+    #[nserde(default, rename = "bufferView")]
+    buffer_view: usize,
+    #[nserde(default)]
+    #[allow(dead_code)]
+    attributes: HashMap<String, usize>,
+}
+
+#[derive(DeJson, Default)]
 struct GltfNode {
+    #[nserde(default)]
     name: Option<String>,
+    #[nserde(default)]
     mesh: Option<usize>,
-    translation: Option<[f32; 3]>,
-    rotation: Option<[f32; 4]>,
-    scale: Option<[f32; 3]>,
-    #[serde(default)]
+    #[nserde(default)]
+    translation: Option<Vec<f32>>,
+    #[nserde(default)]
+    rotation: Option<Vec<f32>>,
+    #[nserde(default)]
+    scale: Option<Vec<f32>>,
+    #[nserde(default)]
     children: Vec<usize>,
 }
 
-#[derive(Deserialize)]
+#[derive(DeJson, Default)]
 struct GltfScene {
+    #[nserde(default)]
     name: Option<String>,
-    #[serde(default)]
+    #[nserde(default)]
     nodes: Vec<usize>,
 }
 
 fn parse_gltf_json(json_content: &str, bin_buffer: Option<&[u8]>) -> ParseResult {
-    let root: GltfRoot = match serde_json::from_str(json_content) {
+    let root: GltfRoot = match DeJson::deserialize_json(json_content) {
         Ok(r) => r,
         Err(e) => {
             return ParseResult {
                 success: false,
-                meshes: vec![],
-                scenes: vec![],
-                nodes: vec![],
-                default_scene: None,
-                error: Some(format!("Failed to parse glTF JSON: {}", e)),
-                warnings: vec![],
-                uses_draco: false,
+                error: Some(format!("Failed to parse glTF JSON: {:?}", e)),
+                ..Default::default()
             };
         }
     };
@@ -298,33 +328,27 @@ fn parse_gltf_json(json_content: &str, bin_buffer: Option<&[u8]>) -> ParseResult
         for primitive in &gltf_mesh.primitives {
             let mut mesh = MeshData {
                 name: gltf_mesh.name.clone(),
-                positions: vec![],
-                indices: vec![],
-                normals: vec![],
-                uvs: vec![],
-                colors: vec![],
+                ..Default::default()
             };
 
             // Check for Draco extension
             if let Some(ref extensions) = primitive.extensions {
-                if let Some(draco) = extensions.get("KHR_draco_mesh_compression") {
-                    if let Some(buffer_view_idx) = draco.get("bufferView").and_then(|v| v.as_u64()) {
-                        if let Some(buffer_data) = bin_buffer {
-                            if let Some(bv) = root.buffer_views.get(buffer_view_idx as usize) {
-                                let offset = bv.byte_offset.unwrap_or(0);
-                                let end = offset + bv.byte_length;
-                                if end <= buffer_data.len() {
-                                    let draco_data = &buffer_data[offset..end];
-                                    match decode_draco_mesh(draco_data) {
-                                        Ok(decoded) => {
-                                            mesh = decoded;
-                                            mesh.name = gltf_mesh.name.clone();
-                                            meshes.push(mesh);
-                                            continue;
-                                        }
-                                        Err(e) => {
-                                            warnings.push(format!("Failed to decode Draco mesh: {}", e));
-                                        }
+                if let Some(ref draco) = extensions.khr_draco {
+                    if let Some(buffer_data) = bin_buffer {
+                        if let Some(bv) = root.buffer_views.get(draco.buffer_view) {
+                            let offset = bv.byte_offset.unwrap_or(0);
+                            let end = offset + bv.byte_length;
+                            if end <= buffer_data.len() {
+                                let draco_data = &buffer_data[offset..end];
+                                match decode_draco_mesh(draco_data) {
+                                    Ok(decoded) => {
+                                        mesh = decoded;
+                                        mesh.name = gltf_mesh.name.clone();
+                                        meshes.push(mesh);
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        warnings.push(format!("Failed to decode Draco mesh: {}", e));
                                     }
                                 }
                             }
@@ -367,9 +391,9 @@ fn parse_gltf_json(json_content: &str, bin_buffer: Option<&[u8]>) -> ParseResult
         .map(|n| SceneNode {
             name: n.name.clone(),
             mesh_index: n.mesh,
-            translation: n.translation,
-            rotation: n.rotation,
-            scale: n.scale,
+            translation: n.translation.clone(),
+            rotation: n.rotation.clone(),
+            scale: n.scale.clone(),
             children: n.children.clone(),
         })
         .collect();
@@ -532,14 +556,7 @@ fn decode_draco_mesh(data: &[u8]) -> Result<MeshData, String> {
     let mut decoder = MeshDecoder::new();
     decoder.decode(&mut decoder_buffer, &mut mesh).map_err(|e| format!("{:?}", e))?;
 
-    let mut result = MeshData {
-        name: None,
-        positions: vec![],
-        indices: vec![],
-        normals: vec![],
-        uvs: vec![],
-        colors: vec![],
-    };
+    let mut result = MeshData::default();
 
     // Extract positions
     let pos_att_id = mesh.named_attribute_id(GeometryAttributeType::Position);
