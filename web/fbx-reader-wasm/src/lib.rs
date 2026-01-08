@@ -70,6 +70,7 @@ const FBX_MAGIC: &[u8; 21] = b"Kaydara FBX Binary  \0";
 
 /// FBX property value.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum FbxProperty {
     Bool(bool),
     I16(i16),
@@ -88,6 +89,7 @@ enum FbxProperty {
 
 /// FBX node.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct FbxNode {
     name: String,
     properties: Vec<FbxProperty>,
@@ -282,7 +284,7 @@ fn parse_property<R: Read>(reader: &mut R) -> Result<FbxProperty, String> {
             }
         }
         b'b' | b'c' => {
-            let (count, _encoding, compressed_len) = read_array_header(reader)?;
+            let (_count, _encoding, compressed_len) = read_array_header(reader)?;
             let data = read_array_data(reader, compressed_len)?;
             let bools: Vec<bool> = data.iter().map(|&b| b != 0).collect();
             Ok(FbxProperty::BoolArray(bools))
