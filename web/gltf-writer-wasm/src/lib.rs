@@ -173,7 +173,6 @@ fn create_gltf_with_scene_internal(
 
     for mesh in meshes {
         let vertex_count = mesh.positions.len() / 3;
-        let face_count = mesh.indices.len() / 3;
 
         if use_draco {
             // Encode with Draco compression
@@ -490,7 +489,7 @@ fn encode_draco_mesh(mesh: &MeshInput, options: &ExportOptions) -> Result<Vec<u8
     use draco_core::mesh_encoder::MeshEncoder;
     use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
     use draco_core::draco_types::DataType;
-    use draco_core::geometry_indices::{FaceIndex, PointIndex};
+    use draco_core::geometry_indices::PointIndex;
 
     let vertex_count = mesh.positions.len() / 3;
     let face_count = mesh.indices.len() / 3;
@@ -604,7 +603,7 @@ fn base64_encode(data: &[u8]) -> String {
         let b1 = if i + 1 < data.len() { data[i + 1] as usize } else { 0 };
         let b2 = if i + 2 < data.len() { data[i + 2] as usize } else { 0 };
         
-        result.push(ALPHABET[(b0 >> 2)] as char);
+        result.push(ALPHABET[b0 >> 2] as char);
         result.push(ALPHABET[((b0 & 0x03) << 4) | (b1 >> 4)] as char);
         
         if i + 1 < data.len() {
