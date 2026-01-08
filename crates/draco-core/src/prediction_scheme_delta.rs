@@ -1,7 +1,12 @@
 use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
 use crate::prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
 use std::marker::PhantomData;
-use std::ops::{Add, Sub};
+
+#[cfg(feature = "decoder")]
+use std::ops::Add;
+
+#[cfg(feature = "encoder")]
+use std::ops::Sub;
 
 #[cfg(feature = "decoder")]
 use crate::prediction_scheme::{PredictionSchemeDecoder, PredictionSchemeDecodingTransform};
