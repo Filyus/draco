@@ -74,6 +74,14 @@ async function loadAllModules() {
 async function loadModule({ key, path, statusId }) {
     const statusEl = document.getElementById(statusId);
     const indicator = statusEl.querySelector('.status-indicator');
+    // ensure initial loading state
+    if (indicator) {
+        indicator.classList.remove('ready','error');
+        indicator.classList.add('loading');
+        const statusTextInit = indicator.querySelector('.status-text');
+        if (statusTextInit) statusTextInit.textContent = 'Loading...';
+        statusEl.removeAttribute('aria-label');
+    }
     
     try {
         const module = await import(path);
@@ -82,14 +90,31 @@ async function loadModule({ key, path, statusId }) {
         modules[key].module = module;
         modules[key].loaded = true;
         
-        indicator.textContent = 'Ready';
-        indicator.className = 'status-indicator ready';
+        // Update visual indicator (dot + aria label)
+        const statusText = indicator.querySelector('.status-text');
+        const statusDot = indicator.querySelector('.status-dot');
+        if (statusText) statusText.textContent = 'Ready';
+        indicator.classList.remove('loading','error');
+        indicator.classList.add('ready');
+        indicator.setAttribute('aria-label', 'Ready');
+        if (statusDot) {
+            statusDot.classList.remove('dot-loading','dot-error','dot-ready');
+            // visual state is controlled by the parent .status-indicator class
+        }
         
         const version = module.version ? module.version() : '?';
         log(`${module.module_name ? module.module_name() : key} v${version} loaded`, 'success');
     } catch (error) {
-        indicator.textContent = 'Error';
-        indicator.className = 'status-indicator error';
+        const statusText = indicator.querySelector('.status-text');
+        const statusDot = indicator.querySelector('.status-dot');
+        if (statusText) statusText.textContent = 'Error';
+        indicator.classList.remove('loading','ready');
+        indicator.classList.add('error');
+        indicator.setAttribute('aria-label', 'Error');
+        if (statusDot) {
+            statusDot.classList.remove('dot-loading','dot-ready','dot-error');
+            // visual state is controlled by the parent .status-indicator class
+        }
         log(`Failed to load ${key}: ${error.message}`, 'error');
     }
 }

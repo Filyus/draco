@@ -7,181 +7,223 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
+
+    <main class="app-container">
+        
         <header>
-            <h1>🔷 Draco 3D Format Converter</h1>
-            <p class="subtitle">Convert between OBJ, PLY, glTF/GLB, and FBX formats with optional Draco compression</p>
+            <h1>🔷 Draco 3D Converter</h1>
+            <p class="subtitle">Convert & Compress 3D Models in your Browser</p>
         </header>
 
-        <div class="main-content">
-            <!-- Module Status -->
-            <section class="module-status">
-                <h2>WASM Modules</h2>
-                <div class="modules-grid">
-                    <div class="module-card" id="obj-reader-status">
-                        <span class="module-icon">📖</span>
-                        <span class="module-name">OBJ Reader</span>
-                        <span class="status-indicator loading">Loading...</span>
-                    </div>
-                    <div class="module-card" id="obj-writer-status">
-                        <span class="module-icon">✏️</span>
-                        <span class="module-name">OBJ Writer</span>
-                        <span class="status-indicator loading">Loading...</span>
-                    </div>
-                    <div class="module-card" id="ply-reader-status">
-                        <span class="module-icon">📖</span>
-                        <span class="module-name">PLY Reader</span>
-                        <span class="status-indicator loading">Loading...</span>
-                    </div>
-                    <div class="module-card" id="ply-writer-status">
-                        <span class="module-icon">✏️</span>
-                        <span class="module-name">PLY Writer</span>
-                        <span class="status-indicator loading">Loading...</span>
-                    </div>
-                    <div class="module-card" id="gltf-reader-status">
-                        <span class="module-icon">📖</span>
-                        <span class="module-name">glTF Reader</span>
-                        <span class="status-indicator loading">Loading...</span>
-                    </div>
-                    <div class="module-card" id="gltf-writer-status">
-                        <span class="module-icon">✏️</span>
-                        <span class="module-name">glTF Writer</span>
-                        <span class="status-indicator loading">Loading...</span>
-                    </div>
-                    <div class="module-card" id="fbx-reader-status">
-                        <span class="module-icon">📖</span>
-                        <span class="module-name">FBX Reader</span>
-                        <span class="status-indicator loading">Loading...</span>
-                    </div>
-                    <div class="module-card" id="fbx-writer-status">
-                        <span class="module-icon">✏️</span>
-                        <span class="module-name">FBX Writer</span>
-                        <span class="status-indicator loading">Loading...</span>
-                    </div>
+        <!-- Module Status Row (Wasm Modules) -->
+        <section class="card modules-section" aria-label="WASM Modules Status">
+            <div class="modules-scroll-container">
+                
+                <!-- OBJ Modules -->
+                <div class="module-pill" id="obj-reader-status">
+                    <span class="module-name">OBJ Reader</span>
+                    <span class="status-indicator loading" aria-live="polite">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Loading...</span>
+                    </span>
                 </div>
-            </section>
+                <div class="module-pill" id="obj-writer-status">
+                    <span class="module-name">OBJ Writer</span>
+                    <span class="status-indicator loading" aria-live="polite">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Loading...</span>
+                    </span>
+                </div>
 
-            <!-- File Input -->
-            <section class="file-input-section">
-                <h2>Input File</h2>
-                <div class="drop-zone" id="drop-zone">
-                    <div class="drop-zone-content">
-                        <span class="drop-icon">📁</span>
-                        <p>Drag & drop a 3D file here</p>
-                        <p class="formats">Supported: .obj, .ply, .gltf, .glb, .fbx</p>
-                        <label class="file-input-label">
-                            <input type="file" id="file-input" accept=".obj,.ply,.gltf,.glb,.fbx">
-                            Or click to browse
+                <!-- PLY Modules -->
+                <div class="module-pill" id="ply-reader-status">
+                    <span class="module-name">PLY Reader</span>
+                    <span class="status-indicator loading" aria-live="polite">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Loading...</span>
+                    </span>
+                </div>
+                <div class="module-pill" id="ply-writer-status">
+                    <span class="module-name">PLY Writer</span>
+                    <span class="status-indicator loading" aria-live="polite">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Loading...</span>
+                    </span>
+                </div>
+
+                <!-- glTF Modules -->
+                <div class="module-pill" id="gltf-reader-status">
+                    <span class="module-name">glTF Reader</span>
+                    <span class="status-indicator loading" aria-live="polite">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Loading...</span>
+                    </span>
+                </div>
+                <div class="module-pill" id="gltf-writer-status">
+                    <span class="module-name">glTF Writer</span>
+                    <span class="status-indicator loading" aria-live="polite">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Loading...</span>
+                    </span>
+                </div>
+
+                <!-- FBX Modules -->
+                <div class="module-pill" id="fbx-reader-status">
+                    <span class="module-name">FBX Reader</span>
+                    <span class="status-indicator loading" aria-live="polite">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Loading...</span>
+                    </span>
+                </div>
+                <div class="module-pill" id="fbx-writer-status">
+                    <span class="module-name">FBX Writer</span>
+                    <span class="status-indicator loading" aria-live="polite">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Loading...</span>
+                    </span>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Input Section -->
+        <section class="card input-section">
+            <h2>1. Import Model</h2>
+            
+            <div id="drop-zone" class="drop-zone">
+                <div class="drop-content">
+                    <div style="font-size: 2.5rem; margin-bottom: 0.5rem">📁</div>
+                    <p>Drag & Drop a 3D file here</p>
+                    <p style="font-size: 0.8rem; opacity: 0.7;">Supports .obj, .ply, .gltf, .glb, .fbx</p>
+                    <label class="browse-btn">
+                        Browse Files
+                        <input type="file" id="file-input" accept=".obj,.ply,.gltf,.glb,.fbx" hidden>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Loaded File Info (Hidden by default) -->
+            <div id="file-info" class="file-info-bar" style="display: none;">
+                <div class="file-meta">
+                    <span class="file-name" id="file-name">model.obj</span>
+                    <span class="file-size" id="file-size">12.5 MB</span>
+                </div>
+                <button id="clear-file" class="icon-btn" title="Remove file">✕</button>
+            </div>
+        </section>
+
+        <!-- Mesh Preview Stats (Hidden by default) -->
+        <section id="preview-section" class="card" style="display: none;">
+            <h2>2. Mesh Details</h2>
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <span class="stat-label">Meshes</span>
+                    <span id="mesh-count" class="stat-value">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">Vertices</span>
+                    <span id="vertex-count" class="stat-value">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">Triangles</span>
+                    <span id="triangle-count" class="stat-value">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">Normals</span>
+                    <span id="has-normals" class="stat-value">-</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">UVs</span>
+                    <span id="has-uvs" class="stat-value">-</span>
+                </div>
+            </div>
+
+            <div id="warnings-container" class="warnings-box" style="display: none;">
+                <strong>⚠️ Warning:</strong>
+                <ul id="warnings-list"></ul>
+            </div>
+        </section>
+
+        <!-- Export & Conversion (Hidden by default) -->
+        <section id="export-section" class="card" style="display: none;">
+            <h2>3. Export Settings</h2>
+            
+            <div class="options-grid">
+                <!-- Format Selection -->
+                <div class="option-group">
+                    <label for="export-format">Target Format</label>
+                    <select id="export-format">
+                        <option value="glb" selected>GLB (Binary glTF)</option>
+                        <option value="gltf">glTF (JSON)</option>
+                        <option value="obj">OBJ (Wavefront)</option>
+                        <option value="ply">PLY (Polygon File Format)</option>
+                    </select>
+
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1.5rem;">
+                        <label class="checkbox-label" style="display:flex; align-items:center; gap: 8px;">
+                            <input type="checkbox" id="include-normals" checked>
+                            <span>Include Normals</span>
+                        </label>
+                        <label class="checkbox-label" style="display:flex; align-items:center; gap: 8px;">
+                            <input type="checkbox" id="include-uvs" checked>
+                            <span>Include UVs</span>
                         </label>
                     </div>
                 </div>
-                <div class="file-info" id="file-info" style="display: none;">
-                    <div class="file-details">
-                        <span class="file-name" id="file-name"></span>
-                        <span class="file-size" id="file-size"></span>
-                    </div>
-                    <button class="clear-btn" id="clear-file">✕</button>
-                </div>
-            </section>
 
-            <!-- Mesh Preview -->
-            <section class="preview-section" id="preview-section" style="display: none;">
-                <h2>Mesh Information</h2>
-                <div class="mesh-stats">
-                    <div class="stat">
-                        <span class="stat-label">Meshes</span>
-                        <span class="stat-value" id="mesh-count">0</span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-label">Vertices</span>
-                        <span class="stat-value" id="vertex-count">0</span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-label">Triangles</span>
-                        <span class="stat-value" id="triangle-count">0</span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-label">Has Normals</span>
-                        <span class="stat-value" id="has-normals">No</span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-label">Has UVs</span>
-                        <span class="stat-value" id="has-uvs">No</span>
-                    </div>
-                </div>
-                <div class="warnings" id="warnings-container" style="display: none;">
-                    <h3>⚠️ Warnings</h3>
-                    <ul id="warnings-list"></ul>
-                </div>
-            </section>
+                <!-- Draco Options -->
+                <div class="option-group" id="draco-options">
+                    <label class="checkbox-label" style="display:flex; align-items:center; gap: 8px;">
+                        <input type="checkbox" id="use-draco" checked>
+                        <span>Enable Draco Compression</span>
+                    </label>
 
-            <!-- Export Options -->
-            <section class="export-section" id="export-section" style="display: none;">
-                <h2>Export</h2>
-                <div class="export-options">
-                    <div class="option-group">
-                        <label for="export-format">Output Format</label>
-                        <select id="export-format">
-                            <option value="obj">OBJ (.obj)</option>
-                            <option value="ply">PLY (.ply)</option>
-                            <option value="gltf">glTF (.gltf)</option>
-                            <option value="glb" selected>GLB (.glb)</option>
-                            <option value="fbx">FBX (.fbx)</option>
-                        </select>
-                    </div>
+                    <div id="draco-settings" class="draco-sliders">
+                        <div class="slider-row">
+                            <div class="slider-header">
+                                <span>Position Quantization</span>
+                                <span><span id="position-bits-value">14</span> bits</span>
+                            </div>
+                            <input type="range" id="position-bits" min="8" max="16" value="14">
+                        </div>
 
-                    <div class="option-group draco-options" id="draco-options">
-                        <label>
-                            <input type="checkbox" id="use-draco" checked>
-                            Use Draco Compression
-                        </label>
-                        <div class="draco-settings" id="draco-settings">
-                            <div class="slider-group">
-                                <label for="position-bits">Position Quantization: <span id="position-bits-value">14</span> bits</label>
-                                <input type="range" id="position-bits" min="8" max="16" value="14">
+                        <div class="slider-row">
+                            <div class="slider-header">
+                                <span>Normal Quantization</span>
+                                <span><span id="normal-bits-value">10</span> bits</span>
                             </div>
-                            <div class="slider-group">
-                                <label for="normal-bits">Normal Quantization: <span id="normal-bits-value">10</span> bits</label>
-                                <input type="range" id="normal-bits" min="6" max="14" value="10">
+                            <input type="range" id="normal-bits" min="6" max="14" value="10">
+                        </div>
+
+                        <div class="slider-row">
+                            <div class="slider-header">
+                                <span>TexCoord Quantization</span>
+                                <span><span id="texcoord-bits-value">12</span> bits</span>
                             </div>
-                            <div class="slider-group">
-                                <label for="texcoord-bits">TexCoord Quantization: <span id="texcoord-bits-value">12</span> bits</label>
-                                <input type="range" id="texcoord-bits" min="8" max="14" value="12">
-                            </div>
+                            <input type="range" id="texcoord-bits" min="8" max="14" value="12">
                         </div>
                     </div>
-
-                    <div class="option-group other-options">
-                        <label>
-                            <input type="checkbox" id="include-normals" checked>
-                            Include Normals
-                        </label>
-                        <label>
-                            <input type="checkbox" id="include-uvs" checked>
-                            Include UVs
-                        </label>
-                    </div>
                 </div>
+            </div>
 
-                <button class="export-btn" id="export-btn">
-                    <span class="btn-icon">💾</span>
-                    Export
-                </button>
-            </section>
+            <button id="export-btn" class="primary-btn">
+                <span>⬇</span> Convert & Download
+            </button>
+        </section>
 
-            <!-- Console -->
-            <section class="console-section">
-                <h2>Console</h2>
-                <div class="console" id="console">
-                    <div class="console-line info">Ready. Load a 3D file to begin.</div>
-                </div>
-            </section>
-        </div>
+        <!-- Console Log -->
+        <section class="card">
+            <h2>Activity Log</h2>
+            <div id="console" class="console-output">
+                <div class="console-line info">Ready. Please verify WASM modules are loaded above.</div>
+            </div>
+        </section>
 
         <footer>
-            <p>Powered by <a href="https://github.com/google/draco" target="_blank">Draco</a> compression library</p>
+            <p>Powered by <a href="https://github.com/google/draco" target="_blank" rel="noopener">Google Draco</a></p>
         </footer>
-    </div>
+
+    </main>
 
     <script type="module" src="app.js"></script>
 </body>
