@@ -23,7 +23,7 @@ use crate::attribute_transform::AttributeTransform;
 
 pub struct SequentialIntegerAttributeEncoder {
     pub base: SequentialAttributeEncoder,
-    prediction_scheme: Option<Box<dyn PredictionSchemeEncoder<i32, i32>>>,
+    prediction_scheme: Option<Box<dyn PredictionSchemeEncoder<'static, i32, i32>>>,
     /// Stores the quantization transform if one was applied, for later encoding
     quantization_transform: Option<AttributeQuantizationTransform>,
 }
@@ -43,7 +43,7 @@ impl SequentialIntegerAttributeEncoder {
         }
     }
 
-    pub fn set_prediction_scheme(&mut self, scheme: Box<dyn PredictionSchemeEncoder<i32, i32>>) {
+    pub fn set_prediction_scheme(&mut self, scheme: Box<dyn PredictionSchemeEncoder<'static, i32, i32>>) {
         self.prediction_scheme = Some(scheme);
     }
 

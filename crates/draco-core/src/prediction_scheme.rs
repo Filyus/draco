@@ -61,12 +61,12 @@ impl TryFrom<u8> for PredictionSchemeTransformType {
     }
 }
 
-pub trait PredictionScheme {
+pub trait PredictionScheme<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod;
     fn is_initialized(&self) -> bool;
     fn get_num_parent_attributes(&self) -> i32;
     fn get_parent_attribute_type(&self, i: i32) -> GeometryAttributeType;
-    fn set_parent_attribute(&mut self, att: &PointAttribute) -> bool;
+    fn set_parent_attribute(&mut self, att: &'a PointAttribute) -> bool;
     fn get_transform_type(&self) -> PredictionSchemeTransformType;
     
     /// Returns true if the correction values are always positive (non-negative).
@@ -113,7 +113,7 @@ pub trait PredictionSchemeDecodingTransform<DataType, CorrType> {
     }
 }
 
-pub trait PredictionSchemeEncoder<DataType, CorrType>: PredictionScheme {
+pub trait PredictionSchemeEncoder<'a, DataType, CorrType>: PredictionScheme<'a> {
     fn compute_correction_values(
         &mut self,
         in_data: &[DataType],
@@ -127,7 +127,7 @@ pub trait PredictionSchemeEncoder<DataType, CorrType>: PredictionScheme {
 }
 
 #[cfg(feature = "decoder")]
-pub trait PredictionSchemeDecoder<DataType, CorrType>: PredictionScheme {
+pub trait PredictionSchemeDecoder<'a, DataType, CorrType>: PredictionScheme<'a> {
     fn compute_original_values(
         &mut self,
         in_corr: &[CorrType],

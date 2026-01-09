@@ -176,7 +176,7 @@ impl<'a> PredictionSchemeTexCoordsPortableDecoder<'a> {
 }
 
 #[cfg(feature = "decoder")]
-impl<'a> PredictionScheme for PredictionSchemeTexCoordsPortableDecoder<'a> {
+impl<'a> PredictionScheme<'a> for PredictionSchemeTexCoordsPortableDecoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionTexCoordsPortable
     }
@@ -193,32 +193,15 @@ impl<'a> PredictionScheme for PredictionSchemeTexCoordsPortableDecoder<'a> {
         GeometryAttributeType::Position
     }
 
-    fn set_parent_attribute(&mut self, att: &PointAttribute) -> bool {
+    fn set_parent_attribute(&mut self, att: &'a PointAttribute) -> bool {
         if att.attribute_type() != GeometryAttributeType::Position {
             return false;
         }
         if att.num_components() != 3 {
             return false; 
         }
-        // We need to store the reference.
-        // Since we can't change the lifetime of 'a here easily to match 'att',
-        // we are relying on the caller to provide a reference that lives long enough.
-        // But the trait signature is `fn set_parent_attribute(&mut self, att: &PointAttribute)`.
-        // The `att` reference is only valid for the function call!
-        // This is a problem.
-        // We cannot store `att` in `self` if `self` lives longer than the function call.
-        // But `self` is `PredictionSchemeTexCoordsPortableDecoder<'a>`.
-        // If we change the trait to `fn set_parent_attribute<'b>(&mut self, att: &'b PointAttribute)` where `'b: 'a`, it might work.
-        // But we can't change the trait easily.
-        
-        // UNSAFE WORKAROUND:
-        // SAFETY: The PointAttribute referenced by att is owned by the PointCloud
-        // which outlives the decoder (lifetime 'a). This is verified by the
-        // decoder architecture and existing tests. In SequentialIntegerAttributeDecoder,
-        // the PointAttribute lives as long as the decoder execution.
-        unsafe {
-            self.pos_attribute = Some(std::mem::transmute::<&PointAttribute, &'a PointAttribute>(att));
-        }
+        // Safe: lifetime 'a is now tracked by the compiler
+        self.pos_attribute = Some(att);
         true
     }
 
@@ -228,7 +211,7 @@ impl<'a> PredictionScheme for PredictionSchemeTexCoordsPortableDecoder<'a> {
 }
 
 #[cfg(feature = "decoder")]
-impl<'a> PredictionSchemeDecoder<i32, i32> for PredictionSchemeTexCoordsPortableDecoder<'a> {
+impl<'a> PredictionSchemeDecoder<'a, i32, i32> for PredictionSchemeTexCoordsPortableDecoder<'a> {
     fn decode_prediction_data(&mut self, buffer: &mut DecoderBuffer) -> bool {
         let num_orientations: i32 = match buffer.decode::<i32>() {
             Ok(val) => val,
@@ -587,7 +570,7 @@ impl<'a> PredictionSchemeTexCoordsPortableEncoder<'a> {
 }
 
 #[cfg(feature = "encoder")]
-impl<'a> PredictionScheme for PredictionSchemeTexCoordsPortableEncoder<'a> {
+impl<'a> PredictionScheme<'a> for PredictionSchemeTexCoordsPortableEncoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionTexCoordsPortable
     }
@@ -604,19 +587,15 @@ impl<'a> PredictionScheme for PredictionSchemeTexCoordsPortableEncoder<'a> {
         GeometryAttributeType::Position
     }
 
-    fn set_parent_attribute(&mut self, att: &PointAttribute) -> bool {
+    fn set_parent_attribute(&mut self, att: &'a PointAttribute) -> bool {
         if att.attribute_type() != GeometryAttributeType::Position {
             return false;
         }
         if att.num_components() != 3 {
             return false; 
         }
-        // SAFETY: The PointAttribute referenced by att is owned by the PointCloud
-        // which outlives the decoder (lifetime 'a). This is verified by the
-        // decoder architecture and existing tests.
-        unsafe {
-            self.pos_attribute = Some(std::mem::transmute::<&PointAttribute, &'a PointAttribute>(att));
-        }
+        // Safe: lifetime 'a is now tracked by the compiler
+        self.pos_attribute = Some(att);
         true
     }
 
@@ -626,7 +605,7 @@ impl<'a> PredictionScheme for PredictionSchemeTexCoordsPortableEncoder<'a> {
 }
 
 #[cfg(feature = "encoder")]
-impl<'a> PredictionSchemeEncoder<i32, i32> for PredictionSchemeTexCoordsPortableEncoder<'a> {
+impl<'a> PredictionSchemeEncoder<'a, i32, i32> for PredictionSchemeTexCoordsPortableEncoder<'a> {
     fn encode_prediction_data(&mut self, buffer: &mut Vec<u8>) -> bool {
         let mut temp_buffer = EncoderBuffer::new();
         let num_orientations = self.orientations.len() as i32;

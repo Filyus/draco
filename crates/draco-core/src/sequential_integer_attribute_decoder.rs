@@ -20,7 +20,7 @@ use crate::draco_types::DataType;
 
 pub struct SequentialIntegerAttributeDecoder {
     attribute: i32,
-    prediction_scheme: Option<Box<dyn PredictionSchemeDecoder<i32, i32>>>,
+    prediction_scheme: Option<Box<dyn PredictionSchemeDecoder<'static, i32, i32>>>,
 }
 
 impl Default for SequentialIntegerAttributeDecoder {
@@ -46,7 +46,7 @@ impl SequentialIntegerAttributeDecoder {
         self.attribute
     }
     
-    pub fn set_prediction_scheme(&mut self, scheme: Box<dyn PredictionSchemeDecoder<i32, i32>>) {
+    pub fn set_prediction_scheme(&mut self, scheme: Box<dyn PredictionSchemeDecoder<'static, i32, i32>>) {
         self.prediction_scheme = Some(scheme);
     }
 

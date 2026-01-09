@@ -275,7 +275,7 @@ impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
 }
 
 #[cfg(feature = "decoder")]
-impl<'a> PredictionScheme for MeshPredictionSchemeGeometricNormalDecoder<'a> {
+impl<'a> PredictionScheme<'a> for MeshPredictionSchemeGeometricNormalDecoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionGeometricNormal
     }
@@ -293,19 +293,15 @@ impl<'a> PredictionScheme for MeshPredictionSchemeGeometricNormalDecoder<'a> {
         GeometryAttributeType::Position
     }
 
-    fn set_parent_attribute(&mut self, att: &PointAttribute) -> bool {
+    fn set_parent_attribute(&mut self, att: &'a PointAttribute) -> bool {
         if att.attribute_type() != GeometryAttributeType::Position {
             return false;
         }
         if att.num_components() != 3 {
             return false;
         }
-        // SAFETY: The PointAttribute referenced by att is owned by the PointCloud
-        // which outlives the decoder (lifetime 'a). This is verified by the
-        // decoder architecture and existing tests.
-        unsafe {
-            self.pos_attribute = Some(std::mem::transmute::<&PointAttribute, &'a PointAttribute>(att));
-        }
+        // Safe: lifetime 'a is now tracked by the compiler
+        self.pos_attribute = Some(att);
         true
     }
 
@@ -315,7 +311,7 @@ impl<'a> PredictionScheme for MeshPredictionSchemeGeometricNormalDecoder<'a> {
 }
 
 #[cfg(feature = "decoder")]
-impl<'a> PredictionSchemeDecoder<i32, i32> for MeshPredictionSchemeGeometricNormalDecoder<'a> {
+impl<'a> PredictionSchemeDecoder<'a, i32, i32> for MeshPredictionSchemeGeometricNormalDecoder<'a> {
     fn compute_original_values(
         &mut self,
         in_corr: &[i32],
@@ -537,7 +533,7 @@ impl<'a> PredictionSchemeGeometricNormalDecoder<'a> {
 }
 
 #[cfg(feature = "decoder")]
-impl<'a> PredictionScheme for PredictionSchemeGeometricNormalDecoder<'a> {
+impl<'a> PredictionScheme<'a> for PredictionSchemeGeometricNormalDecoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionGeometricNormal
     }
@@ -558,13 +554,12 @@ impl<'a> PredictionScheme for PredictionSchemeGeometricNormalDecoder<'a> {
         }
     }
 
-    fn set_parent_attribute(&mut self, att: &PointAttribute) -> bool {
+    fn set_parent_attribute(&mut self, att: &'a PointAttribute) -> bool {
         if att.attribute_type() != GeometryAttributeType::Position {
             return false;
         }
-        unsafe {
-            self.pos_attribute = Some(std::mem::transmute::<&PointAttribute, &'a PointAttribute>(att));
-        }
+        // Safe: lifetime 'a is now tracked by the compiler
+        self.pos_attribute = Some(att);
         true
     }
 
@@ -574,7 +569,7 @@ impl<'a> PredictionScheme for PredictionSchemeGeometricNormalDecoder<'a> {
 }
 
 #[cfg(feature = "decoder")]
-impl<'a> PredictionSchemeDecoder<i32, i32> for PredictionSchemeGeometricNormalDecoder<'a> {
+impl<'a> PredictionSchemeDecoder<'a, i32, i32> for PredictionSchemeGeometricNormalDecoder<'a> {
     fn compute_original_values(
         &mut self,
         in_corr: &[i32],
@@ -910,7 +905,7 @@ impl<'a> PredictionSchemeGeometricNormalEncoder<'a> {
 }
 
 #[cfg(feature = "encoder")]
-impl<'a> PredictionScheme for PredictionSchemeGeometricNormalEncoder<'a> {
+impl<'a> PredictionScheme<'a> for PredictionSchemeGeometricNormalEncoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionGeometricNormal
     }
@@ -931,16 +926,12 @@ impl<'a> PredictionScheme for PredictionSchemeGeometricNormalEncoder<'a> {
         }
     }
 
-    fn set_parent_attribute(&mut self, att: &PointAttribute) -> bool {
+    fn set_parent_attribute(&mut self, att: &'a PointAttribute) -> bool {
         if att.attribute_type() != GeometryAttributeType::Position {
             return false;
         }
-        // SAFETY: The PointAttribute referenced by att is owned by the PointCloud
-        // which outlives the decoder (lifetime 'a). This is verified by the
-        // decoder architecture and existing tests.
-        unsafe {
-            self.pos_attribute = Some(std::mem::transmute::<&PointAttribute, &'a PointAttribute>(att));
-        }
+        // Safe: lifetime 'a is now tracked by the compiler
+        self.pos_attribute = Some(att);
         true
     }
 
@@ -950,7 +941,7 @@ impl<'a> PredictionScheme for PredictionSchemeGeometricNormalEncoder<'a> {
 }
 
 #[cfg(feature = "encoder")]
-impl<'a> PredictionSchemeEncoder<i32, i32> for PredictionSchemeGeometricNormalEncoder<'a> {
+impl<'a> PredictionSchemeEncoder<'a, i32, i32> for PredictionSchemeGeometricNormalEncoder<'a> {
     fn compute_correction_values(
         &mut self,
         in_data: &[i32],

@@ -205,7 +205,7 @@ impl<'a, DataType, CorrType, Transform>
 }
 
 #[cfg(feature = "encoder")]
-impl<'a, DataType, CorrType, Transform> PredictionScheme
+impl<'a, DataType, CorrType, Transform> PredictionScheme<'a>
     for PredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeEncodingTransform<DataType, CorrType>,
@@ -230,13 +230,13 @@ where
         GeometryAttributeType::Invalid
     }
 
-    fn set_parent_attribute(&mut self, _att: &PointAttribute) -> bool {
+    fn set_parent_attribute(&mut self, _att: &'a PointAttribute) -> bool {
         false
     }
 }
 
 #[cfg(feature = "encoder")]
-impl<'a, DataType, CorrType, Transform> PredictionSchemeEncoder<DataType, CorrType>
+impl<'a, DataType, CorrType, Transform> PredictionSchemeEncoder<'a, DataType, CorrType>
     for PredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
     DataType: ParallelogramDataType + std::fmt::Debug,
@@ -341,7 +341,7 @@ impl<'a, DataType, CorrType, Transform>
 }
 
 #[cfg(feature = "decoder")]
-impl<'a, DataType, CorrType, Transform> PredictionScheme
+impl<'a, DataType, CorrType, Transform> PredictionScheme<'a>
     for PredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeDecodingTransform<DataType, CorrType>,
@@ -366,13 +366,13 @@ where
         GeometryAttributeType::Invalid
     }
 
-    fn set_parent_attribute(&mut self, _att: &PointAttribute) -> bool {
+    fn set_parent_attribute(&mut self, _att: &'a PointAttribute) -> bool {
         false
     }
 }
 
 #[cfg(feature = "decoder")]
-impl<'a, DataType, CorrType, Transform> PredictionSchemeDecoder<DataType, CorrType>
+impl<'a, DataType, CorrType, Transform> PredictionSchemeDecoder<'a, DataType, CorrType>
     for PredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
     DataType: ParallelogramDataType + std::fmt::Debug,
