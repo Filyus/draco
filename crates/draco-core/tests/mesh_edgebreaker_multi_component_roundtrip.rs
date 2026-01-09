@@ -34,10 +34,8 @@ fn test_edgebreaker_multi_component_roundtrip() {
     for i in 0..6 {
         data[i] = i as f32;
     }
-    // Convert f32 slice to u8 slice
-    let u8_data = unsafe {
-        std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 4)
-    };
+    // Convert f32 slice to u8 slice using bytemuck.
+    let u8_data = bytemuck::cast_slice(&data);
     attr.buffer_mut().update(u8_data, None);
     mesh.add_attribute(attr);
 
@@ -78,8 +76,10 @@ fn test_edgebreaker_multi_component_roundtrip() {
     let attr_decoded = decoded_mesh.attribute(0);
     let mut decoded_values = vec![0.0f32; 6];
     for i in 0..6 {
-        let ptr = &attr_decoded.buffer().data()[i * 4] as *const u8 as *const f32;
-        let val = unsafe { ptr.read_unaligned() };
+        let start = i * 4;
+        let end = start + 4;
+        let bytes = &attr_decoded.buffer().data()[start..end];
+        let val: f32 = bytemuck::pod_read_unaligned(bytes);
         decoded_values[i] = val;
     }
 

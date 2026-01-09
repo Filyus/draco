@@ -34,13 +34,7 @@ impl AttributeTransformData {
         if byte_offset + size > self.buffer.data_size() {
             return None;
         }
-        // We need a way to read T from buffer.
-        // DataBuffer::read takes &mut [u8].
-        // We can read into a temporary buffer and then transmute/read_unaligned.
-        // Or just use unsafe.
-        
-        // Let's use a safer approach if possible, or just unsafe.
-        // Since T is Copy, we can assume it's POD-like for this context.
+
         let mut val: T = bytemuck::Zeroable::zeroed();
         let slice = bytemuck::bytes_of_mut(&mut val);
         self.buffer.read(byte_offset, slice);
