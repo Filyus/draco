@@ -10,6 +10,7 @@ decoder = []
 
 [dependencies]
 thiserror = "2.0.17"
+bytemuck = { version = "1.24.0", features = ["derive"] }
 
 [dev-dependencies]
 draco-io = { path = "../draco-io" }

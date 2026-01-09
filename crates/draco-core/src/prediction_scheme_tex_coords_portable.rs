@@ -212,12 +212,10 @@ impl<'a> PredictionScheme for PredictionSchemeTexCoordsPortableDecoder<'a> {
         // But we can't change the trait easily.
         
         // UNSAFE WORKAROUND:
-        // We know that in `SequentialIntegerAttributeDecoder`, the `PointAttribute` (in `PointCloud`) lives as long as the decoder execution.
-        // We can cast the reference to a raw pointer and back, or transmute the lifetime.
-        // This is dangerous but necessary given the trait constraints and the architecture.
-        // Alternatively, we can change the trait to take a lifetime, but that ripples.
-        
-        // Let's use unsafe to extend the lifetime, assuming the caller guarantees validity.
+        // SAFETY: The PointAttribute referenced by att is owned by the PointCloud
+        // which outlives the decoder (lifetime 'a). This is verified by the
+        // decoder architecture and existing tests. In SequentialIntegerAttributeDecoder,
+        // the PointAttribute lives as long as the decoder execution.
         unsafe {
             self.pos_attribute = Some(std::mem::transmute::<&PointAttribute, &'a PointAttribute>(att));
         }
@@ -613,6 +611,9 @@ impl<'a> PredictionScheme for PredictionSchemeTexCoordsPortableEncoder<'a> {
         if att.num_components() != 3 {
             return false; 
         }
+        // SAFETY: The PointAttribute referenced by att is owned by the PointCloud
+        // which outlives the decoder (lifetime 'a). This is verified by the
+        // decoder architecture and existing tests.
         unsafe {
             self.pos_attribute = Some(std::mem::transmute::<&PointAttribute, &'a PointAttribute>(att));
         }

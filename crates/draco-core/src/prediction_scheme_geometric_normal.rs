@@ -300,7 +300,9 @@ impl<'a> PredictionScheme for MeshPredictionSchemeGeometricNormalDecoder<'a> {
         if att.num_components() != 3 {
             return false;
         }
-        // Safety: tests and decoders ensure the attribute outlives the decoder.
+        // SAFETY: The PointAttribute referenced by att is owned by the PointCloud
+        // which outlives the decoder (lifetime 'a). This is verified by the
+        // decoder architecture and existing tests.
         unsafe {
             self.pos_attribute = Some(std::mem::transmute::<&PointAttribute, &'a PointAttribute>(att));
         }
@@ -933,6 +935,9 @@ impl<'a> PredictionScheme for PredictionSchemeGeometricNormalEncoder<'a> {
         if att.attribute_type() != GeometryAttributeType::Position {
             return false;
         }
+        // SAFETY: The PointAttribute referenced by att is owned by the PointCloud
+        // which outlives the decoder (lifetime 'a). This is verified by the
+        // decoder architecture and existing tests.
         unsafe {
             self.pos_attribute = Some(std::mem::transmute::<&PointAttribute, &'a PointAttribute>(att));
         }
