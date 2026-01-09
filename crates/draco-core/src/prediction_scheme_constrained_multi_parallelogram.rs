@@ -58,7 +58,7 @@ where
 }
 
 #[cfg(feature = "encoder")]
-impl<'a, DataType, CorrType, Transform> PredictionScheme
+impl<'a, DataType, CorrType, Transform> PredictionScheme<'a>
     for PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeEncodingTransform<DataType, CorrType>,
@@ -79,7 +79,7 @@ where
         crate::geometry_attribute::GeometryAttributeType::Generic
     }
 
-    fn set_parent_attribute(&mut self, _att: &PointAttribute) -> bool {
+    fn set_parent_attribute(&mut self, _att: &'a PointAttribute) -> bool {
         false
     }
 
@@ -119,7 +119,7 @@ impl PartialOrd for Error {
 }
 
 #[cfg(feature = "encoder")]
-impl<'a, DataType, CorrType, Transform> PredictionSchemeEncoder<DataType, CorrType>
+impl<'a, DataType, CorrType, Transform> PredictionSchemeEncoder<'a, DataType, CorrType>
     for PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
     DataType: ParallelogramDataType + Into<i64> + Copy + Default + From<i32>,
@@ -584,7 +584,7 @@ where
 }
 
 #[cfg(feature = "decoder")]
-impl<'a, DataType, CorrType, Transform> PredictionScheme
+impl<'a, DataType, CorrType, Transform> PredictionScheme<'a>
     for PredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeDecodingTransform<DataType, CorrType>,
@@ -605,7 +605,7 @@ where
         crate::geometry_attribute::GeometryAttributeType::Generic
     }
 
-    fn set_parent_attribute(&mut self, _att: &PointAttribute) -> bool {
+    fn set_parent_attribute(&mut self, _att: &'a PointAttribute) -> bool {
         false
     }
 
@@ -615,7 +615,7 @@ where
 }
 
 #[cfg(feature = "decoder")]
-impl<'a, DataType, CorrType, Transform> PredictionSchemeDecoder<DataType, CorrType>
+impl<'a, DataType, CorrType, Transform> PredictionSchemeDecoder<'a, DataType, CorrType>
     for PredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
     DataType: ParallelogramDataType + Into<i64> + Copy + Default + From<i32>,

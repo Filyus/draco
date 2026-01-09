@@ -144,7 +144,7 @@ where
 }
 
 #[cfg(feature = "encoder")]
-impl<DataType, CorrType, Transform> PredictionScheme
+impl<DataType, CorrType, Transform> PredictionScheme<'static>
     for PredictionSchemeDeltaEncoder<DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeEncodingTransform<DataType, CorrType>,
@@ -165,7 +165,7 @@ where
         GeometryAttributeType::Invalid
     }
 
-    fn set_parent_attribute(&mut self, _att: &PointAttribute) -> bool {
+    fn set_parent_attribute(&mut self, _att: &'static PointAttribute) -> bool {
         false
     }
 
@@ -179,7 +179,7 @@ where
 }
 
 #[cfg(feature = "encoder")]
-impl<DataType, CorrType, Transform> PredictionSchemeEncoder<DataType, CorrType>
+impl<DataType, CorrType, Transform> PredictionSchemeEncoder<'static, DataType, CorrType>
     for PredictionSchemeDeltaEncoder<DataType, CorrType, Transform>
 where
     DataType: Copy + Default,
@@ -248,7 +248,7 @@ where
 }
 
 #[cfg(feature = "decoder")]
-impl<DataType, CorrType, Transform> PredictionScheme
+impl<DataType, CorrType, Transform> PredictionScheme<'static>
     for PredictionSchemeDeltaDecoder<DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeDecodingTransform<DataType, CorrType>,
@@ -269,7 +269,7 @@ where
         GeometryAttributeType::Invalid
     }
 
-    fn set_parent_attribute(&mut self, _att: &PointAttribute) -> bool {
+    fn set_parent_attribute(&mut self, _att: &'static PointAttribute) -> bool {
         false
     }
 
@@ -283,7 +283,7 @@ where
 }
 
 #[cfg(feature = "decoder")]
-impl<DataType, CorrType, Transform> PredictionSchemeDecoder<DataType, CorrType>
+impl<DataType, CorrType, Transform> PredictionSchemeDecoder<'static, DataType, CorrType>
     for PredictionSchemeDeltaDecoder<DataType, CorrType, Transform>
 where
     DataType: Copy + Default,
