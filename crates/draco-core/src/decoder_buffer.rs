@@ -198,7 +198,7 @@ impl<'a> DecoderBuffer<'a> {
     /// Returns `DracoError::BufferError` if:
     /// - Bit decoding is active
     /// - Not enough bytes remaining
-    pub fn decode<T: Copy>(&mut self) -> Result<T, DracoError> {
+    pub fn decode<T: Copy + bytemuck::Pod>(&mut self) -> Result<T, DracoError> {
         if self.bit_decoder_active {
             return Err(DracoError::BufferError(
                 "Cannot decode bytes while bit decoding is active".into(),
@@ -213,9 +213,8 @@ impl<'a> DecoderBuffer<'a> {
             )));
         }
 
-        // Safety: we verified bounds above
-        let ptr = self.data[self.pos..].as_ptr() as *const T;
-        let val = unsafe { ptr.read_unaligned() };
+        // Safety: bytemuck::Pod guarantees T can be safely read from any bit pattern
+        let val = bytemuck::pod_read_unaligned::<T>(&self.data[self.pos..self.pos + size]);
         self.pos += size;
         Ok(val)
     }

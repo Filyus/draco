@@ -1,5 +1,3 @@
-use std::mem;
-
 #[derive(Default)]
 pub struct EncoderBuffer {
     buffer: Vec<u8>,
@@ -139,13 +137,11 @@ impl EncoderBuffer {
         self.current_bit_offset += 1;
     }
 
-    pub fn encode<T>(&mut self, data: T) -> bool {
+    pub fn encode<T: bytemuck::NoUninit>(&mut self, data: T) -> bool {
         if self.bit_encoder_active {
             return false;
         }
-        let size = mem::size_of::<T>();
-        let ptr = &data as *const T as *const u8;
-        let slice = unsafe { std::slice::from_raw_parts(ptr, size) };
+        let slice = bytemuck::bytes_of(&data);
         self.buffer.extend_from_slice(slice);
         true
     }

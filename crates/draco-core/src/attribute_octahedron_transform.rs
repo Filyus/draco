@@ -55,12 +55,10 @@ impl AttributeOctahedronTransform {
                 let att_val_id = attribute.mapped_index(point_id);
                 let offset = att_val_id.0 as usize * attribute.byte_stride() as usize;
                 let buffer = attribute.buffer();
-                unsafe {
-                    let ptr = buffer.data().as_ptr().add(offset) as *const f32;
-                    att_val[0] = ptr.read_unaligned();
-                    att_val[1] = ptr.add(1).read_unaligned();
-                    att_val[2] = ptr.add(2).read_unaligned();
-                }
+                let bytes = &buffer.data()[offset..offset + 12];
+                att_val[0] = bytemuck::pod_read_unaligned::<f32>(&bytes[0..4]);
+                att_val[1] = bytemuck::pod_read_unaligned::<f32>(&bytes[4..8]);
+                att_val[2] = bytemuck::pod_read_unaligned::<f32>(&bytes[8..12]);
 
                 let (s, t) = converter.float_vector_to_quantized_octahedral_coords(&att_val);
                 portable_data.extend_from_slice(&s.to_le_bytes());
@@ -71,12 +69,10 @@ impl AttributeOctahedronTransform {
                 let att_val_id = attribute.mapped_index(PointIndex(i as u32));
                 let offset = att_val_id.0 as usize * attribute.byte_stride() as usize;
                 let buffer = attribute.buffer();
-                unsafe {
-                    let ptr = buffer.data().as_ptr().add(offset) as *const f32;
-                    att_val[0] = ptr.read_unaligned();
-                    att_val[1] = ptr.add(1).read_unaligned();
-                    att_val[2] = ptr.add(2).read_unaligned();
-                }
+                let bytes = &buffer.data()[offset..offset + 12];
+                att_val[0] = bytemuck::pod_read_unaligned::<f32>(&bytes[0..4]);
+                att_val[1] = bytemuck::pod_read_unaligned::<f32>(&bytes[4..8]);
+                att_val[2] = bytemuck::pod_read_unaligned::<f32>(&bytes[8..12]);
 
                 let (s, t) = converter.float_vector_to_quantized_octahedral_coords(&att_val);
                 portable_data.extend_from_slice(&s.to_le_bytes());
@@ -163,13 +159,11 @@ impl AttributeTransform for AttributeOctahedronTransform {
             let att_val = converter.quantized_octahedral_coords_to_unit_vector(s, t);
             
             let target_offset = i * 3 * 4;
-            // Write floats
-            unsafe {
-                let ptr = target_buffer.data_mut().as_mut_ptr().add(target_offset) as *mut f32;
-                ptr.write_unaligned(att_val[0]);
-                ptr.add(1).write_unaligned(att_val[1]);
-                ptr.add(2).write_unaligned(att_val[2]);
-            }
+            // Write floats using bytemuck
+            let bytes = &mut target_buffer.data_mut()[target_offset..target_offset + 12];
+            bytes[0..4].copy_from_slice(bytemuck::bytes_of(&att_val[0]));
+            bytes[4..8].copy_from_slice(bytemuck::bytes_of(&att_val[1]));
+            bytes[8..12].copy_from_slice(bytemuck::bytes_of(&att_val[2]));
         }
 
         true

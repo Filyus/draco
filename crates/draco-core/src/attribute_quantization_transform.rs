@@ -62,8 +62,7 @@ impl AttributeQuantizationTransform {
             let offset = i * byte_stride;
             // Read num_components floats
             for c in 0..num_components {
-                let ptr = &buffer.data()[offset + c * 4] as *const u8 as *const f32;
-                let val = unsafe { ptr.read_unaligned() };
+                let val = bytemuck::pod_read_unaligned::<f32>(&buffer.data()[offset + c * 4..offset + c * 4 + 4]);
                 
                 if val < self.min_values[c] {
                     self.min_values[c] = val;
@@ -125,15 +124,14 @@ impl AttributeQuantizationTransform {
             let dst_offset = i * dst_stride;
 
             for c in 0..num_components as usize {
-                let ptr = &src_buffer.data()[src_offset + c * 4] as *const u8 as *const f32;
-                let mut val = unsafe { ptr.read_unaligned() };
+                let mut val = bytemuck::pod_read_unaligned::<f32>(&src_buffer.data()[src_offset + c * 4..src_offset + c * 4 + 4]);
 
                 val -= self.min_values[c];
                 let q_val = quantizer.quantize_float(val);
                 
                 let q_val_u32 = q_val as u32;
-                let dst_ptr = &mut dst_buffer.data_mut()[dst_offset + c * 4] as *mut u8 as *mut u32;
-                unsafe { dst_ptr.write_unaligned(q_val_u32); }
+                let bytes = bytemuck::bytes_of(&q_val_u32);
+                dst_buffer.data_mut()[dst_offset + c * 4..dst_offset + c * 4 + 4].copy_from_slice(bytes);
             }
         }
     }
@@ -228,14 +226,13 @@ impl AttributeTransform for AttributeQuantizationTransform {
             let dst_offset = i * dst_stride;
 
             for c in 0..num_components {
-                let ptr = &src_buffer.data()[src_offset + c * 4] as *const u8 as *const i32;
-                let q_val = unsafe { ptr.read_unaligned() };
+                let q_val = bytemuck::pod_read_unaligned::<i32>(&src_buffer.data()[src_offset + c * 4..src_offset + c * 4 + 4]);
 
                 let mut val = dequantizer.dequantize_float(q_val);
                 val += self.min_values[c];
 
-                let dst_ptr = &mut dst_buffer.data_mut()[dst_offset + c * 4] as *mut u8 as *mut f32;
-                unsafe { dst_ptr.write_unaligned(val); }
+                let bytes = bytemuck::bytes_of(&val);
+                dst_buffer.data_mut()[dst_offset + c * 4..dst_offset + c * 4 + 4].copy_from_slice(bytes);
             }
         }
 
