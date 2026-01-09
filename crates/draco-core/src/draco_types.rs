@@ -26,9 +26,6 @@ impl DataType {
     }
 
     pub fn is_integral(&self) -> bool {
-        match self {
-            DataType::Float32 | DataType::Float64 | DataType::Invalid => false,
-            _ => true,
-        }
+        !matches!(self, DataType::Float32 | DataType::Float64 | DataType::Invalid)
     }
 }

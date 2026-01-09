@@ -7,6 +7,12 @@ pub struct PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
     num_components: usize,
 }
 
+impl Default for PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform {
     pub fn new() -> Self {
         Self {
@@ -51,7 +57,7 @@ impl PredictionSchemeDecodingTransform<i32, i32> for PredictionSchemeNormalOctah
         // Account for wrong values (e.g., due to stream mismatch/fuzzing).
         // C++ requires quantization bits in [2, 30].
         let q = self.base.base().quantization_bits();
-        if q < 2 || q > 30 {
+        if !(2..=30).contains(&q) {
             return false;
         }
         true

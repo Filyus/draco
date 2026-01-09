@@ -384,7 +384,7 @@ impl GltfWriter {
 
         // Set quantization for each attribute type, clamped to 1..=31
         for i in 0..mesh.num_attributes() {
-            let att = mesh.attribute(i as i32);
+            let att = mesh.attribute(i);
             if att.data_type() == draco_core::draco_types::DataType::Float32 {
                 let bits = match att.attribute_type() {
                     GeometryAttributeType::Position => quantization.position,
@@ -395,7 +395,7 @@ impl GltfWriter {
                     GeometryAttributeType::Invalid => 8,
                 };
                 let bits = bits.clamp(1, 31);
-                options.set_attribute_int(i as i32, "quantization_bits", bits);
+                options.set_attribute_int(i, "quantization_bits", bits);
             }
         }
 
@@ -425,7 +425,7 @@ impl GltfWriter {
         let mut draco_attributes: HashMap<String, usize> = HashMap::new();
 
         for i in 0..mesh.num_attributes() {
-            let att = mesh.attribute(i as i32);
+            let att = mesh.attribute(i);
             let accessor_idx = self.accessors.len();
 
             let (semantic, gltf_type) = match att.attribute_type() {
@@ -642,17 +642,13 @@ impl GltfWriter {
         output.extend_from_slice(&(padded_json_len as u32).to_le_bytes());
         output.extend_from_slice(&GLB_CHUNK_JSON.to_le_bytes());
         output.extend_from_slice(json_bytes);
-        for _ in 0..json_padding {
-            output.push(b' '); // Pad with spaces (valid JSON whitespace)
-        }
+        output.extend(std::iter::repeat_n(b' ', json_padding)); // Pad with spaces (valid JSON whitespace)
 
         // Binary chunk
         output.extend_from_slice(&(padded_bin_len as u32).to_le_bytes());
         output.extend_from_slice(&GLB_CHUNK_BIN.to_le_bytes());
         output.extend_from_slice(&self.binary_data);
-        for _ in 0..bin_padding {
-            output.push(0);
-        }
+        output.extend(std::iter::repeat_n(0u8, bin_padding));
 
         Ok(output)
     }
@@ -773,13 +769,13 @@ impl Writer for GltfWriter {
         // Use default quantization
         self.add_draco_mesh(mesh, name, None)
             .map(|_| ())
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| io::Error::other(e.to_string()))
     }
 
     fn write<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         // Default to GLB format for Writer trait
         self.write_glb(path)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| io::Error::other(e.to_string()))
     }
 
     fn vertex_count(&self) -> usize {
@@ -803,7 +799,7 @@ impl crate::traits::SceneWriter for GltfWriter {
         // Use default quantization for the trait method.
         self.add_scene(scene, None)
             .map(|_| ())
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| io::Error::other(e.to_string()))
     }
 }
 

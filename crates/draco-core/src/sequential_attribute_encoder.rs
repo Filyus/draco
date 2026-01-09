@@ -7,6 +7,12 @@ pub struct SequentialAttributeEncoder {
     attribute_id: i32,
 }
 
+impl Default for SequentialAttributeEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SequentialAttributeEncoder {
     pub fn new() -> Self {
         Self { attribute_id: -1 }

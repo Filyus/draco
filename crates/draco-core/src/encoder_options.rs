@@ -63,7 +63,7 @@ impl EncoderOptions {
     pub fn set_attribute_int(&mut self, att_id: i32, key: &str, value: i32) {
         self.attribute_options
             .entry(att_id)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(key.to_string(), value);
     }
 

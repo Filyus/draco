@@ -172,12 +172,10 @@ where
                 } else {
                     INVALID_CORNER_INDEX
                 }
+            } else if data_id < corner_table.num_vertices() {
+                corner_table.left_most_corner(crate::geometry_indices::VertexIndex(data_id as u32))
             } else {
-                if data_id < corner_table.num_vertices() {
-                    corner_table.left_most_corner(crate::geometry_indices::VertexIndex(data_id as u32))
-                } else {
-                    INVALID_CORNER_INDEX
-                }
+                INVALID_CORNER_INDEX
             };
 
             if corner_id == INVALID_CORNER_INDEX {
@@ -255,15 +253,13 @@ where
                         && (opp_data_id as usize) < data_id
                         && (next_data_id as usize) < data_id
                         && (prev_data_id as usize) < data_id
-                    {
-                        if num_parallelograms < MAX_NUM_PARALLELOGRAMS {
+                        && num_parallelograms < MAX_NUM_PARALLELOGRAMS {
                             corners[num_parallelograms] = c;
                             num_parallelograms += 1;
                             if num_parallelograms == MAX_NUM_PARALLELOGRAMS {
                                 break;
                             }
                         }
-                    }
                 }
 
                 // Proceed to the next corner attached to the vertex.
@@ -555,7 +551,7 @@ impl<'a, DataType, CorrType, Transform>
             return num_bits;
         }
         let p = total_used as f64 / total as f64;
-        let p = p.max(0.001).min(0.999);
+        let p = p.clamp(0.001, 0.999);
         
         let num_zeros = num_bits - num_ones;
         let cost = - (num_ones as f64) * p.log2() - (num_zeros as f64) * (1.0 - p).log2();
@@ -715,12 +711,10 @@ where
                 } else {
                     INVALID_CORNER_INDEX
                 }
+            } else if data_id < corner_table.num_vertices() {
+                corner_table.left_most_corner(crate::geometry_indices::VertexIndex(data_id as u32))
             } else {
-                if data_id < corner_table.num_vertices() {
-                    corner_table.left_most_corner(crate::geometry_indices::VertexIndex(data_id as u32))
-                } else {
-                    INVALID_CORNER_INDEX
-                }
+                INVALID_CORNER_INDEX
             };
 
             if corner_id == INVALID_CORNER_INDEX {
@@ -762,15 +756,13 @@ where
                         && (opp_data_id as usize) < data_id
                         && (next_data_id as usize) < data_id
                         && (prev_data_id as usize) < data_id
-                    {
-                        if num_parallelograms < MAX_NUM_PARALLELOGRAMS {
+                        && num_parallelograms < MAX_NUM_PARALLELOGRAMS {
                             corners[num_parallelograms] = c;
                             num_parallelograms += 1;
                             if num_parallelograms == MAX_NUM_PARALLELOGRAMS {
                                 break;
                             }
                         }
-                    }
                 }
 
                 // Proceed to the next corner attached to the vertex.

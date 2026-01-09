@@ -39,6 +39,7 @@ impl Default for GeometryAttribute {
 }
 
 impl GeometryAttribute {
+    #[allow(clippy::too_many_arguments)]
     pub fn init(&mut self, attribute_type: GeometryAttributeType, _buffer: Option<&DataBuffer>, num_components: u8, data_type: DataType, normalized: bool, byte_stride: i64, byte_offset: i64) {
         self.attribute_type = attribute_type;
         self.num_components = num_components;
@@ -132,12 +133,10 @@ impl PointAttribute {
     pub fn mapped_index(&self, point_index: PointIndex) -> AttributeValueIndex {
         if self.identity_mapping {
             AttributeValueIndex(point_index.0)
+        } else if (point_index.0 as usize) < self.indices_map.len() {
+            self.indices_map[point_index.0 as usize]
         } else {
-            if (point_index.0 as usize) < self.indices_map.len() {
-                self.indices_map[point_index.0 as usize]
-            } else {
-                INVALID_ATTRIBUTE_VALUE_INDEX
-            }
+            INVALID_ATTRIBUTE_VALUE_INDEX
         }
     }
 

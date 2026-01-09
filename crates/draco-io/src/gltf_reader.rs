@@ -831,12 +831,12 @@ fn decode_data_uri(uri: &str) -> Result<Vec<u8>> {
 impl crate::traits::Reader for GltfReader {
     fn open<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
         GltfReader::open(path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     fn read_meshes(&mut self) -> std::io::Result<Vec<draco_core::mesh::Mesh>> {
         self.decode_all_meshes()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 }
 
@@ -1002,10 +1002,10 @@ impl GltfReader {
 
 impl crate::traits::SceneReader for GltfReader {
     fn read_scene(&mut self) -> std::io::Result<crate::traits::Scene> {
-        let map_err = |e: GltfError| std::io::Error::new(std::io::ErrorKind::Other, e.to_string());
+        let map_err = |e: GltfError| std::io::Error::other(e.to_string());
 
         // Select scene: prefer default, else first, else empty
-        let scene_idx = self.root.scene.or_else(|| {
+        let scene_idx = self.root.scene.or({
             if self.root.scenes.is_empty() {
                 None
             } else {
@@ -1105,8 +1105,8 @@ fn decode_base64(input: &str) -> Result<Vec<u8>> {
         }
 
         // Fill remaining slots with 0 if chunk is incomplete
-        for i in chunk.len()..4 {
-            buf[i] = 0;
+        for item in buf.iter_mut().skip(chunk.len()) {
+            *item = 0;
         }
 
         let n = ((buf[0] as u32) << 18)

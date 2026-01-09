@@ -1,20 +1,12 @@
 use crate::encoder_buffer::EncoderBuffer;
 
+#[derive(Default)]
 pub struct DirectBitEncoder {
     bits: Vec<u32>,
     local_bits: u32,
     num_local_bits: u32,
 }
 
-impl Default for DirectBitEncoder {
-    fn default() -> Self {
-        Self {
-            bits: Vec::new(),
-            local_bits: 0,
-            num_local_bits: 0,
-        }
-    }
-}
 
 impl DirectBitEncoder {
     pub fn new() -> Self {

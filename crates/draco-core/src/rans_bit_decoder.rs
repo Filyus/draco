@@ -1,19 +1,12 @@
 use crate::ans::AnsDecoder;
 use crate::decoder_buffer::DecoderBuffer;
 
+#[derive(Default)]
 pub struct RAnsBitDecoder<'a> {
     ans_decoder: Option<AnsDecoder<'a>>,
     prob_zero: u8,
 }
 
-impl<'a> Default for RAnsBitDecoder<'a> {
-    fn default() -> Self {
-        Self {
-            ans_decoder: None,
-            prob_zero: 0,
-        }
-    }
-}
 
 impl<'a> RAnsBitDecoder<'a> {
     pub fn new() -> Self {
@@ -51,7 +44,7 @@ impl<'a> RAnsBitDecoder<'a> {
             }
         }
         
-        return false; 
+        false
     }
 
     pub fn decode_next_bit(&mut self) -> bool {

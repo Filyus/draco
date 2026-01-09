@@ -405,6 +405,13 @@ pub struct PredictionSchemeTexCoordsPortableEncodingTransform {
 }
 
 #[cfg(feature = "encoder")]
+impl Default for PredictionSchemeTexCoordsPortableEncodingTransform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "encoder")]
 impl PredictionSchemeTexCoordsPortableEncodingTransform {
     pub fn new() -> Self {
         Self {

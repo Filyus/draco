@@ -151,7 +151,7 @@ impl MeshEncoder {
     }
 
     fn encode_connectivity(&mut self, out_buffer: &mut EncoderBuffer) -> Status {
-        let mesh = self.mesh.as_ref().unwrap();
+        let mesh = self.mesh.as_ref().expect("mesh must be set before encoding");
 
         // Build faces array for corner table
         let faces: Vec<[crate::geometry_indices::VertexIndex; 3]> = (0..mesh.num_faces())
@@ -186,8 +186,8 @@ impl MeshEncoder {
     }
 
     fn encode_edgebreaker_connectivity(&mut self, out_buffer: &mut EncoderBuffer) -> Status {
-        let mesh = self.mesh.as_ref().unwrap();
-        let corner_table = self.corner_table.as_ref().unwrap();
+        let mesh = self.mesh.as_ref().expect("mesh must be set before encoding");
+        let corner_table = self.corner_table.as_ref().expect("corner_table must be set before edgebreaker encoding");
         
         let mut encoder = MeshEdgebreakerEncoder::new(mesh.num_faces(), mesh.num_points());
         let (point_ids, data_to_corner_map) =
@@ -200,7 +200,7 @@ impl MeshEncoder {
     }
 
     fn encode_sequential_connectivity(&mut self, out_buffer: &mut EncoderBuffer) -> Status {
-        let mesh = self.mesh.as_ref().unwrap();
+        let mesh = self.mesh.as_ref().expect("mesh must be set before encoding");
 
         // Encode the number of faces and points
         // Use the buffer's version (set in encode_header) for version checks
@@ -234,7 +234,7 @@ impl MeshEncoder {
                 for face_id in 0..mesh.num_faces() {
                     let face = mesh.face(FaceIndex(face_id as u32));
                     for i in 0..3 {
-                        out_buffer.encode_u32(face[i].0 as u32);
+                        out_buffer.encode_u32(face[i].0);
                     }
                 }
             }
@@ -249,7 +249,7 @@ impl MeshEncoder {
     }
 
     fn encode_attributes(&mut self, out_buffer: &mut EncoderBuffer) -> Status {
-        let mesh = self.mesh.as_ref().unwrap();
+        let mesh = self.mesh.as_ref().expect("mesh must be set before encoding");
         
         let method_int = self.options.get_global_int("encoding_method", -1);
         let is_edgebreaker = method_int == 1;
@@ -297,8 +297,8 @@ impl MeshEncoder {
         if is_edgebreaker {
             // Edgebreaker: multiple encoders, one per attribute
             for i in 0..mesh.num_attributes() {
-                let att = mesh.attribute(i as i32);
-                let quantization_bits = self.options.get_attribute_int(i as i32, "quantization_bits", -1);
+                let att = mesh.attribute(i);
+                let quantization_bits = self.options.get_attribute_int(i, "quantization_bits", -1);
                 let is_quantized = quantization_bits > 0
                     && (att.data_type() == DataType::Float32 || att.data_type() == DataType::Float64);
                 let is_normal = att.attribute_type() == GeometryAttributeType::Normal;
@@ -342,7 +342,7 @@ impl MeshEncoder {
             
             // Write all attribute metadata first
             for i in 0..mesh.num_attributes() {
-                let att = mesh.attribute(i as i32);
+                let att = mesh.attribute(i);
                 
                 out_buffer.encode_u8(att.attribute_type() as u8);
                 out_buffer.encode_u8(att.data_type() as u8);
@@ -358,8 +358,8 @@ impl MeshEncoder {
             
             // Write all decoder types after all metadata (SequentialAttributeEncodersController pattern)
             for i in 0..mesh.num_attributes() {
-                let att = mesh.attribute(i as i32);
-                let quantization_bits = self.options.get_attribute_int(i as i32, "quantization_bits", -1);
+                let att = mesh.attribute(i);
+                let quantization_bits = self.options.get_attribute_int(i, "quantization_bits", -1);
                 let is_quantized = quantization_bits > 0
                     && (att.data_type() == DataType::Float32 || att.data_type() == DataType::Float64);
                 let is_normal = att.attribute_type() == GeometryAttributeType::Normal;
@@ -386,18 +386,18 @@ impl MeshEncoder {
         
         // First pass: encode all attribute VALUES
         for i in 0..mesh.num_attributes() {
-            let att = mesh.attribute(i as i32);
+            let att = mesh.attribute(i);
             let decoder_type = decoder_types[i as usize];
-            let quantization_bits = self.options.get_attribute_int(i as i32, "quantization_bits", -1);
+            let quantization_bits = self.options.get_attribute_int(i, "quantization_bits", -1);
 
             match decoder_type {
                 3 => {
                     // Normal attribute with octahedral encoding
                     let mut encoder = SequentialNormalAttributeEncoder::new();
-                    if !encoder.init(self.point_cloud().unwrap(), i as i32, &self.options) {
+                    if !encoder.init(self.point_cloud().expect("point_cloud set"), i, &self.options) {
                         return Err(DracoError::DracoError("Failed to init normal encoder".to_string()));
                     }
-                    if !encoder.encode_values(self.point_cloud().unwrap(), &self.point_ids, out_buffer, &self.options, self) {
+                    if !encoder.encode_values(self.point_cloud().expect("point_cloud set"), &self.point_ids, out_buffer, &self.options, self) {
                         return Err(DracoError::DracoError("Failed to encode normal values".to_string()));
                     }
                     normal_encoders.push(Some(encoder));
@@ -416,7 +416,7 @@ impl MeshEncoder {
                     }
 
                     let mut att_encoder = SequentialIntegerAttributeEncoder::new();
-                    att_encoder.init(i as i32);
+                    att_encoder.init(i);
                     if !att_encoder.encode_values(
                         mesh as &PointCloud,
                         &self.point_ids,
@@ -436,7 +436,7 @@ impl MeshEncoder {
                 1 => {
                     // Integer attribute
                     let mut att_encoder = SequentialIntegerAttributeEncoder::new();
-                    att_encoder.init(i as i32);
+                    att_encoder.init(i);
                     if !att_encoder.encode_values(
                         mesh as &PointCloud,
                         &self.point_ids,
@@ -455,7 +455,7 @@ impl MeshEncoder {
                 0 => {
                     // Generic/float attribute
                     let mut att_encoder = SequentialAttributeEncoder::new();
-                    att_encoder.init(i as i32);
+                    att_encoder.init(i);
                     if !att_encoder.encode_values(mesh as &PointCloud, &self.point_ids, out_buffer) {
                         return Err(DracoError::DracoError(format!("Failed to encode attribute {}", i)));
                     }

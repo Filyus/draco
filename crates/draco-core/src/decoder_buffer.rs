@@ -1,6 +1,24 @@
 use std::mem;
+use crate::status::DracoError;
 use crate::version::DEFAULT_MESH_VERSION;
 
+/// Input buffer for reading compressed Draco data.
+///
+/// `DecoderBuffer` provides sequential byte and bit-level access to compressed data.
+/// It supports both byte-aligned reads (integers, floats, strings) and bit-level
+/// reads for entropy-coded data.
+///
+/// # Example
+///
+/// ```ignore
+/// use draco_core::DecoderBuffer;
+///
+/// let data = &[0x44, 0x52, 0x41, 0x43, 0x4F]; // "DRACO" header
+/// let mut buffer = DecoderBuffer::new(data);
+///
+/// assert_eq!(buffer.decode_u8().unwrap(), 0x44);
+/// assert_eq!(buffer.remaining_size(), 4);
+/// ```
 pub struct DecoderBuffer<'a> {
     data: &'a [u8],
     pos: usize,
@@ -14,6 +32,7 @@ pub struct DecoderBuffer<'a> {
 }
 
 impl<'a> DecoderBuffer<'a> {
+    /// Creates a new `DecoderBuffer` from a byte slice.
     pub fn new(data: &'a [u8]) -> Self {
         Self {
             data,
@@ -29,77 +48,103 @@ impl<'a> DecoderBuffer<'a> {
         }
     }
 
+    /// Sets the Draco bitstream version for version-dependent decoding.
     pub fn set_version(&mut self, major: u8, minor: u8) {
         self.version_major = major;
         self.version_minor = minor;
     }
 
+    /// Returns the major version number.
     pub fn version_major(&self) -> u8 {
         self.version_major
     }
 
+    /// Returns the minor version number.
     pub fn version_minor(&self) -> u8 {
         self.version_minor
     }
 
+    /// Returns the current read position in bytes.
     pub fn position(&self) -> usize {
         self.pos
     }
 
-    pub fn set_position(&mut self, pos: usize) -> Result<(), ()> {
+    /// Sets the read position.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DracoError::BufferError` if:
+    /// - Bit decoding is currently active
+    /// - Position is beyond the buffer length
+    pub fn set_position(&mut self, pos: usize) -> Result<(), DracoError> {
         if self.bit_decoder_active {
-            return Err(());
+            return Err(DracoError::BufferError(
+                "Cannot set position while bit decoding is active".into(),
+            ));
         }
         if pos > self.data.len() {
-            return Err(());
+            return Err(DracoError::BufferError(format!(
+                "Position {} exceeds buffer length {}",
+                pos,
+                self.data.len()
+            )));
         }
         self.pos = pos;
         Ok(())
     }
 
+    /// Returns the number of bytes remaining in the buffer.
     pub fn remaining_size(&self) -> usize {
         self.data.len().saturating_sub(self.pos)
     }
 
+    /// Peeks at the next `len` bytes without advancing the position.
     pub fn peek_bytes(&self, len: usize) -> Vec<u8> {
         let end = std::cmp::min(self.pos + len, self.data.len());
         self.data[self.pos..end].to_vec()
     }
 
-    pub fn start_bit_decoding(&mut self, decode_size: bool) -> Result<u64, ()> {
+    /// Starts bit-level decoding mode.
+    ///
+    /// When `decode_size` is true, reads the bit sequence size from the buffer.
+    /// Returns the size in bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DracoError::BufferError` if bit decoding is already active.
+    pub fn start_bit_decoding(&mut self, decode_size: bool) -> Result<u64, DracoError> {
         if self.bit_decoder_active {
-            return Err(());
+            return Err(DracoError::BufferError(
+                "Bit decoding already active".into(),
+            ));
         }
         let bitstream_version = ((self.version_major as u16) << 8) | (self.version_minor as u16);
         // Draco stores the bit-sequence size in BYTES (not bits) when |decode_size| is true.
         let mut size_bytes: u64 = 0;
         if decode_size {
             if bitstream_version < 0x0202 {
-                size_bytes = self.decode_u64().map_err(|_| ())?;
+                size_bytes = self.decode_u64()?;
             } else {
-                size_bytes = self.decode_varint().map_err(|_| ())?;
+                size_bytes = self.decode_varint()?;
             }
         }
-        
+
         self.bit_start_pos = self.pos;
         self.bit_decoder_active = true;
         self.current_bit_offset = 0;
         self.bit_sequence_size_known = decode_size;
-        
+
         if decode_size {
-             self.bit_stream_end_pos = self.bit_start_pos + size_bytes as usize;
+            self.bit_stream_end_pos = self.bit_start_pos + size_bytes as usize;
         } else {
-             // If size is not encoded, we assume the rest of the buffer?
-             // Or caller knows?
-             // C++ implementation:
-             // if (decode_size) ...
-             // else bit_decoder_.Init(..., data_size_ - pos_);
-             self.bit_stream_end_pos = self.data.len();
+            // If size is not encoded, assume the rest of the buffer.
+            self.bit_stream_end_pos = self.data.len();
         }
 
         Ok(size_bytes)
     }
 
+    /// Ends bit-level decoding mode and advances the byte position.
     pub fn end_bit_decoding(&mut self) {
         self.bit_decoder_active = false;
         // Draco behavior:
@@ -108,14 +153,21 @@ impl<'a> DecoderBuffer<'a> {
         if self.bit_sequence_size_known {
             self.pos = self.bit_stream_end_pos;
         } else {
-            let bytes_consumed = (self.current_bit_offset + 7) / 8;
+            let bytes_consumed = self.current_bit_offset.div_ceil(8);
             self.pos = self.bit_start_pos + bytes_consumed;
         }
     }
 
-    pub fn decode_least_significant_bits32(&mut self, nbits: u32) -> Result<u32, ()> {
+    /// Decodes `nbits` least significant bits as a u32.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DracoError::BufferError` if bit decoding is not active or end of stream.
+    pub fn decode_least_significant_bits32(&mut self, nbits: u32) -> Result<u32, DracoError> {
         if !self.bit_decoder_active {
-            return Err(());
+            return Err(DracoError::BufferError(
+                "Bit decoding not active".into(),
+            ));
         }
         let mut value = 0;
         for i in 0..nbits {
@@ -125,7 +177,7 @@ impl<'a> DecoderBuffer<'a> {
         Ok(value)
     }
 
-    fn get_bit(&mut self) -> Result<u32, ()> {
+    fn get_bit(&mut self) -> Result<u32, DracoError> {
         let total_bit_offset = self.current_bit_offset;
         let byte_offset = self.bit_start_pos + total_bit_offset / 8;
         let bit_shift = total_bit_offset % 8;
@@ -135,61 +187,81 @@ impl<'a> DecoderBuffer<'a> {
             self.current_bit_offset += 1;
             Ok(bit as u32)
         } else {
-            Err(())
+            Err(DracoError::BufferError("Unexpected end of bit stream".into()))
         }
     }
 
-    pub fn decode<T: Copy>(&mut self) -> Result<T, ()> {
+    /// Decodes a value of type T using raw memory copy.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DracoError::BufferError` if:
+    /// - Bit decoding is active
+    /// - Not enough bytes remaining
+    pub fn decode<T: Copy>(&mut self) -> Result<T, DracoError> {
         if self.bit_decoder_active {
-            return Err(());
+            return Err(DracoError::BufferError(
+                "Cannot decode bytes while bit decoding is active".into(),
+            ));
         }
         let size = mem::size_of::<T>();
         if self.pos + size > self.data.len() {
-            return Err(());
+            return Err(DracoError::BufferError(format!(
+                "Unexpected end of buffer: need {} bytes, have {}",
+                size,
+                self.remaining_size()
+            )));
         }
 
-        // Unsafe copy to T
+        // Safety: we verified bounds above
         let ptr = self.data[self.pos..].as_ptr() as *const T;
         let val = unsafe { ptr.read_unaligned() };
         self.pos += size;
         Ok(val)
     }
 
-    pub fn decode_u8(&mut self) -> Result<u8, ()> {
+    /// Decodes a single byte.
+    pub fn decode_u8(&mut self) -> Result<u8, DracoError> {
         self.decode::<u8>()
     }
 
-    pub fn decode_u16(&mut self) -> Result<u16, ()> {
+    /// Decodes a little-endian u16.
+    pub fn decode_u16(&mut self) -> Result<u16, DracoError> {
         let mut bytes = [0u8; 2];
         self.decode_bytes(&mut bytes)?;
         Ok(u16::from_le_bytes(bytes))
     }
 
-    pub fn decode_u32(&mut self) -> Result<u32, ()> {
+    /// Decodes a little-endian u32.
+    pub fn decode_u32(&mut self) -> Result<u32, DracoError> {
         let mut bytes = [0u8; 4];
         self.decode_bytes(&mut bytes)?;
         Ok(u32::from_le_bytes(bytes))
     }
 
-    pub fn decode_u64(&mut self) -> Result<u64, ()> {
+    /// Decodes a little-endian u64.
+    pub fn decode_u64(&mut self) -> Result<u64, DracoError> {
         let mut bytes = [0u8; 8];
         self.decode_bytes(&mut bytes)?;
         Ok(u64::from_le_bytes(bytes))
     }
 
-    pub fn decode_f32(&mut self) -> Result<f32, ()> {
+    /// Decodes a little-endian f32.
+    pub fn decode_f32(&mut self) -> Result<f32, DracoError> {
         let mut bytes = [0u8; 4];
         self.decode_bytes(&mut bytes)?;
         Ok(f32::from_le_bytes(bytes))
     }
 
-    pub fn decode_f64(&mut self) -> Result<f64, ()> {
+    /// Decodes a little-endian f64.
+    pub fn decode_f64(&mut self) -> Result<f64, DracoError> {
         let mut bytes = [0u8; 8];
         self.decode_bytes(&mut bytes)?;
         Ok(f64::from_le_bytes(bytes))
     }
 
-    pub fn decode_string(&mut self) -> Result<String, ()> {
+    /// Decodes a null-terminated string.
+    pub fn decode_string(&mut self) -> Result<String, DracoError> {
         let mut bytes = Vec::new();
         loop {
             let b = self.decode_u8()?;
@@ -198,20 +270,32 @@ impl<'a> DecoderBuffer<'a> {
             }
             bytes.push(b);
         }
-        String::from_utf8(bytes).map_err(|_| ())
+        String::from_utf8(bytes).map_err(|e| {
+            DracoError::BufferError(format!("Invalid UTF-8 string: {}", e))
+        })
     }
 
-    pub fn decode_bytes(&mut self, out: &mut [u8]) -> Result<(), ()> {
+    /// Decodes bytes into the provided buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DracoError::BufferError` if not enough bytes remaining.
+    pub fn decode_bytes(&mut self, out: &mut [u8]) -> Result<(), DracoError> {
         let size = out.len();
         if self.pos + size > self.data.len() {
-            return Err(());
+            return Err(DracoError::BufferError(format!(
+                "Unexpected end of buffer: need {} bytes, have {}",
+                size,
+                self.remaining_size()
+            )));
         }
         out.copy_from_slice(&self.data[self.pos..self.pos + size]);
         self.pos += size;
         Ok(())
     }
 
-    pub fn decode_varint(&mut self) -> Result<u64, ()> {
+    /// Decodes a variable-length unsigned integer (varint).
+    pub fn decode_varint(&mut self) -> Result<u64, DracoError> {
         let mut val = 0u64;
         let mut shift = 0;
         loop {
@@ -222,14 +306,18 @@ impl<'a> DecoderBuffer<'a> {
             }
             shift += 7;
             if shift >= 64 {
-                return Err(());
+                return Err(DracoError::BufferError(
+                    "Varint exceeds 64 bits".into(),
+                ));
             }
         }
         Ok(val)
     }
 
-    /// Draco-compatible signed varint (unsigned varint + ConvertSymbolToSignedInt).
-    pub fn decode_varint_signed_i32(&mut self) -> Result<i32, ()> {
+    /// Decodes a Draco-compatible signed varint.
+    ///
+    /// Uses unsigned varint encoding with ConvertSymbolToSignedInt transformation.
+    pub fn decode_varint_signed_i32(&mut self) -> Result<i32, DracoError> {
         let symbol = self.decode_varint()? as u32;
         let is_positive = (symbol & 1) == 0;
         let v = symbol >> 1;
@@ -240,17 +328,28 @@ impl<'a> DecoderBuffer<'a> {
         }
     }
 
+    /// Returns a slice of the remaining data without advancing.
     pub fn remaining_data(&self) -> &'a [u8] {
         &self.data[self.pos..]
     }
 
+    /// Advances the position by `n` bytes without reading.
     pub fn advance(&mut self, n: usize) {
         self.pos += n;
     }
 
-    pub fn decode_slice(&mut self, size: usize) -> Result<&'a [u8], ()> {
+    /// Decodes and returns a slice of the specified size.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DracoError::BufferError` if not enough bytes remaining.
+    pub fn decode_slice(&mut self, size: usize) -> Result<&'a [u8], DracoError> {
         if self.pos + size > self.data.len() {
-            return Err(());
+            return Err(DracoError::BufferError(format!(
+                "Unexpected end of buffer: need {} bytes, have {}",
+                size,
+                self.remaining_size()
+            )));
         }
         let slice = &self.data[self.pos..self.pos + size];
         self.pos += size;

@@ -31,7 +31,7 @@ impl AttributeQuantizationTransform {
     }
 
     pub fn set_parameters(&mut self, quantization_bits: i32, min_values: &[f32], range: f32) -> bool {
-        if quantization_bits < 1 || quantization_bits > 31 {
+        if !(1..=31).contains(&quantization_bits) {
             return false;
         }
         self.quantization_bits = quantization_bits;
@@ -41,7 +41,7 @@ impl AttributeQuantizationTransform {
     }
 
     pub fn compute_parameters(&mut self, attribute: &PointAttribute, quantization_bits: i32) -> bool {
-        if quantization_bits < 1 || quantization_bits > 31 {
+        if !(1..=31).contains(&quantization_bits) {
             return false;
         }
         self.quantization_bits = quantization_bits;

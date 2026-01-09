@@ -8,6 +8,12 @@ pub struct RAnsSymbolEncoder<const RANS_PRECISION_BITS: u32> {
     num_symbols: usize,
 }
 
+impl<const RANS_PRECISION_BITS: u32> Default for RAnsSymbolEncoder<RANS_PRECISION_BITS> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
     const RANS_PRECISION: u32 = 1 << RANS_PRECISION_BITS;
     const L_RANS_BASE: u32 = Self::RANS_PRECISION * 4;
@@ -168,7 +174,8 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
     }
 
     pub fn end_encoding(&mut self, buffer: &mut EncoderBuffer) {
-        let _len = self.ans.write_end();
+        let _len = self.ans.write_end()
+            .expect("ANS state should always be valid for symbol encoding");
         let data = self.ans.data();
         let bytes_written = data.len() as u64;
         

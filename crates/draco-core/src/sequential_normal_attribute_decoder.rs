@@ -17,6 +17,12 @@ pub struct SequentialNormalAttributeDecoder {
     attribute_octahedron_transform: AttributeOctahedronTransform,
 }
 
+impl Default for SequentialNormalAttributeDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SequentialNormalAttributeDecoder {
     pub fn new() -> Self {
         Self {

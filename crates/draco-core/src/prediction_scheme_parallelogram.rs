@@ -65,6 +65,13 @@ pub struct PredictionSchemeParallelogramEncodingTransform<DataType, CorrType> {
 }
 
 #[cfg(feature = "encoder")]
+impl<DataType, CorrType> Default for PredictionSchemeParallelogramEncodingTransform<DataType, CorrType> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "encoder")]
 impl<DataType, CorrType> PredictionSchemeParallelogramEncodingTransform<DataType, CorrType> {
     pub fn new() -> Self {
         Self {
@@ -116,6 +123,13 @@ where
 #[cfg(feature = "decoder")]
 pub struct PredictionSchemeParallelogramDecodingTransform<DataType, CorrType> {
     _marker: PhantomData<(DataType, CorrType)>,
+}
+
+#[cfg(feature = "decoder")]
+impl<DataType, CorrType> Default for PredictionSchemeParallelogramDecodingTransform<DataType, CorrType> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(feature = "decoder")]

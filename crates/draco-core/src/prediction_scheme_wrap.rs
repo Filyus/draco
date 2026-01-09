@@ -21,6 +21,15 @@ pub struct PredictionSchemeWrapEncodingTransform<DataType> {
 }
 
 #[cfg(feature = "encoder")]
+impl<DataType> Default for PredictionSchemeWrapEncodingTransform<DataType>
+where DataType: Copy + Ord + Default
+ {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "encoder")]
 impl<DataType> PredictionSchemeWrapEncodingTransform<DataType> 
 where DataType: Copy + Ord + Default
 {
@@ -113,6 +122,15 @@ pub struct PredictionSchemeWrapDecodingTransform<DataType> {
     max_value: DataType,
     max_dif: DataType,
     _marker: PhantomData<DataType>,
+}
+
+#[cfg(feature = "decoder")]
+impl<DataType> Default for PredictionSchemeWrapDecodingTransform<DataType>
+where DataType: Copy + Default
+ {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(feature = "decoder")]

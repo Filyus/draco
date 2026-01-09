@@ -37,6 +37,13 @@ pub struct PredictionSchemeGeometricNormalDecodingTransform {
 }
 
 #[cfg(feature = "decoder")]
+impl Default for PredictionSchemeGeometricNormalDecodingTransform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "decoder")]
 impl PredictionSchemeGeometricNormalDecodingTransform {
     pub fn new() -> Self {
         Self {
@@ -415,13 +422,11 @@ impl<'a> PredictionSchemeDecoder<i32, i32> for MeshPredictionSchemeGeometricNorm
         // a guarded +2-byte retry. The v2.2 cube_att fixture appears to have a
         // 2-byte skew before the canonicalized transform payload.
         let _ = buffer.set_position(start_pos);
-        if bitstream_version >= 0x0202 {
-            if buffer.remaining_size() >= 2 && buffer.set_position(start_pos + 2).is_ok() {
-                if try_decode_at_pos(self, buffer) {
+        if bitstream_version >= 0x0202
+            && buffer.remaining_size() >= 2 && buffer.set_position(start_pos + 2).is_ok()
+                && try_decode_at_pos(self, buffer) {
                     return true;
                 }
-            }
-        }
 
         let _ = buffer.set_position(start_pos);
         false
@@ -730,6 +735,13 @@ impl VertexCornersIterator {
 #[cfg(feature = "encoder")]
 pub struct PredictionSchemeGeometricNormalEncodingTransform {
     octahedron_tool_box: OctahedronToolBox,
+}
+
+#[cfg(feature = "encoder")]
+impl Default for PredictionSchemeGeometricNormalEncodingTransform {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(feature = "encoder")]

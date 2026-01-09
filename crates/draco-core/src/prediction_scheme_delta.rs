@@ -21,6 +21,13 @@ pub struct PredictionSchemeDeltaEncodingTransform<DataType, CorrType> {
 }
 
 #[cfg(feature = "encoder")]
+impl<DataType, CorrType> Default for PredictionSchemeDeltaEncodingTransform<DataType, CorrType> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "encoder")]
 impl<DataType, CorrType> PredictionSchemeDeltaEncodingTransform<DataType, CorrType> {
     pub fn new() -> Self {
         Self {
@@ -65,6 +72,13 @@ where
 pub struct PredictionSchemeDeltaDecodingTransform<DataType, CorrType> {
     num_components: usize,
     _marker: PhantomData<(DataType, CorrType)>,
+}
+
+#[cfg(feature = "decoder")]
+impl<DataType, CorrType> Default for PredictionSchemeDeltaDecodingTransform<DataType, CorrType> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(feature = "decoder")]

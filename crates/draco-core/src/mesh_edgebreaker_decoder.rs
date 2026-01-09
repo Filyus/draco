@@ -11,6 +11,12 @@ pub struct MeshEdgebreakerDecoder {
     attribute_seam_corners: Vec<Vec<u32>>,
 }
 
+impl Default for MeshEdgebreakerDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MeshEdgebreakerDecoder {
     pub fn new() -> Self {
         Self {
@@ -379,6 +385,7 @@ impl MeshEdgebreakerDecoder {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn reconstruct_mesh(
         &mut self,
         symbols: &[u32],
@@ -464,7 +471,7 @@ impl MeshEdgebreakerDecoder {
                     if active_corner_stack.is_empty() {
                         return Err(error_status("Empty active corner stack on C"));
                     }
-                    let corner_a = *active_corner_stack.last().unwrap();
+                    let corner_a = *active_corner_stack.last().expect("checked non-empty above");
 
                     let vertex_x = corner_table.get_vertex(corner_table.next(corner_a));
                     let lmc_x = corner_table
@@ -495,14 +502,14 @@ impl MeshEdgebreakerDecoder {
                     corner_table.set_left_most_corner(vert_a_prev, corner + 2);
 
                     // Update the corner on the active stack.
-                    *active_corner_stack.last_mut().unwrap() = corner;
+                    *active_corner_stack.last_mut().expect("stack non-empty") = corner;
                 }
                 // TOPOLOGY_R / TOPOLOGY_L in Draco C++ reverse decoding.
                 EdgebreakerSymbol::Right | EdgebreakerSymbol::Left => {
                     if active_corner_stack.is_empty() {
                         return Err(error_status("Empty active corner stack on L/R"));
                     }
-                    let corner_a = *active_corner_stack.last().unwrap();
+                    let corner_a = *active_corner_stack.last().expect("checked non-empty above");
                     if corner_table.opposite(corner_a).is_some() {
                         return Err(error_status("Invalid L/R symbol: active corner already has opposite"));
                     }
@@ -529,7 +536,7 @@ impl MeshEdgebreakerDecoder {
                     let vertex_l = corner_table.get_vertex(corner_table.next(corner_a));
                     corner_table.map_corner_to_vertex(corner_l, vertex_l);
 
-                    *active_corner_stack.last_mut().unwrap() = corner;
+                    *active_corner_stack.last_mut().expect("stack non-empty") = corner;
                     check_topology_split = true;
                 }
                 // TOPOLOGY_S in Draco C++ reverse decoding.
@@ -537,7 +544,7 @@ impl MeshEdgebreakerDecoder {
                     if active_corner_stack.is_empty() {
                         return Err(error_status("Empty active corner stack on S"));
                     }
-                    let corner_b = *active_corner_stack.last().unwrap();
+                    let corner_b = *active_corner_stack.last().expect("checked non-empty above");
                     active_corner_stack.pop();
 
                     // Corner "a" can correspond either to a normal active edge, or to an
@@ -548,7 +555,7 @@ impl MeshEdgebreakerDecoder {
                     if active_corner_stack.is_empty() {
                         return Err(error_status("Empty active corner stack after topology split on S"));
                     }
-                    let corner_a = *active_corner_stack.last().unwrap();
+                    let corner_a = *active_corner_stack.last().expect("checked non-empty above");
 
                     if corner_a == corner_b {
                         return Err(error_status("Invalid S symbol: corner_a == corner_b"));
@@ -629,7 +636,7 @@ impl MeshEdgebreakerDecoder {
                     // Make the old vertex_n isolated.
                     corner_table.make_vertex_isolated(vertex_n);
 
-                    *active_corner_stack.last_mut().unwrap() = corner;
+                    *active_corner_stack.last_mut().expect("stack non-empty") = corner;
                 }
                 EdgebreakerSymbol::Hole => {
                     // Not expected in current streams.
@@ -639,7 +646,7 @@ impl MeshEdgebreakerDecoder {
             if check_topology_split {
                 if let Some(events) = source_to_split_events.get(&(symbol_id as u32)) {
                     for event in events {
-                        let act_top_corner = *active_corner_stack.last().unwrap();
+                        let act_top_corner = *active_corner_stack.last().expect("stack non-empty during topology split");
                         let new_active_corner = if event.source_edge
                             == crate::mesh_edgebreaker_shared::EdgeFaceName::RightFaceEdge
                         {
@@ -743,7 +750,7 @@ impl MeshEdgebreakerDecoder {
                         continue;
                     }
                     
-                    let opp_val = opp.unwrap();
+                    let opp_val = opp.expect("checked is_some above");
                     let opp_face = (opp_val / 3) as usize;
                     
                     // Only decode seam bit for edges where this face was processed first

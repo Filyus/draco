@@ -29,6 +29,12 @@ pub struct MeshDecoder {
     edgebreaker_attribute_seam_corners: Vec<Vec<u32>>,
 }
 
+impl Default for MeshDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MeshDecoder {
     pub fn new() -> Self {
         Self {
@@ -81,6 +87,7 @@ impl MeshDecoder {
         Ok(())
     }
 
+    #[allow(clippy::only_used_in_recursion)] // &self needed for method signature consistency
     fn skip_metadata(&self, in_buffer: &mut DecoderBuffer) -> Result<(), DracoError> {
         let num_entries = in_buffer
             .decode_varint()
@@ -183,11 +190,10 @@ impl MeshDecoder {
             ct.vertex_corners.fill(INVALID_CORNER_INDEX);
             for c in 0..ct.num_corners() {
                 let v = ct.vertex(CornerIndex(c as u32));
-                if v != INVALID_VERTEX_INDEX {
-                    if ct.vertex_corners[v.0 as usize] == INVALID_CORNER_INDEX {
+                if v != INVALID_VERTEX_INDEX
+                    && ct.vertex_corners[v.0 as usize] == INVALID_CORNER_INDEX {
                         ct.vertex_corners[v.0 as usize] = CornerIndex(c as u32);
                     }
-                }
             }
 
             self.corner_table = Some(ct);
@@ -227,7 +233,7 @@ impl MeshDecoder {
                         }
                     } else {
                         for i in 0..num_faces * 3 {
-                            indices[i] = buffer.decode_u32()? as u32;
+                            indices[i] = buffer.decode_u32()?;
                         }
                     }
                 } else {
@@ -629,7 +635,7 @@ impl MeshDecoder {
     }
 
     fn generate_point_ids_and_corners_dfs(&self, _mesh: &Mesh) -> (Vec<PointIndex>, Vec<u32>) {
-        let corner_table = self.corner_table.as_ref().unwrap();
+        let corner_table = self.corner_table.as_ref().expect("corner_table must be set before generating point IDs");
         let num_vertices = corner_table.num_vertices();
         let num_faces = corner_table.num_faces();
 
@@ -736,16 +742,14 @@ impl MeshDecoder {
                             corner_id = left_corner_id;
                             face_id = left_face_id;
                         }
+                    } else if left_visited {
+                        corner_id = right_corner_id;
+                        face_id = right_face_id;
                     } else {
-                        if left_visited {
-                            corner_id = right_corner_id;
-                            face_id = right_face_id;
-                        } else {
-                            // Split traversal.
-                            *corner_stack.last_mut().unwrap() = left_corner_id;
-                            corner_stack.push(right_corner_id);
-                            break;
-                        }
+                        // Split traversal.
+                        *corner_stack.last_mut().expect("stack non-empty in traversal") = left_corner_id;
+                        corner_stack.push(right_corner_id);
+                        break;
                     }
                 }
             }
@@ -777,7 +781,7 @@ impl MeshDecoder {
         _mesh: &Mesh,
     ) -> (Vec<PointIndex>, Vec<u32>) {
         // Matches C++ MaxPredictionDegreeTraverser (MESH_TRAVERSAL_PREDICTION_DEGREE).
-        let corner_table = self.corner_table.as_ref().unwrap();
+        let corner_table = self.corner_table.as_ref().expect("corner_table must be set before generating point IDs");
         let num_vertices = corner_table.num_vertices();
         let num_faces = corner_table.num_faces();
 

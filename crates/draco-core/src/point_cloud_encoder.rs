@@ -53,6 +53,12 @@ impl GeometryEncoder for PointCloudEncoder {
     }
 }
 
+impl Default for PointCloudEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PointCloudEncoder {
     pub fn new() -> Self {
         Self {
@@ -94,7 +100,7 @@ impl PointCloudEncoder {
             // For now, we put all attributes into a single KdTreeAttributesEncoder
             let mut att_encoder = KdTreeAttributesEncoder::new(0);
             for i in 1..pc.num_attributes() {
-                att_encoder.add_attribute_id(i as i32);
+                att_encoder.add_attribute_id(i);
             }
 
             // Encode number of attribute encoders
@@ -167,7 +173,7 @@ impl PointCloudEncoder {
             
             // For each attribute, encode metadata
             for i in 0..num_attributes {
-                let att = pc.attribute(i as i32);
+                let att = pc.attribute(i);
                 out_buffer.encode_u8(att.attribute_type() as u8);
                 out_buffer.encode_u8(att.data_type() as u8);
                 out_buffer.encode_u8(att.num_components());
@@ -186,12 +192,12 @@ impl PointCloudEncoder {
             // 2 = SEQUENTIAL_ATTRIBUTE_ENCODER_QUANTIZATION
             // 3 = SEQUENTIAL_ATTRIBUTE_ENCODER_NORMALS
             for i in 0..num_attributes {
-                let att = pc.attribute(i as i32);
+                let att = pc.attribute(i);
                 if att.attribute_type() == GeometryAttributeType::Normal {
                     out_buffer.encode_u8(3); // NORMALS
                 } else {
                     // Use QUANTIZATION if quantization is requested, otherwise GENERIC
-                    let quant_bits = self.options.get_attribute_int(i as i32, "quantization_bits", 0);
+                    let quant_bits = self.options.get_attribute_int(i, "quantization_bits", 0);
                     if quant_bits > 0 {
                         out_buffer.encode_u8(2); // QUANTIZATION
                     } else {
@@ -210,11 +216,11 @@ impl PointCloudEncoder {
             
             // First pass: encode all values
             for i in 0..num_attributes {
-                let att = pc.attribute(i as i32);
+                let att = pc.attribute(i);
                 
                 if att.attribute_type() == GeometryAttributeType::Normal {
                     let mut att_encoder = SequentialNormalAttributeEncoder::new();
-                    if !att_encoder.init(pc, i as i32, &self.options) {
+                    if !att_encoder.init(pc, i, &self.options) {
                          return Err(DracoError::DracoError(format!(
                             "Failed to init normal attribute encoder {}",
                             i
@@ -232,7 +238,7 @@ impl PointCloudEncoder {
                     normal_encoders.push(Some(att_encoder));
                 } else {
                     let mut att_encoder = SequentialIntegerAttributeEncoder::new();
-                    att_encoder.init(i as i32);
+                    att_encoder.init(i);
 
                     if !att_encoder.encode_values(pc, &point_ids, out_buffer, &self.options, self, None, false) {
                         return Err(DracoError::DracoError(format!(
@@ -259,14 +265,12 @@ impl PointCloudEncoder {
                             )));
                         }
                     }
-                } else {
-                    if let Some(ref att_encoder) = integer_encoders[i] {
-                        if !att_encoder.encode_data_needed_by_portable_transform(out_buffer) {
-                            return Err(DracoError::DracoError(format!(
-                                "Failed to encode quantization transform data {}",
-                                i
-                            )));
-                        }
+                } else if let Some(ref att_encoder) = integer_encoders[i] {
+                    if !att_encoder.encode_data_needed_by_portable_transform(out_buffer) {
+                        return Err(DracoError::DracoError(format!(
+                            "Failed to encode quantization transform data {}",
+                            i
+                        )));
                     }
                 }
             }
