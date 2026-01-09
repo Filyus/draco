@@ -23,6 +23,12 @@ pub struct SequentialIntegerAttributeDecoder {
     prediction_scheme: Option<Box<dyn PredictionSchemeDecoder<i32, i32>>>,
 }
 
+impl Default for SequentialIntegerAttributeDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SequentialIntegerAttributeDecoder {
     pub fn new() -> Self {
         Self {
@@ -163,7 +169,7 @@ impl SequentialIntegerAttributeDecoder {
                              // When using an override, the corner table may contain seam-split
                              // vertices with ids outside the original point range. Build the
                              // vertex->data map from the data->corner map.
-                             vertex_to_data_map.resize(corner_table.num_vertices() as usize, -1);
+                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
                              for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
                                  let corner_id = CornerIndex(corner_u32);                                 if corner_id == INVALID_CORNER_INDEX {
                                      continue;
@@ -215,7 +221,7 @@ impl SequentialIntegerAttributeDecoder {
                              }
                              data_to_corner_map.copy_from_slice(map);
 
-                             vertex_to_data_map.resize(corner_table.num_vertices() as usize, -1);
+                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
                              for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
                                  let corner_id = CornerIndex(corner_u32);                                 if corner_id == INVALID_CORNER_INDEX {
                                      continue;
@@ -266,7 +272,7 @@ impl SequentialIntegerAttributeDecoder {
                              }
                              data_to_corner_map.copy_from_slice(map);
 
-                             vertex_to_data_map.resize(corner_table.num_vertices() as usize, -1);
+                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
                              for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
                                  let corner_id = CornerIndex(corner_u32);                                 if corner_id == INVALID_CORNER_INDEX {
                                      continue;
@@ -332,7 +338,7 @@ impl SequentialIntegerAttributeDecoder {
                              }
                              data_to_corner_map.copy_from_slice(map);
 
-                             vertex_to_data_map.resize(corner_table.num_vertices() as usize, -1);
+                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
                              for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
                                  let corner_id = CornerIndex(corner_u32);                                 if corner_id == INVALID_CORNER_INDEX {
                                      continue;

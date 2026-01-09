@@ -1,7 +1,7 @@
-/// Draco bitstream version constants.
-///
-/// This module defines version-related constants for the Draco bitstream format.
-/// These constants are used for encoding/decoding version checks and default settings.
+// Draco bitstream version constants.
+//
+// This module defines version-related constants for the Draco bitstream format.
+// These constants are used for encoding/decoding version checks and default settings.
 
 // =============================================================================
 // Current/Latest Draco Bitstream Versions

@@ -1,5 +1,6 @@
 use std::mem;
 
+#[derive(Default)]
 pub struct EncoderBuffer {
     buffer: Vec<u8>,
     bit_encoder_active: bool,
@@ -10,19 +11,6 @@ pub struct EncoderBuffer {
     encode_bit_sequence_size: bool,
 }
 
-impl Default for EncoderBuffer {
-    fn default() -> Self {
-        Self {
-            buffer: Vec::new(),
-            bit_encoder_active: false,
-            bit_start_pos: 0,
-            current_bit_offset: 0,
-            version_major: 0,
-            version_minor: 0,
-            encode_bit_sequence_size: false,
-        }
-    }
-}
 
 impl EncoderBuffer {
     pub fn new() -> Self {
@@ -63,7 +51,7 @@ impl EncoderBuffer {
                 self.buffer.push(0);
             }
         }
-        let required_bytes = (required_bits + 7) / 8;
+        let required_bytes = required_bits.div_ceil(8);
         self.bit_start_pos = self.buffer.len();
         self.buffer.resize(self.bit_start_pos + required_bytes, 0);
         self.bit_encoder_active = true;
@@ -79,7 +67,7 @@ impl EncoderBuffer {
         
         if self.encode_bit_sequence_size {
             let encoded_bits = self.current_bit_offset;
-            let encoded_bytes = (encoded_bits + 7) / 8;
+            let encoded_bytes = encoded_bits.div_ceil(8);
             let bitstream_version = ((self.version_major as u16) << 8) | (self.version_minor as u16);
             
             let mut var_size_buffer = Vec::new();
@@ -120,7 +108,7 @@ impl EncoderBuffer {
             self.buffer.resize(dst_pos + encoded_bytes, 0);
         } else {
             // Just resize to actual encoded bytes
-            let encoded_bytes = (self.current_bit_offset + 7) / 8;
+            let encoded_bytes = self.current_bit_offset.div_ceil(8);
             self.buffer.resize(self.bit_start_pos + encoded_bytes, 0);
         }
     }

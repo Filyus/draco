@@ -13,6 +13,12 @@ pub struct ShannonEntropyTracker {
     frequencies: Vec<i32>,
 }
 
+impl Default for ShannonEntropyTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ShannonEntropyTracker {
     pub fn new() -> Self {
         Self {

@@ -1,20 +1,12 @@
 use crate::decoder_buffer::DecoderBuffer;
 
+#[derive(Default)]
 pub struct DirectBitDecoder {
     bits: Vec<u32>,
     pos: usize,
     num_used_bits: u32,
 }
 
-impl Default for DirectBitDecoder {
-    fn default() -> Self {
-        Self {
-            bits: Vec::new(),
-            pos: 0,
-            num_used_bits: 0,
-        }
-    }
-}
 
 impl DirectBitDecoder {
     pub fn new() -> Self {

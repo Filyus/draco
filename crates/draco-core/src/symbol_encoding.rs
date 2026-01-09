@@ -177,7 +177,7 @@ fn compute_tagged_scheme_bits(
 ) -> u64 {
     // 1. Bits for values (raw bits)
     let mut value_bits = 0;
-    for (_i, &len) in bit_lengths.iter().enumerate() {
+    for &len in bit_lengths.iter() {
         value_bits += len as u64 * num_components as u64;
     }
     
@@ -250,7 +250,7 @@ pub fn encode_raw_symbols(symbols: &[u32], max_value: u32, target_buffer: &mut E
         unique_symbols_bit_length += 1;
     }
     
-    unique_symbols_bit_length = unique_symbols_bit_length.max(1).min(18);
+    unique_symbols_bit_length = unique_symbols_bit_length.clamp(1, 18);
     
     target_buffer.encode_u8(unique_symbols_bit_length as u8);
     

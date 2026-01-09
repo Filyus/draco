@@ -28,6 +28,12 @@ pub struct SequentialIntegerAttributeEncoder {
     quantization_transform: Option<AttributeQuantizationTransform>,
 }
 
+impl Default for SequentialIntegerAttributeEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SequentialIntegerAttributeEncoder {
     pub fn new() -> Self {
         Self {
@@ -57,6 +63,7 @@ impl SequentialIntegerAttributeEncoder {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn encode_values(
         &mut self,
         point_cloud: &PointCloud,
@@ -221,7 +228,7 @@ impl SequentialIntegerAttributeEncoder {
                             let map_size = if is_edgebreaker {
                                 point_ids.len()
                             } else {
-                                mesh.num_points() as usize
+                                mesh.num_points()
                             };
                             
                             vertex_to_data_map.resize(map_size, -1);
@@ -255,11 +262,10 @@ impl SequentialIntegerAttributeEncoder {
                                 }
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {
-                                    if (point_id.0 as usize) < vertex_to_data_map.len() {
-                                        if vertex_to_data_map[point_id.0 as usize] == -1 {
+                                    if (point_id.0 as usize) < vertex_to_data_map.len()
+                                        && vertex_to_data_map[point_id.0 as usize] == -1 {
                                             vertex_to_data_map[point_id.0 as usize] = i as i32;
                                         }
-                                    }
                                     let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
                                     data_to_corner_map[i] = ci.0;
                                 }
@@ -325,7 +331,7 @@ impl SequentialIntegerAttributeEncoder {
                             let map_size = if is_edgebreaker {
                                 point_ids.len()
                             } else {
-                                mesh.num_points() as usize
+                                mesh.num_points()
                             };
                             
                             vertex_to_data_map.resize(map_size, -1);
@@ -355,11 +361,10 @@ impl SequentialIntegerAttributeEncoder {
                                 }
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {
-                                    if (point_id.0 as usize) < vertex_to_data_map.len() {
-                                        if vertex_to_data_map[point_id.0 as usize] == -1 {
+                                    if (point_id.0 as usize) < vertex_to_data_map.len()
+                                        && vertex_to_data_map[point_id.0 as usize] == -1 {
                                             vertex_to_data_map[point_id.0 as usize] = i as i32;
                                         }
-                                    }
                                     let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
                                     data_to_corner_map[i] = ci.0;
                                 }
@@ -422,7 +427,7 @@ impl SequentialIntegerAttributeEncoder {
                             let map_size = if is_edgebreaker {
                                 point_ids.len()
                             } else {
-                                mesh.num_points() as usize
+                                mesh.num_points()
                             };
                             
                             vertex_to_data_map.resize(map_size, -1);
@@ -452,11 +457,10 @@ impl SequentialIntegerAttributeEncoder {
                                 }
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {
-                                    if (point_id.0 as usize) < vertex_to_data_map.len() {
-                                        if vertex_to_data_map[point_id.0 as usize] == -1 {
+                                    if (point_id.0 as usize) < vertex_to_data_map.len()
+                                        && vertex_to_data_map[point_id.0 as usize] == -1 {
                                             vertex_to_data_map[point_id.0 as usize] = i as i32;
                                         }
-                                    }
                                     let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
                                     data_to_corner_map[i] = ci.0;
                                 }
@@ -532,7 +536,7 @@ impl SequentialIntegerAttributeEncoder {
                             let map_size = if is_edgebreaker {
                                 point_ids.len()
                             } else {
-                                mesh.num_points() as usize
+                                mesh.num_points()
                             };
                             
                             vertex_to_data_map.resize(map_size, -1);
@@ -562,11 +566,10 @@ impl SequentialIntegerAttributeEncoder {
                                 }
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {
-                                    if (point_id.0 as usize) < vertex_to_data_map.len() {
-                                        if vertex_to_data_map[point_id.0 as usize] == -1 {
+                                    if (point_id.0 as usize) < vertex_to_data_map.len()
+                                        && vertex_to_data_map[point_id.0 as usize] == -1 {
                                             vertex_to_data_map[point_id.0 as usize] = i as i32;
                                         }
-                                    }
                                     let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
                                     data_to_corner_map[i] = ci.0;
                                 }

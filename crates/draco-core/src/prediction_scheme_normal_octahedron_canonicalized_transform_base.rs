@@ -42,12 +42,10 @@ impl PredictionSchemeNormalOctahedronCanonicalizedTransformBase {
             } else {
                 1
             }
+        } else if sign_y <= 0 {
+            0
         } else {
-            if sign_y <= 0 {
-                0
-            } else {
-                3
-            }
+            3
         }
     }
 

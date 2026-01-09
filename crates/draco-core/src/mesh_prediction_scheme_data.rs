@@ -7,6 +7,12 @@ pub struct MeshPredictionSchemeData<'a> {
     data_to_corner_map: Option<&'a [u32]>,
 }
 
+impl<'a> Default for MeshPredictionSchemeData<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> MeshPredictionSchemeData<'a> {
     pub fn new() -> Self {
         Self {

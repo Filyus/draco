@@ -3,6 +3,10 @@
 //! Core compression and decompression functionality for 3D geometric meshes
 //! and point clouds.
 
+// Allow certain clippy lints that are intentional design decisions for C++ port compatibility
+#![allow(clippy::needless_range_loop)] // Many loops follow C++ patterns for array indexing
+#![allow(clippy::manual_memcpy)] // Manual copying matches C++ patterns for clarity
+
 // =============================================================================
 // Core modules - always available
 // =============================================================================

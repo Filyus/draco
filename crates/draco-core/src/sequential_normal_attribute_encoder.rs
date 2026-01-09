@@ -16,6 +16,12 @@ pub struct SequentialNormalAttributeEncoder {
     portable_attribute: crate::geometry_attribute::PointAttribute,
 }
 
+impl Default for SequentialNormalAttributeEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SequentialNormalAttributeEncoder {
     pub fn new() -> Self {
         Self {

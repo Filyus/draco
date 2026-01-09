@@ -29,10 +29,10 @@ impl AnsCoder {
         self.state = l_base;
     }
 
-    pub fn write_end(&mut self) -> usize {
+    pub fn write_end(&mut self) -> Result<usize, crate::status::DracoError> {
         let state = self.state - self.l_base;
         if state < (1 << 6) {
-            self.buf.push(((0x00 << 6) + state) as u8);
+            self.buf.push(state as u8);
         } else if state < (1 << 14) {
             self.buf.push((state & 0xFF) as u8);
             self.buf.push(((0x01 << 6) + ((state >> 8) & 0x3F)) as u8);
@@ -46,9 +46,11 @@ impl AnsCoder {
             self.buf.push(((state >> 16) & 0xFF) as u8);
             self.buf.push(((0x03 << 6) + ((state >> 24) & 0x3F)) as u8);
         } else {
-            panic!("State is too large to be serialized: {}", state);
+            return Err(crate::status::DracoError::DracoError(
+                format!("State is too large to be serialized: {}", state)
+            ));
         }
-        self.buf.len()
+        Ok(self.buf.len())
     }
 
     pub fn rabs_desc_write(&mut self, val: bool, p0: u8) {

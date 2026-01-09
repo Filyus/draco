@@ -52,6 +52,12 @@ impl GeometryDecoder for PointCloudDecoder {
     }
 }
 
+impl Default for PointCloudDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PointCloudDecoder {
     pub fn new() -> Self {
         Self {

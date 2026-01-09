@@ -414,15 +414,15 @@ decoder.decode(&mut buffer, &mut pc)?;
 
 ### DecoderBuffer
 
-Input buffer for compressed data.
+Input buffer for compressed data. Provides sequential byte and bit-level access to compressed data.
 
 ```rust
-use draco_core::DecoderBuffer;
+use draco_core::{DecoderBuffer, DracoError};
 
 let data: &[u8] = /* ... */;
 let mut buffer = DecoderBuffer::new(data);
 
-// Low-level access
+// Low-level access - all methods return Result<T, DracoError>
 let byte = buffer.decode_u8()?;
 let value = buffer.decode_varint()?;
 let remaining = buffer.remaining_size();
@@ -434,9 +434,17 @@ let remaining = buffer.remaining_size();
 |--------|-------------|
 | `new(data: &[u8]) -> DecoderBuffer` | Create from data |
 | `remaining_size() -> usize` | Bytes remaining |
-| `decode_u8() -> Result<u8>` | Read u8 |
-| `decode_i32() -> Result<i32>` | Read i32 |
-| `decode_varint() -> Result<u64>` | Read variable-length int |
+| `decode_u8() -> Result<u8, DracoError>` | Read u8 |
+| `decode_u16() -> Result<u16, DracoError>` | Read little-endian u16 |
+| `decode_u32() -> Result<u32, DracoError>` | Read little-endian u32 |
+| `decode_u64() -> Result<u64, DracoError>` | Read little-endian u64 |
+| `decode_f32() -> Result<f32, DracoError>` | Read little-endian f32 |
+| `decode_f64() -> Result<f64, DracoError>` | Read little-endian f64 |
+| `decode_varint() -> Result<u64, DracoError>` | Read variable-length int |
+| `decode_string() -> Result<String, DracoError>` | Read null-terminated string |
+| `decode_bytes(&mut [u8]) -> Result<(), DracoError>` | Read bytes into buffer |
+| `decode_slice(size) -> Result<&[u8], DracoError>` | Read and return slice |
+| `set_position(pos) -> Result<(), DracoError>` | Set read position |
 | `advance(bytes: usize)` | Skip bytes |
 
 ---
@@ -462,6 +470,7 @@ match result {
     Ok(()) => println!("Success"),
     Err(DracoError::DracoError(msg)) => println!("Error: {}", msg),
     Err(DracoError::IoError(msg)) => println!("IO Error: {}", msg),
+    Err(DracoError::BufferError(msg)) => println!("Buffer Error: {}", msg),
     Err(e) => println!("Other error: {}", e),
 }
 ```
@@ -477,6 +486,7 @@ match result {
 | `UnknownVersion(String)` | Unknown version |
 | `UnsupportedFeature(String)` | Feature not supported |
 | `BitstreamVersionUnsupported` | Bitstream version issue |
+| `BufferError(String)` | Buffer read/decode error |
 
 ---
 

@@ -2,6 +2,7 @@ use crate::ans::AnsCoder;
 use crate::bit_utils::{count_one_bits32, reverse_bits32};
 use crate::encoder_buffer::EncoderBuffer;
 
+#[derive(Default)]
 pub struct RAnsBitEncoder {
     bit_counts: [u64; 2],
     bits: Vec<u32>,
@@ -9,16 +10,6 @@ pub struct RAnsBitEncoder {
     num_local_bits: u32,
 }
 
-impl Default for RAnsBitEncoder {
-    fn default() -> Self {
-        Self {
-            bit_counts: [0; 2],
-            bits: Vec::new(),
-            local_bits: 0,
-            num_local_bits: 0,
-        }
-    }
-}
 
 impl RAnsBitEncoder {
     pub fn new() -> Self {
@@ -106,7 +97,8 @@ impl RAnsBitEncoder {
             }
         }
 
-        let size = ans_coder.write_end();
+        let size = ans_coder.write_end()
+            .expect("ANS state should always be valid for bit encoding");
         
         target_buffer.encode_u8(zero_prob);
         target_buffer.encode_varint(size as u64);

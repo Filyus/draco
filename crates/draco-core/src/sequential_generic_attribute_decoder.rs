@@ -10,6 +10,12 @@ pub struct SequentialGenericAttributeDecoder {
     base: SequentialAttributeDecoder,
 }
 
+impl Default for SequentialGenericAttributeDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SequentialGenericAttributeDecoder {
     pub fn new() -> Self {
         Self {
@@ -33,7 +39,7 @@ impl SequentialGenericAttributeDecoder {
         let num_components = attribute.num_components() as usize;
         let data_type = attribute.data_type();
         let num_points = point_ids.len();
-        let data_type_size = data_type.byte_length() as usize;
+        let data_type_size = data_type.byte_length();
         
         let total_size = num_points * num_components * data_type_size;
         attribute.buffer_mut().resize(total_size);

@@ -153,7 +153,7 @@ impl DynamicIntegerPointsKdTreeEncoder {
         let numbers_encoder = match compression_level {
             0 | 1 => NumbersEncoder::Direct(DirectBitEncoder::new()),
             2 | 3 => NumbersEncoder::RAns(RAnsBitEncoder::new()),
-            4 | 5 | 6 => NumbersEncoder::Folded(FoldedBit32Encoder::new()),
+            4..=6 => NumbersEncoder::Folded(FoldedBit32Encoder::new()),
             _ => unreachable!(),
         };
 
@@ -230,12 +230,11 @@ impl DynamicIntegerPointsKdTreeEncoder {
             let mut max_value = 0u32;
             best_axis = 0;
             for i in 0..self.dimension as usize {
-                if self.num_remaining_bits[i] != 0 {
-                    if self.deviations[i] > max_value {
+                if self.num_remaining_bits[i] != 0
+                    && self.deviations[i] > max_value {
                         max_value = self.deviations[i];
                         best_axis = i as u32;
                     }
-                }
             }
             self.axis_encoder.encode_least_significant_bits32(4, best_axis);
         }
@@ -413,7 +412,7 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
         let numbers_decoder = match compression_level {
             0 | 1 => NumbersDecoder::Direct(DirectBitDecoder::new()),
             2 | 3 => NumbersDecoder::RAns(RAnsBitDecoder::new()),
-            4 | 5 | 6 => NumbersDecoder::Folded(FoldedBit32Decoder::new()),
+            4..=6 => NumbersDecoder::Folded(FoldedBit32Decoder::new()),
             _ => unreachable!(),
         };
         Self {
@@ -567,7 +566,7 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
                                 return false;
                             }
                         }
-                        self.p[self.axes[j] as usize] = old_base[self.axes[j] as usize] | self.p[self.axes[j] as usize];
+                        self.p[self.axes[j] as usize] |= old_base[self.axes[j] as usize];
                     }
                     out.extend_from_slice(&self.p);
                     self.num_decoded_points += 1;
@@ -597,11 +596,10 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
             first_half -= number;
             let mut second_half = num_remaining_points - first_half;
 
-            if first_half != second_half {
-                if !self.half_decoder.decode_next_bit() {
+            if first_half != second_half
+                && !self.half_decoder.decode_next_bit() {
                     std::mem::swap(&mut first_half, &mut second_half);
                 }
-            }
 
             self.levels_stack[stack_pos][axis as usize] += 1;
             self.levels_stack[stack_pos + 1] = self.levels_stack[stack_pos].clone();

@@ -285,35 +285,35 @@ impl<'a, W: Write + Seek> NodeWriter<'a, W> {
     }
 
     fn write_property_i16(&mut self, value: i16) -> io::Result<()> {
-        self.writer.write_all(&[b'Y'])?;
+        self.writer.write_all(b"Y")?;
         self.writer.write_all(&value.to_le_bytes())?;
         self.num_properties += 1;
         Ok(())
     }
 
     fn write_property_i32(&mut self, value: i32) -> io::Result<()> {
-        self.writer.write_all(&[b'I'])?;
+        self.writer.write_all(b"I")?;
         self.writer.write_all(&value.to_le_bytes())?;
         self.num_properties += 1;
         Ok(())
     }
 
     fn write_property_i64(&mut self, value: i64) -> io::Result<()> {
-        self.writer.write_all(&[b'L'])?;
+        self.writer.write_all(b"L")?;
         self.writer.write_all(&value.to_le_bytes())?;
         self.num_properties += 1;
         Ok(())
     }
 
     fn write_property_f64(&mut self, value: f64) -> io::Result<()> {
-        self.writer.write_all(&[b'D'])?;
+        self.writer.write_all(b"D")?;
         self.writer.write_all(&value.to_le_bytes())?;
         self.num_properties += 1;
         Ok(())
     }
 
     fn write_property_string(&mut self, value: &str) -> io::Result<()> {
-        self.writer.write_all(&[b'S'])?;
+        self.writer.write_all(b"S")?;
         self.writer.write_all(&(value.len() as u32).to_le_bytes())?;
         self.writer.write_all(value.as_bytes())?;
         self.num_properties += 1;
@@ -385,7 +385,7 @@ impl<'a, W: Write + Seek> NodeWriter<'a, W> {
         F: FnOnce(&mut W) -> io::Result<()>,
     {
         let properties_end = self.writer.stream_position()?;
-        let property_list_len = (properties_end - self.properties_start) as u64;
+        let property_list_len = properties_end - self.properties_start;
 
         // Write children
         write_children(self.writer)?;
@@ -416,7 +416,7 @@ impl<'a, W: Write + Seek> NodeWriter<'a, W> {
         let end_pos = self.writer.stream_position()?;
         let null_size = if self.is_64 { NULL_RECORD_SIZE_64 } else { NULL_RECORD_SIZE_32 };
         let property_list_len = if self.num_properties > 0 {
-            (end_pos - self.properties_start - null_size as u64) as u64
+            end_pos - self.properties_start - null_size as u64
         } else {
             0u64
         };
@@ -744,7 +744,7 @@ fn extract_vertices(mesh: &Mesh) -> Vec<f64> {
 }
 
 fn extract_polygon_indices(mesh: &Mesh) -> Vec<i32> {
-    let mut indices = Vec::with_capacity(mesh.num_faces() as usize * 3);
+    let mut indices = Vec::with_capacity(mesh.num_faces() * 3);
     for i in 0..mesh.num_faces() as u32 {
         let face = mesh.face(FaceIndex(i));
         indices.push(face[0].0 as i32);

@@ -74,7 +74,7 @@ pub fn reverse_bits32(mut n: u32) -> u32 {
     n = ((n >> 2) & 0x33333333) | ((n & 0x33333333) << 2);
     n = ((n >> 4) & 0x0F0F0F0F) | ((n & 0x0F0F0F0F) << 4);
     n = ((n >> 8) & 0x00FF00FF) | ((n & 0x00FF00FF) << 8);
-    (n >> 16) | (n << 16)
+    n.rotate_left(16)
 }
 
 pub fn count_one_bits32(n: u32) -> u32 {

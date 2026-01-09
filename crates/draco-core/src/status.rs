@@ -16,6 +16,8 @@ pub enum DracoError {
     UnsupportedFeature(String),
     #[error("Bitstream version unsupported")]
     BitstreamVersionUnsupported,
+    #[error("Buffer decode error: {0}")]
+    BufferError(String),
 }
 
 pub type Status = Result<(), DracoError>;

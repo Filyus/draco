@@ -501,7 +501,9 @@ fn test_debug_annulus_corner_table() {
     use draco_core::corner_table::CornerTable;
     use draco_core::geometry_indices::{VertexIndex, CornerIndex};
     
-    // Create the annulus as before
+    // Create the annulus positions (kept for reference only).
+    // The `CornerTable` below is constructed from `faces` and vertex indices;
+    // these coordinates exist for human-readable inspection of the test fixture.
     let positions = [
         // Outer square
         [-1.0, -1.0, 0.0], // 0
@@ -532,6 +534,9 @@ fn test_debug_annulus_corner_table() {
     
     let mut corner_table = CornerTable::new(0);
     corner_table.init(&vertex_faces);
+    
+    // Sanity check: Ensure vertex count matches our coordinate reference.
+    assert_eq!(corner_table.num_vertices(), positions.len());
     
     println!("\n=== Corner Table Structure for Annulus ===");
     println!("Vertices: {}, Faces: {}, Corners: {}", 

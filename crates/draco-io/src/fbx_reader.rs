@@ -99,12 +99,12 @@ impl crate::traits::SceneReader for FbxReader<BufReader<File>> {
                 for child in &n.children {
                     match child.name.as_str() {
                         "Model" => {
-                            if let Some(FbxProperty::I64(id)) = child.properties.get(0) {
+                            if let Some(FbxProperty::I64(id)) = child.properties.first() {
                                 model_map.insert(*id, child);
                             }
                         }
                         "Geometry" => {
-                            if let Some(FbxProperty::I64(id)) = child.properties.get(0) {
+                            if let Some(FbxProperty::I64(id)) = child.properties.first() {
                                 geometry_map.insert(*id, child);
                             }
                         }
@@ -114,7 +114,7 @@ impl crate::traits::SceneReader for FbxReader<BufReader<File>> {
             } else if n.name == "Connections" {
                 for c in &n.children {
                     // Expect properties: String("OO"), I64(child), I64(parent)
-                    if let (Some(FbxProperty::String(_kind)), Some(FbxProperty::I64(child)), Some(FbxProperty::I64(parent))) = (c.properties.get(0), c.properties.get(1), c.properties.get(2)) {
+                    if let (Some(FbxProperty::String(_kind)), Some(FbxProperty::I64(child)), Some(FbxProperty::I64(parent))) = (c.properties.first(), c.properties.get(1), c.properties.get(2)) {
                         connections.push((*child, *parent));
                     }
                 }
@@ -139,7 +139,7 @@ impl crate::traits::SceneReader for FbxReader<BufReader<File>> {
                 if child.name == "Properties70" {
                     for prop in &child.children {
                         // property nodes often have first property as name string
-                        if let Some(crate::fbx_reader::FbxProperty::String(name)) = prop.properties.get(0) {
+                        if let Some(crate::fbx_reader::FbxProperty::String(name)) = prop.properties.first() {
                             if name.contains("Lcl Translation") {
                                 // find F64Array in properties
                                 for p in &prop.properties {
@@ -349,12 +349,8 @@ impl<R: Read + Seek> FbxReader<R> {
         let mut children = Vec::new();
         let current_pos = self.reader.stream_position()?;
         if current_pos < end_offset {
-            loop {
-                if let Some(child) = self.read_node()? {
-                    children.push(child);
-                } else {
-                    break;
-                }
+            while let Some(child) = self.read_node()? {
+                children.push(child);
             }
         }
 
@@ -519,11 +515,8 @@ impl<R: Read + Seek> FbxReader<R> {
         self.reader.seek(SeekFrom::Start(27))?;
 
         let mut nodes = Vec::new();
-        loop {
-            match self.read_node()? {
-                Some(node) => nodes.push(node),
-                None => break,
-            }
+        while let Some(node) = self.read_node()? {
+            nodes.push(node);
         }
         Ok(nodes)
     }

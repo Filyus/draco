@@ -13,7 +13,7 @@ impl OctahedronToolBox {
     }
 
     pub fn set_quantization_bits(&mut self, q: i32) -> bool {
-        if q < 2 || q > 30 {
+        if !(2..=30).contains(&q) {
             return false;
         }
         self.quantization_bits = q;
@@ -49,7 +49,7 @@ impl OctahedronToolBox {
         debug_assert!(t <= self.center_value);
         debug_assert!(s >= -self.center_value);
         debug_assert!(t >= -self.center_value);
-        let st = s.abs() as u32 + t.abs() as u32;
+        let st = s.unsigned_abs() + t.unsigned_abs();
         st <= self.center_value as u32
     }
 
@@ -134,7 +134,9 @@ impl OctahedronToolBox {
     pub fn canonicalize_octahedral_coords(&self, s: i32, t: i32) -> (i32, i32) {
         let mut s = s;
         let mut t = t;
-        if (s == 0 && t == 0) || (s == 0 && t == self.max_value) || (s == self.max_value && t == 0) {
+        // Check if coordinates are at corners that need canonicalization
+        let is_corner = (s == 0 && (t == 0 || t == self.max_value)) || (s == self.max_value && t == 0);
+        if is_corner {
             s = self.max_value;
             t = self.max_value;
         } else if s == 0 && t > self.center_value {

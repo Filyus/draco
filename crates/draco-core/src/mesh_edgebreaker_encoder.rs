@@ -371,15 +371,13 @@ impl MeshEdgebreakerEncoder {
                             corner_id = left_corner_id;
                             face_id = left_face_id;
                         }
+                    } else if left_visited {
+                        corner_id = right_corner_id;
+                        face_id = right_face_id;
                     } else {
-                        if left_visited {
-                            corner_id = right_corner_id;
-                            face_id = right_face_id;
-                        } else {
-                            *corner_stack.last_mut().unwrap() = left_corner_id;
-                            corner_stack.push(right_corner_id);
-                            break;
-                        }
+                        *corner_stack.last_mut().expect("stack non-empty in traversal") = left_corner_id;
+                        corner_stack.push(right_corner_id);
+                        break;
                     }
                 }
             }
@@ -516,15 +514,13 @@ impl MeshEdgebreakerEncoder {
                             corner_id = left_corner_id;
                             face_id = left_face_id;
                         }
+                    } else if left_visited {
+                        corner_id = right_corner_id;
+                        face_id = right_face_id;
                     } else {
-                        if left_visited {
-                            corner_id = right_corner_id;
-                            face_id = right_face_id;
-                        } else {
-                            *corner_stack.last_mut().unwrap() = left_corner_id;
-                            corner_stack.push(right_corner_id);
-                            break;
-                        }
+                        *corner_stack.last_mut().expect("stack non-empty in traversal") = left_corner_id;
+                        corner_stack.push(right_corner_id);
+                        break;
                     }
                 }
             }
@@ -841,7 +837,7 @@ impl MeshEdgebreakerEncoder {
         let mut corner_traversal_stack: Vec<CornerIndex> = vec![start_corner];
 
         while !corner_traversal_stack.is_empty() {
-            let mut corner_id = *corner_traversal_stack.last().unwrap();
+            let mut corner_id = *corner_traversal_stack.last().expect("loop ensures non-empty");
             loop {
                 let face_id = corner_table.face(corner_id);
                 if face_id == crate::geometry_indices::INVALID_FACE_INDEX {
@@ -878,7 +874,7 @@ impl MeshEdgebreakerEncoder {
                         self.symbols.push(EdgebreakerSymbol::Center as u32);
                         self.symbol_to_encoder_corner.push(corner_id);
                         corner_id = corner_table.right_corner(corner_id);
-                        *corner_traversal_stack.last_mut().unwrap() = corner_id;
+                        *corner_traversal_stack.last_mut().expect("stack non-empty") = corner_id;
                         continue;
                     }
                 }
@@ -920,47 +916,44 @@ impl MeshEdgebreakerEncoder {
                         self.symbols.push(EdgebreakerSymbol::Right as u32);
                         self.symbol_to_encoder_corner.push(corner_id);
                         corner_id = left_corner_id;
-                        *corner_traversal_stack.last_mut().unwrap() = corner_id;
+                        *corner_traversal_stack.last_mut().expect("stack non-empty") = corner_id;
                     }
+                } else if left_visited {
+                    if left_face_id != crate::geometry_indices::INVALID_FACE_INDEX {
+                        self.check_and_store_topology_split_event(
+                            face_id.0 as usize,
+                            EdgeFaceName::LeftFaceEdge,
+                            left_face_id.0 as usize,
+                        );
+                    }
+                    // Go to right face.
+                    self.symbols.push(EdgebreakerSymbol::Left as u32);
+                    self.symbol_to_encoder_corner.push(corner_id);
+                    corner_id = right_corner_id;
+                    *corner_traversal_stack.last_mut().expect("stack non-empty") = corner_id;
                 } else {
-                    if left_visited {
-                        if left_face_id != crate::geometry_indices::INVALID_FACE_INDEX {
-                            self.check_and_store_topology_split_event(
-                                face_id.0 as usize,
-                                EdgeFaceName::LeftFaceEdge,
-                                left_face_id.0 as usize,
-                            );
-                        }
-                        // Go to right face.
-                        self.symbols.push(EdgebreakerSymbol::Left as u32);
-                        self.symbol_to_encoder_corner.push(corner_id);
-                        corner_id = right_corner_id;
-                        *corner_traversal_stack.last_mut().unwrap() = corner_id;
-                    } else {
-                        // Split the traversal.
-                        self.symbols.push(EdgebreakerSymbol::Split as u32);
-                        self.symbol_to_encoder_corner.push(corner_id);
-                        
-                        // If the tip vertex is on a hole boundary and the hole hasn't been
-                        // visited yet, we need to encode it. This marks all vertices on
-                        // the hole as visited, which matches C++ EncodeHole behavior.
-                        if on_boundary {
-                            let hole_id = self.vertex_hole_id.get(vert_id.0 as usize).copied().unwrap_or(-1);
-                            if hole_id >= 0 && (hole_id as usize) < self.visited_holes.len() {
-                                if !self.visited_holes[hole_id as usize] {
-                                    self.encode_hole(corner_table, corner_id, false);
-                                }
+                    // Split the traversal.
+                    self.symbols.push(EdgebreakerSymbol::Split as u32);
+                    self.symbol_to_encoder_corner.push(corner_id);
+                    
+                    // If the tip vertex is on a hole boundary and the hole hasn't been
+                    // visited yet, we need to encode it. This marks all vertices on
+                    // the hole as visited, which matches C++ EncodeHole behavior.
+                    if on_boundary {
+                        let hole_id = self.vertex_hole_id.get(vert_id.0 as usize).copied().unwrap_or(-1);
+                        if hole_id >= 0 && (hole_id as usize) < self.visited_holes.len()
+                            && !self.visited_holes[hole_id as usize] {
+                                self.encode_hole(corner_table, corner_id, false);
                             }
-                        }
-                        
-                        self.face_to_split_symbol_map
-                            .insert(face_id.0 as usize, self.last_encoded_symbol_id);
-
-                        // Process right face first, left face second.
-                        *corner_traversal_stack.last_mut().unwrap() = left_corner_id;
-                        corner_traversal_stack.push(right_corner_id);
-                        break;
                     }
+                    
+                    self.face_to_split_symbol_map
+                        .insert(face_id.0 as usize, self.last_encoded_symbol_id);
+
+                    // Process right face first, left face second.
+                    *corner_traversal_stack.last_mut().expect("stack non-empty") = left_corner_id;
+                    corner_traversal_stack.push(right_corner_id);
+                    break;
                 }
             }
         }
