@@ -81,6 +81,14 @@ bool WriteBufferToFile(const void *buffer, size_t buffer_size,
 // does not exist.
 size_t GetFileSize(const std::string &file_name);
 
+// Initializes the file I/O system by ensuring the default file reader and
+// writer implementations are registered. This must be called before using
+// ReadFileToBuffer, WriteBufferToFile, or any other file I/O functions.
+// Returns true if initialization was successful.
+// Note: This is typically only needed when linking as a static library, as the
+// static registration may not occur automatically.
+void InitFileIO();
+
 }  // namespace draco
 
 #endif  // DRACO_IO_FILE_UTILS_H_

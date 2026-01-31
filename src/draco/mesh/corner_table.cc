@@ -186,6 +186,13 @@ bool CornerTable::ComputeOppositeCorners(int *num_vertices) {
         break;
       }
     }
+    if (std::getenv("DRACO_CT_DEBUG") != nullptr && c.value() < 120) {
+      std::cout << "C++ COMPUTE_OP_DEBUG: c=" << c.value() << " tip_v=" << tip_v.value()
+                << " source_v=" << source_v.value() << " sink_v=" << sink_v.value()
+                << " found_match=" << (opposite_c != kInvalidCornerIndex)
+                << " opposite_c=" << (opposite_c == kInvalidCornerIndex ? -1 : opposite_c.value()) << std::endl;
+    }
+
     if (opposite_c == kInvalidCornerIndex) {
       // No opposite corner found. Insert the new edge
       const int num_corners_on_source_vert =

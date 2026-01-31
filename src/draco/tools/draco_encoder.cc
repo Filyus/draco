@@ -197,6 +197,9 @@ int EncodeMeshToFile(const draco::Mesh &mesh, const std::string &file,
 }  // anonymous namespace
 
 int main(int argc, char **argv) {
+  // Initialize file I/O system (ensures static registration of file readers/writers)
+  draco::InitFileIO();
+
   Options options;
   const int argc_check = argc - 1;
 
