@@ -27,7 +27,13 @@ pub struct MeshEncoder {
     corner_table: Option<CornerTable>,
     point_ids: Vec<PointIndex>,
     data_to_corner_map: Option<Vec<u32>>,
+    vertex_to_data_map: Option<Vec<i32>>,
     method: i32,
+    /// Maps point indices to vertex indices in the corner table.
+    /// Used when position-based deduplication is enabled.
+    point_to_vertex_map: Option<Vec<u32>>,
+    /// Whether we're using single connectivity (all attributes share same corner table).
+    use_single_connectivity: bool,
 }
 
 impl GeometryEncoder for MeshEncoder {
@@ -58,6 +64,10 @@ impl GeometryEncoder for MeshEncoder {
     fn get_data_to_corner_map(&self) -> Option<Vec<u32>> {
         self.data_to_corner_map.clone()
     }
+
+    fn get_vertex_to_data_map(&self) -> Option<Vec<i32>> {
+        self.vertex_to_data_map.clone()
+    }
 }
 
 impl MeshEncoder {
@@ -69,7 +79,10 @@ impl MeshEncoder {
             corner_table: None,
             point_ids: Vec::new(),
             data_to_corner_map: None,
+            vertex_to_data_map: None,
             method: 0,
+            point_to_vertex_map: None,
+            use_single_connectivity: false,
         }
     }
 
@@ -125,8 +138,11 @@ impl MeshEncoder {
         buffer.set_version(major, minor);
         buffer.encode_u8(self.get_geometry_type() as u8);
         
+        // C++ default behavior: Edgebreaker if speed != 10, Sequential if speed == 10
         let method_int = self.options.get_global_int("encoding_method", -1);
-        let method = if method_int == 1 { 1 } else { 0 };
+        let method = if method_int == -1 {
+            if self.options.get_speed() == 10 { 0 } else { 1 }
+        } else if method_int == 1 { 1 } else { 0 };
         buffer.encode_u8(method);
         
         if has_header_flags(major, minor) {
@@ -153,26 +169,55 @@ impl MeshEncoder {
     fn encode_connectivity(&mut self, out_buffer: &mut EncoderBuffer) -> Status {
         let mesh = self.mesh.as_ref().expect("mesh must be set before encoding");
 
-        // Build faces array for corner table
-        let faces: Vec<[crate::geometry_indices::VertexIndex; 3]> = (0..mesh.num_faces())
-            .map(|i| {
-                let face = mesh.face(FaceIndex(i as u32));
-                [
-                    crate::geometry_indices::VertexIndex(face[0].0),
-                    crate::geometry_indices::VertexIndex(face[1].0),
-                    crate::geometry_indices::VertexIndex(face[2].0),
-                ]
-            })
-            .collect();
+        // C++ behavior: use_single_connectivity_ when speed >= 6
+        // When false (speed < 6), use position attribute to deduplicate vertices
+        let speed = self.options.get_speed();
+        // Check if split_mesh_on_seams is explicitly set, otherwise use speed-based default
+        let split_on_seams_explicit = self.options.get_global_int("split_mesh_on_seams", -1);
+        let use_single_connectivity = if split_on_seams_explicit >= 0 {
+            split_on_seams_explicit != 0
+        } else {
+            speed >= 6
+        };
+
+        let (faces, point_to_vertex_map) = if use_single_connectivity {
+            // CreateCornerTableFromAllAttributes: use point indices directly
+            let faces: Vec<[crate::geometry_indices::VertexIndex; 3]> = (0..mesh.num_faces())
+                .map(|i| {
+                    let face = mesh.face(FaceIndex(i as u32));
+                    [
+                        crate::geometry_indices::VertexIndex(face[0].0),
+                        crate::geometry_indices::VertexIndex(face[1].0),
+                        crate::geometry_indices::VertexIndex(face[2].0),
+                    ]
+                })
+                .collect();
+            // Identity mapping
+            let point_to_vertex: Vec<u32> = (0..mesh.num_points() as u32).collect();
+            (faces, point_to_vertex)
+        } else {
+            // CreateCornerTableFromPositionAttribute: use position attribute to deduplicate
+            self.create_corner_table_from_position_attribute(mesh)
+        };
 
         // Initialize corner table for the mesh
         let mut corner_table = CornerTable::new(0);
         corner_table.init(&faces);
 
         self.corner_table = Some(corner_table);
+        self.point_to_vertex_map = Some(point_to_vertex_map);
+        self.use_single_connectivity = use_single_connectivity;
 
         let method_int = self.options.get_global_int("encoding_method", -1);
-        let method = if method_int == 1 {
+        // Match C++ behavior: if encoding_method is not set (-1),
+        // use Edgebreaker for all options except speed == 10
+        let method = if method_int == -1 {
+            if self.options.get_speed() == 10 {
+                MeshEncodingMethod::MeshSequentialEncoding
+            } else {
+                MeshEncodingMethod::MeshEdgebreakerEncoding
+            }
+        } else if method_int == 1 {
             MeshEncodingMethod::MeshEdgebreakerEncoding
         } else {
             MeshEncodingMethod::MeshSequentialEncoding
@@ -188,15 +233,129 @@ impl MeshEncoder {
     fn encode_edgebreaker_connectivity(&mut self, out_buffer: &mut EncoderBuffer) -> Status {
         let mesh = self.mesh.as_ref().expect("mesh must be set before encoding");
         let corner_table = self.corner_table.as_ref().expect("corner_table must be set before edgebreaker encoding");
-        
+
         let mut encoder = MeshEdgebreakerEncoder::new(mesh.num_faces(), mesh.num_points());
-        let (point_ids, data_to_corner_map) =
+        let (point_ids, data_to_corner_map, vertex_to_data_map) =
             encoder.encode_connectivity(mesh, corner_table, out_buffer)?;
+        if cfg!(feature = "debug_logs") {
+            println!("DEBUG: encode_edgebreaker_connectivity: point_ids.len()={}, data_to_corner_map.len()={}, vertex_to_data_map.len()={}",
+                 point_ids.len(), data_to_corner_map.len(), vertex_to_data_map.len());
+        }
         self.point_ids = point_ids;
+
+        // Optional debug: compute bounds of the POSITION values in the *encoded point order*.
+        // If these bounds are already wrong, the issue is in point/vertex mapping (not prediction).
+        if std::env::var("DRACO_DEBUG_BOUNDS").is_ok() {
+            use crate::geometry_attribute::GeometryAttributeType;
+            let pos_att_id = mesh.named_attribute_id(GeometryAttributeType::Position);
+            if pos_att_id >= 0 {
+                let pos_att = mesh.attribute(pos_att_id);
+                if pos_att.data_type() == crate::draco_types::DataType::Float32 && pos_att.num_components() >= 3 {
+                    let buffer = pos_att.buffer();
+                    let byte_stride = pos_att.byte_stride() as usize;
+                    let data = buffer.data();
+                    let mut min_x = f32::INFINITY;
+                    let mut max_x = f32::NEG_INFINITY;
+                    let mut min_y = f32::INFINITY;
+                    let mut max_y = f32::NEG_INFINITY;
+                    let mut min_z = f32::INFINITY;
+                    let mut max_z = f32::NEG_INFINITY;
+                    for pid in &self.point_ids {
+                        let p = pid.0 as usize;
+                        let off = p.saturating_mul(byte_stride);
+                        if off + 12 > data.len() {
+                            continue;
+                        }
+                        let x = f32::from_le_bytes(data[off..off + 4].try_into().unwrap());
+                        let y = f32::from_le_bytes(data[off + 4..off + 8].try_into().unwrap());
+                        let z = f32::from_le_bytes(data[off + 8..off + 12].try_into().unwrap());
+                        min_x = min_x.min(x);
+                        max_x = max_x.max(x);
+                        min_y = min_y.min(y);
+                        max_y = max_y.max(y);
+                        min_z = min_z.min(z);
+                        max_z = max_z.max(z);
+                    }
+                    if cfg!(feature = "debug_logs") {
+                        println!(
+                            "DEBUG: encoded POSITION bounds (point_ids order): x=[{}, {}] y=[{}, {}] z=[{}, {}]",
+                            min_x, max_x, min_y, max_y, min_z, max_z
+                        );
+                    }
+                }
+            }
+        }
         // Draco stores corner mapping in attribute (data) order.
         self.data_to_corner_map = Some(data_to_corner_map);
+        self.vertex_to_data_map = Some(vertex_to_data_map);
 
         Ok(())
+    }
+
+    /// Creates faces array using position attribute to deduplicate vertices.
+    /// This mimics C++ CreateCornerTableFromPositionAttribute.
+    /// Returns (faces, point_to_vertex_map) where:
+    /// - faces: vertex indices (deduplicated based on position values)
+    /// - point_to_vertex_map: maps each point index to its vertex index in the corner table
+    fn create_corner_table_from_position_attribute(&self, mesh: &Mesh) -> (Vec<[crate::geometry_indices::VertexIndex; 3]>, Vec<u32>) {
+        use crate::geometry_attribute::GeometryAttributeType;
+        
+        let pos_att_id = mesh.named_attribute_id(GeometryAttributeType::Position);
+        if pos_att_id < 0 {
+            // No position attribute, fall back to identity mapping
+            let faces: Vec<[crate::geometry_indices::VertexIndex; 3]> = (0..mesh.num_faces())
+                .map(|i| {
+                    let face = mesh.face(FaceIndex(i as u32));
+                    [
+                        crate::geometry_indices::VertexIndex(face[0].0),
+                        crate::geometry_indices::VertexIndex(face[1].0),
+                        crate::geometry_indices::VertexIndex(face[2].0),
+                    ]
+                })
+                .collect();
+            let point_to_vertex: Vec<u32> = (0..mesh.num_points() as u32).collect();
+            return (faces, point_to_vertex);
+        }
+        
+        let pos_att = mesh.attribute(pos_att_id);
+        let _buffer = pos_att.buffer();
+        let num_components = pos_att.num_components() as usize;
+        let _byte_stride = match pos_att.data_type() {
+            crate::draco_types::DataType::Float32 => num_components * 4,
+            crate::draco_types::DataType::Float64 => num_components * 8,
+            crate::draco_types::DataType::Int8 | crate::draco_types::DataType::Uint8 => num_components,
+            crate::draco_types::DataType::Int16 | crate::draco_types::DataType::Uint16 => num_components * 2,
+            crate::draco_types::DataType::Int32 | crate::draco_types::DataType::Uint32 => num_components * 4,
+            crate::draco_types::DataType::Int64 | crate::draco_types::DataType::Uint64 => num_components * 8,
+            _ => num_components * 4, // Default to 4 bytes per component
+        };
+        
+        // Use attribute mapped indices directly to build point->vertex map. This mirrors
+        // C++ CreateCornerTableFromAttribute which uses att->mapped_index(face[j]).
+        let mut point_to_vertex: Vec<u32> = vec![0; mesh.num_points()];
+        for i in 0..mesh.num_points() {
+            let pt = PointIndex(i as u32);
+            let val_idx = pos_att.mapped_index(pt);
+            point_to_vertex[i] = val_idx.0;
+        }
+
+        // Build faces using attribute mapped indices (exact same mapping as C++).
+        let faces: Vec<[crate::geometry_indices::VertexIndex; 3]> = (0..mesh.num_faces())
+            .map(|i| {
+                let face = mesh.face(FaceIndex(i as u32));
+                [
+                    crate::geometry_indices::VertexIndex(point_to_vertex[face[0].0 as usize]),
+                    crate::geometry_indices::VertexIndex(point_to_vertex[face[1].0 as usize]),
+                    crate::geometry_indices::VertexIndex(point_to_vertex[face[2].0 as usize]),
+                ]
+            })
+            .collect();
+        
+        if cfg!(feature = "debug_logs") {
+            eprintln!("Rust created faces (first 12): {:?}", faces.iter().take(12).map(|f| [f[0].0, f[1].0, f[2].0]).collect::<Vec<_>>());
+            eprintln!("Rust point_to_vertex (first 25): {:?}", point_to_vertex.iter().take(25).cloned().collect::<Vec<_>>());
+        }
+        (faces, point_to_vertex)
     }
 
     fn encode_sequential_connectivity(&mut self, out_buffer: &mut EncoderBuffer) -> Status {
@@ -252,34 +411,33 @@ impl MeshEncoder {
         let mesh = self.mesh.as_ref().expect("mesh must be set before encoding");
         
         let method_int = self.options.get_global_int("encoding_method", -1);
-        let is_edgebreaker = method_int == 1;
+        // Match C++ behavior: if encoding_method is not set (-1),
+        // use Edgebreaker for all options except speed == 10
+        let is_edgebreaker = if method_int == -1 {
+            self.options.get_speed() != 10
+        } else {
+            method_int == 1
+        };
 
         // Encode number of attribute decoders (u8).
-        // For sequential encoding, there's only ONE attribute encoder containing ALL attributes (if any).
-        // For edgebreaker, there may be multiple encoders.
+        // For both sequential and edgebreaker with single-connectivity mode:
+        // there's only ONE attribute encoder containing ALL attributes.
+        // This matches C++ behavior when use_single_connectivity_ = true (speed >= 6).
         let num_attributes = mesh.num_attributes();
-        let num_encoders = if is_edgebreaker {
-            num_attributes as usize
-        } else if num_attributes > 0 {
-            1
-        } else {
-            0
-        };
+        let num_encoders = if num_attributes > 0 { 1 } else { 0 };
         
         out_buffer.encode_u8(num_encoders as u8);
 
         // Phase 1: attributes decoder identifiers.
-        // For sequential encoding, we only have one encoder so this is just one loop iteration.
-        // For edgebreaker, we need one per attribute.
-        for _ in 0..num_encoders {
-            if is_edgebreaker {
-                // att_data_id (i8), encoder_type (u8), traversal_method (u8)
-                out_buffer.encode_u8((-1i8) as u8);
-                out_buffer.encode_u8(0);
-                out_buffer.encode_u8(0);
-            }
-            // For sequential, nothing is written in phase 1 (EncodeAttributesEncoderIdentifier does nothing)
+        // For single-encoder mode: one encoder with att_data_id = -1 (uses position connectivity)
+        if num_encoders > 0 && is_edgebreaker {
+            // att_data_id (i8), encoder_type (u8), traversal_method (u8)
+            // -1 means use position connectivity (single connectivity mode)
+            out_buffer.encode_u8((-1i8) as u8);  // att_data_id = -1
+            out_buffer.encode_u8(0);              // element_type = MESH_VERTEX_ATTRIBUTE
+            out_buffer.encode_u8(0);              // traversal_method = DEPTH_FIRST
         }
+        // For sequential, nothing is written in phase 1 (EncodeAttributesEncoderIdentifier does nothing)
 
         let mut decoder_types: Vec<u8> = Vec::with_capacity(mesh.num_attributes() as usize);
         // Use the buffer's version (set in encode_header) for version checks
@@ -287,52 +445,13 @@ impl MeshEncoder {
         let minor = out_buffer.version_minor();
 
         // Phase 2: Encode attribute encoder data
-        // For sequential encoding: ONE encoder containing ALL attributes
+        // Both sequential and edgebreaker now use single-encoder mode:
         //   - Write num_attrs = total attributes
         //   - Write all attribute metadata
         //   - Write all decoder types
-        // For edgebreaker: multiple encoders, one per attribute
-        //   - Each encoder: num_attrs=1, metadata, decoder_type
         
-        if is_edgebreaker {
-            // Edgebreaker: multiple encoders, one per attribute
-            for i in 0..mesh.num_attributes() {
-                let att = mesh.attribute(i);
-                let quantization_bits = self.options.get_attribute_int(i, "quantization_bits", -1);
-                let is_quantized = quantization_bits > 0
-                    && (att.data_type() == DataType::Float32 || att.data_type() == DataType::Float64);
-                let is_normal = att.attribute_type() == GeometryAttributeType::Normal;
-
-                // num_attributes = 1 for this encoder
-                if !uses_varint_encoding(major, minor) {
-                    out_buffer.encode_u32(1);
-                } else {
-                    out_buffer.encode_varint(1u64);
-                }
-                
-                out_buffer.encode_u8(att.attribute_type() as u8);
-                out_buffer.encode_u8(att.data_type() as u8);
-                out_buffer.encode_u8(att.num_components());
-                out_buffer.encode_u8(if att.normalized() { 1 } else { 0 });
-                
-                if !uses_varint_unique_id(major, minor) {
-                    out_buffer.encode_u16(att.unique_id() as u16);
-                } else {
-                    out_buffer.encode_varint(att.unique_id() as u64);
-                }
-
-                let decoder_type: u8 = if is_quantized {
-                    if is_normal { 3 } else { 2 }
-                } else if att.data_type() != DataType::Float32 {
-                    1
-                } else {
-                    0
-                };
-                out_buffer.encode_u8(decoder_type);
-                decoder_types.push(decoder_type);
-            }
-        } else if num_encoders > 0 {
-            // Sequential: single encoder with all attributes
+        if num_encoders > 0 {
+            // Single encoder with all attributes (single-connectivity mode for edgebreaker)
             // Write num_attrs = total number of attributes
             if !uses_varint_encoding(major, minor) {
                 out_buffer.encode_u32(mesh.num_attributes() as u32);
@@ -344,6 +463,9 @@ impl MeshEncoder {
             for i in 0..mesh.num_attributes() {
                 let att = mesh.attribute(i);
                 
+                if cfg!(feature = "debug_logs") {
+                    println!("DEBUG: Encoder encoding attribute {} metadata. Type: {:?}, Components: {}, Data: {:?}", i, att.attribute_type(), att.num_components(), att.data_type());
+                }
                 out_buffer.encode_u8(att.attribute_type() as u8);
                 out_buffer.encode_u8(att.data_type() as u8);
                 out_buffer.encode_u8(att.num_components());
