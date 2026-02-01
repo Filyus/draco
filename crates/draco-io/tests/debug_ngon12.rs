@@ -3,7 +3,9 @@ use std::fs;
 
 #[test]
 fn debug_decode_ngon12() {
-    let draco_data = fs::read("input/ngon12.drc").expect("ngon12.drc not found");
+    let root_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let path = std::path::Path::new(&root_dir).join("../../testdata/ngon12.drc");
+    let draco_data = fs::read(&path).unwrap_or_else(|_| panic!("{} not found", path.display()));
     println!("Draco buffer size: {} bytes", draco_data.len());
     println!("First 50 bytes: {:02X?}", &draco_data[..50.min(draco_data.len())]);
 
@@ -48,7 +50,7 @@ fn debug_decode_ngon12() {
             println!("SUCCESS: Decoded mesh with {} faces, {} points", mesh.num_faces(), mesh.num_points());
             println!("Attributes: {}", mesh.num_attributes());
             for i in 0..mesh.num_attributes() {
-                let att = mesh.attribute(i as i32);
+                let att = mesh.attribute(i);
                 println!("  Attribute {}: {:?}, {} components, {} entries",
                     i, att.attribute_type(), att.num_components(), att.size());
             }

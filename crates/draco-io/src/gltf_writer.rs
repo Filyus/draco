@@ -248,6 +248,57 @@ impl Default for GltfWriter {
     }
 }
 
+fn encode_draco_mesh_bytes(mesh: &Mesh, quantization: &QuantizationBits) -> Result<Vec<u8>> {
+    if mesh.num_faces() == 0 {
+        return Err(GltfWriteError::InvalidMesh("Mesh has no faces".into()));
+    }
+
+    let mut encoder = MeshEncoder::new();
+    encoder.set_mesh(mesh.clone());
+
+    let mut options = EncoderOptions::new();
+    // Use Sequential encoding for reliable multi-attribute support
+    // TODO: Enable Edgebreaker when multi-attribute encoding is fixed
+    options.set_global_int("encoding_method", 0);
+
+    // Set quantization for each attribute type, clamped to 1..=31.
+    // This matches the behavior used by the glTF writer.
+    for i in 0..mesh.num_attributes() {
+        let att = mesh.attribute(i);
+        if att.data_type() == draco_core::draco_types::DataType::Float32 {
+            let bits = match att.attribute_type() {
+                GeometryAttributeType::Position => quantization.position,
+                GeometryAttributeType::Normal => quantization.normal,
+                GeometryAttributeType::Color => quantization.color,
+                GeometryAttributeType::TexCoord => quantization.texcoord,
+                GeometryAttributeType::Generic => quantization.generic,
+                GeometryAttributeType::Invalid => 8,
+            };
+            let bits = bits.clamp(1, 31);
+            options.set_attribute_int(i, "quantization_bits", bits);
+        }
+    }
+
+    let mut enc_buffer = EncoderBuffer::new();
+    encoder
+        .encode(&options, &mut enc_buffer)
+        .map_err(|e| GltfWriteError::DracoEncode(format!("{:?}", e)))?;
+
+    Ok(enc_buffer.data().to_vec())
+}
+
+/// Encode a mesh to a Draco bitstream using the same settings as `GltfWriter`.
+///
+/// This is useful for tools/tests that need the raw `.drc` bytes without
+/// wrapping them into a glTF/GLB container.
+pub fn encode_draco_mesh(
+    mesh: &Mesh,
+    quantization: impl Into<Option<QuantizationBits>>,
+) -> Result<Vec<u8>> {
+    let quantization = quantization.into().unwrap_or_default();
+    encode_draco_mesh_bytes(mesh, &quantization)
+}
+
 impl GltfWriter {
     /// Create a new glTF writer.
     pub fn new() -> Self {
@@ -371,48 +422,15 @@ impl GltfWriter {
         name: Option<&str>,
         quantization: &QuantizationBits,
     ) -> Result<usize> {
-        if mesh.num_faces() == 0 {
-            return Err(GltfWriteError::InvalidMesh("Mesh has no faces".into()));
-        }
-
-        // Encode mesh with Draco
-        let mut encoder = MeshEncoder::new();
-        encoder.set_mesh(mesh.clone());
-
-        let mut options = EncoderOptions::new();
-        options.set_global_int("encoding_method", 1); // Edgebreaker
-
-        // Set quantization for each attribute type, clamped to 1..=31
-        for i in 0..mesh.num_attributes() {
-            let att = mesh.attribute(i);
-            if att.data_type() == draco_core::draco_types::DataType::Float32 {
-                let bits = match att.attribute_type() {
-                    GeometryAttributeType::Position => quantization.position,
-                    GeometryAttributeType::Normal => quantization.normal,
-                    GeometryAttributeType::Color => quantization.color,
-                    GeometryAttributeType::TexCoord => quantization.texcoord,
-                    GeometryAttributeType::Generic => quantization.generic,
-                    GeometryAttributeType::Invalid => 8,
-                };
-                let bits = bits.clamp(1, 31);
-                options.set_attribute_int(i, "quantization_bits", bits);
-            }
-        }
-
-        let mut enc_buffer = EncoderBuffer::new();
-        encoder
-            .encode(&options, &mut enc_buffer)
-            .map_err(|e| GltfWriteError::DracoEncode(format!("{:?}", e)))?;
-
-        let draco_data = enc_buffer.data();
+        let draco_data = encode_draco_mesh_bytes(mesh, quantization)?;
 
         // Align to 4 bytes
-        while self.binary_data.len() % 4 != 0 {
+        while !self.binary_data.len().is_multiple_of(4) {
             self.binary_data.push(0);
         }
         let aligned_offset = self.binary_data.len();
 
-        self.binary_data.extend_from_slice(draco_data);
+        self.binary_data.extend_from_slice(&draco_data);
         let draco_buffer_view_idx = self.buffer_views.len();
         self.buffer_views.push(BufferViewOut {
             buffer: 0,

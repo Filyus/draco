@@ -1,3 +1,10 @@
+// Test file allows for convenience and readability:
+// - io_other_error: Use generic io::Error::other() for simplified error creation
+// - useless_format: format!("{}", x) used for consistency even where .to_string() would work
+// - useless_vec: vec![...] used for clarity even where slices suffice
+// - len_zero: .len() == 0 comparisons are clearer in test assertions than .is_empty()
+#![allow(clippy::io_other_error, clippy::useless_format, clippy::useless_vec, clippy::len_zero)]
+
 use std::env;
 use std::io;
 use std::path::PathBuf;

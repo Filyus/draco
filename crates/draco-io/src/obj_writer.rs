@@ -330,7 +330,7 @@ mod tests {
         write_obj_mesh(file.path(), &mesh).unwrap();
 
         let reader = BufReader::new(fs::File::open(file.path()).unwrap());
-        let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+        let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
 
         // Check vertices and face
         assert!(lines.iter().any(|l| l.starts_with("v ")));

@@ -44,11 +44,11 @@ fn main() -> io::Result<()> {
     // glTF with default quantization (using simplified API)
     let mut gltf = GltfWriter::new();
     gltf.add_draco_mesh(&mesh, Some("HighQuality"), None)  // None = use defaults
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        .map_err(io::Error::other)?;
     gltf.write_glb("high_quality.glb")
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        .map_err(io::Error::other)?;
     gltf.write_gltf_embedded("embedded.gltf")
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        .map_err(io::Error::other)?;
     println!("✓ glTF with Draco compression written");
 
     println!("\n=== All formats successfully written! ===");

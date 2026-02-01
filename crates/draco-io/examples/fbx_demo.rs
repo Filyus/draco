@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut reader = FbxReader::open(fbx_path.to_str().unwrap())?;
     let meshes = reader.read_meshes()?;
     println!("  Found {} mesh(es)", meshes.len());
-    if let Some(m) = meshes.get(0) {
+    if let Some(m) = meshes.first() {
         println!("  Read mesh: vertices={}, faces={}", m.num_points(), m.num_faces());
     }
 
@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut reader = FbxReader::open(fbx_compressed_path.to_str().unwrap())?;
         let meshes = reader.read_meshes()?;
         println!("  Found {} mesh(es) from compressed file", meshes.len());
-        if let Some(m) = meshes.get(0) {
+        if let Some(m) = meshes.first() {
             println!("  Read mesh: vertices={}, faces={}", m.num_points(), m.num_faces());
         }
     }

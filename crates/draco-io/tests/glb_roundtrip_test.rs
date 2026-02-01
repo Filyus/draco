@@ -12,7 +12,10 @@ use std::path::Path;
 
 #[test]
 fn test_glb_decode_and_inspect() {
+    // Path: crates/draco-io -> crates -> Draco root -> testdata
     let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
         .parent()
         .unwrap()
         .join("testdata")
@@ -75,7 +78,10 @@ fn test_glb_decode_and_inspect() {
 
 #[test]
 fn test_glb_roundtrip_with_draco() {
+    // Path: crates/draco-io -> crates -> Draco root -> testdata
     let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
         .parent()
         .unwrap()
         .join("testdata")
