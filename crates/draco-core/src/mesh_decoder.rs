@@ -27,6 +27,9 @@ pub struct MeshDecoder {
     corner_table: Option<Box<CornerTable>>,
     edgebreaker_data_to_corner_map: Option<Vec<u32>>,
     edgebreaker_attribute_seam_corners: Vec<Vec<u32>>,
+    edgebreaker_processed_connectivity_corners: Vec<u32>,
+    edgebreaker_vertex_to_corner_map: Vec<u32>,
+    traversal_method: u8,
 }
 
 impl Default for MeshDecoder {
@@ -46,6 +49,9 @@ impl MeshDecoder {
             corner_table: None,
             edgebreaker_data_to_corner_map: None,
             edgebreaker_attribute_seam_corners: Vec::new(),
+            edgebreaker_processed_connectivity_corners: Vec::new(),
+            edgebreaker_vertex_to_corner_map: Vec::new(),
+            traversal_method: 0,
         }
     }
 
@@ -63,6 +69,13 @@ impl MeshDecoder {
         
         // 4. Decode Attributes
         self.decode_attributes(in_buffer, out_mesh)
+    }
+
+    /// Test helper: Returns a reference to the decoded corner table (if any).
+    /// This is useful in unit tests that wish to compare encoder/decoder
+    /// corner table structures without accessing internal decoder types.
+    pub fn get_corner_table_ref(&self) -> Option<&crate::corner_table::CornerTable> {
+        self.corner_table.as_deref()
     }
 
     fn decode_metadata(&self, in_buffer: &mut DecoderBuffer) -> Result<(), DracoError> {
@@ -87,7 +100,10 @@ impl MeshDecoder {
         Ok(())
     }
 
-    #[allow(clippy::only_used_in_recursion)] // &self needed for method signature consistency
+    // &self is needed for method signature consistency even though only used in recursive calls.
+    // This maintains a uniform API where all decoder methods take &self, and the recursive
+    // nature means the parameter is semantically meaningful for the call chain.
+    #[allow(clippy::only_used_in_recursion)]
     fn skip_metadata(&self, in_buffer: &mut DecoderBuffer) -> Result<(), DracoError> {
         let num_entries = in_buffer
             .decode_varint()
@@ -173,30 +189,17 @@ impl MeshDecoder {
             // Preserve edgebreaker-derived maps for attribute decoding.
             self.edgebreaker_data_to_corner_map = eb_decoder.take_data_to_corner_map();
             self.edgebreaker_attribute_seam_corners = eb_decoder.take_attribute_seam_corners();
+            self.edgebreaker_processed_connectivity_corners = eb_decoder.get_processed_connectivity_corners().to_vec();
+        self.edgebreaker_vertex_to_corner_map = eb_decoder.get_vertex_to_corner_map().to_vec();
+        self.traversal_method = eb_decoder.get_traversal_decoder_type();
 
-            // Initialize CornerTable from decoded faces
-            let mut faces = Vec::with_capacity(mesh.num_faces());
-            for i in 0..mesh.num_faces() {
-                let f = mesh.face(FaceIndex(i as u32));
-                faces.push([VertexIndex(f[0].0), VertexIndex(f[1].0), VertexIndex(f[2].0)]);
+            // Use the edgebreaker decoder's corner table with proper opposite mappings
+            // instead of building a new one from mesh faces
+            if let Some(ct) = eb_decoder.take_corner_table() {
+                self.corner_table = Some(Box::new(ct));
+            } else {
+                return Err(DracoError::DracoError("Edgebreaker decoder did not provide corner table".to_string()));
             }
-            
-            let mut ct = Box::new(CornerTable::new(0));
-            if !ct.init(&faces) {
-                 return Err(DracoError::DracoError("Failed to initialize CornerTable after Edgebreaker".to_string()));
-            }
-            
-            // Fix vertex_corners to be First Encountered (matching Encoder's traversal)
-            ct.vertex_corners.fill(INVALID_CORNER_INDEX);
-            for c in 0..ct.num_corners() {
-                let v = ct.vertex(CornerIndex(c as u32));
-                if v != INVALID_VERTEX_INDEX
-                    && ct.vertex_corners[v.0 as usize] == INVALID_CORNER_INDEX {
-                        ct.vertex_corners[v.0 as usize] = CornerIndex(c as u32);
-                    }
-            }
-
-            self.corner_table = Some(ct);
         } else {
             // Sequential connectivity encoding
             let (num_faces, num_points) = if !uses_varint_encoding(self.version_major, self.version_minor) {
@@ -445,6 +448,14 @@ impl MeshDecoder {
                     point_ids_for_decoder = Some(ids);
                     data_to_corner_map_for_decoder = Some(map);
                 }
+
+                // Note: For edgebreaker, we intentionally do NOT take a traversal
+                // mapping from `MeshEdgebreakerDecoder::assign_points_to_corners()`.
+                // The C++ decoder derives its attribute traversal from
+                // `MeshTraversalSequencer` (with no corner_order set), i.e. from
+                // deterministic traversal over the reconstructed corner table.
+                // Mixing a connectivity-derived map with a separately generated
+                // vertex_to_data_map can desynchronize prediction decoding.
             }
 
             let corner_table_for_decoder: Option<&CornerTable> = if let Some(ref ct) = attr_corner_table {
@@ -453,31 +464,77 @@ impl MeshDecoder {
                 self.corner_table.as_deref()
             };
 
+            // Optional vertex_to_data_map derived from the chosen data_to_corner_map.
+            // (Needed by mesh prediction schemes to map corner-table vertices -> data ids.)
             // For edgebreaker, derive per-decoder traversal sequencing when seams are not
             // applied (per-vertex attributes). This sequencing must match the bitstream
             // traversal_method to keep prediction-scheme side streams (e.g. crease flags)
             // synchronized.
             let mut sequenced_point_ids: Option<Vec<PointIndex>> = None;
             let mut sequenced_data_to_corner_map: Option<Vec<u32>> = None;
-            if self.method == 1 && point_ids_for_decoder.is_none() {
-                let traversal_method = traversal_method_by_decoder[dec_i];
-                let (ids, map) = match traversal_method {
-                    0 => self.generate_point_ids_and_corners_dfs(mesh),
-                    1 => self.generate_point_ids_and_corners_max_prediction_degree(mesh),
-                    _ => self.generate_point_ids_and_corners_dfs(mesh),
-                };
-                if ids.len() == num_points && map.len() == num_points {
-                    // Update per-attribute explicit mappings to match the sequencing.
-                    for &att_id in att_ids {
-                        let att_mut = mesh.attribute_mut(att_id);
-                        att_mut.set_explicit_mapping(num_points);
-                        for (i, &pid) in ids.iter().enumerate() {
-                            att_mut.set_point_map_entry(pid, AttributeValueIndex(i as u32));
+            let mut sequenced_vertex_to_data_map: Option<Vec<i32>> = None;
+
+
+            // Generate point_ids using traversal method.
+            // For Edgebreaker, the decoder should process faces in sequential order (0, 1, 2, ...)
+            // because that's the order they were reconstructed. The C++ decoder's
+            // MeshTraversalSequencer does NOT set a corner_order, which causes it to
+            // iterate through faces 0..num_faces and call ProcessCorner(CornerIndex(3*i)).
+            if sequenced_point_ids.is_none() {
+                // For sequential encoding (method 0), use identity permutation
+                // because the encoder writes positions in point ID order [0, 1, 2, ...].
+                // For edgebreaker (method 1), use DFS/prediction traversal to match encoder.
+                if self.method == 0 {
+                    // Sequential encoding: identity permutation
+                    let ids: Vec<PointIndex> = (0..mesh.num_points())
+                        .map(|i| PointIndex(i as u32))
+                        .collect();
+                    // For sequential encoding, map each point to its first corner appearance
+                    // by iterating through faces in order
+                    let mut map: Vec<u32> = vec![u32::MAX; mesh.num_points()];
+                    for f in 0..mesh.num_faces() {
+                        let face = mesh.face(FaceIndex(f as u32));
+                        for k in 0..3 {
+                            let point = face[k].0 as usize;
+                            if point < map.len() && map[point] == u32::MAX {
+                                map[point] = (f * 3 + k) as u32;
+                            }
                         }
                     }
+                    sequenced_point_ids = Some(ids.clone());
+                    sequenced_data_to_corner_map = Some(map);
+                } else {
+                    // Edgebreaker decoding: C++ decoder does NOT use SetCornerOrder() - 
+                    // it always uses sequential face traversal (faces 0, 1, 2, ...).
+                    // Only the encoder uses SetCornerOrder with processed_connectivity_corners.
+                    // The decoder must use sequential faces to build vertex_to_data_map that
+                    // matches how values were stored during decoding.
+                    let seeds: Vec<u32> = (0..mesh.num_faces()).map(|f| (f * 3) as u32).collect();
+
+                    let (ids, map) = self.generate_point_ids_and_corners_dfs(mesh, &seeds);
+                    sequenced_point_ids = Some(ids.clone());
+                    sequenced_data_to_corner_map = Some(map);
                 }
-                sequenced_point_ids = Some(ids);
-                sequenced_data_to_corner_map = Some(map);
+            }
+                
+            // Generate vertex_to_data_map from the traversal result.
+            // This is needed by predictors (like Parallelogram) to find references by point index.
+            if let Some(ref map) = sequenced_data_to_corner_map {
+                let ct = self.corner_table.as_ref().unwrap();
+                let mut v_map = vec![-1i32; ct.num_vertices()];
+                for (i, &c_id) in map.iter().enumerate() {
+                    let v = ct.vertex(CornerIndex(c_id));
+                    if v != INVALID_VERTEX_INDEX {
+                        v_map[v.0 as usize] = i as i32;
+                    }
+                }
+                if std::env::var("DRACO_VERBOSE").is_ok() {
+                    println!(
+                        "Decoder: sequenced_vertex_to_data_map (first 10) = {:?}",
+                        &v_map[..v_map.len().min(10)]
+                    );
+                }
+                sequenced_vertex_to_data_map = Some(v_map);
             }
 
             // Choose which point sequence to use for decoding values in this decoder.
@@ -497,6 +554,7 @@ impl MeshDecoder {
             } else {
                 data_to_corner_map.as_deref()
             };
+            let vertex_to_data_map_override_for_values: Option<&[i32]> = sequenced_vertex_to_data_map.as_deref();
 
             let mut pending_quant: Vec<PendingQuant> = Vec::new();
             let mut pending_normals: Vec<PendingNormal> = Vec::new();
@@ -518,6 +576,7 @@ impl MeshDecoder {
                             buffer,
                             corner_table_for_decoder,
                             data_to_corner_map_override_for_values,
+                            vertex_to_data_map_override_for_values,
                             None,
                         ) {
                             return Err(DracoError::DracoError("Failed to decode integer attribute values".to_string()));
@@ -544,6 +603,7 @@ impl MeshDecoder {
                             buffer,
                             corner_table_for_decoder,
                             data_to_corner_map_override_for_values,
+                            vertex_to_data_map_override_for_values,
                             Some(&mut portable),
                         ) {
                             return Err(DracoError::DracoError("Failed to decode quantized portable values".to_string()));
@@ -571,6 +631,7 @@ impl MeshDecoder {
                             buffer,
                             corner_table_for_decoder,
                             data_to_corner_map_override_for_values,
+                            vertex_to_data_map_override_for_values,
                             Some(&mut portable),
                         ) {
                             return Err(DracoError::DracoError("Failed to decode normal portable values".to_string()));
@@ -596,6 +657,10 @@ impl MeshDecoder {
                             .position(|p| p.att_id == att_id)
                             .ok_or_else(|| DracoError::DracoError("Missing pending quant entry".to_string()))?;
                         let original = mesh.attribute(att_id);
+                        if cfg!(feature = "debug_logs") {
+                            println!("DEBUG: MeshDecoder decoding quantization params. Pos: {}, Remaining: {}", buffer.position(), buffer.remaining_size());
+                            println!("DEBUG: Buffer peek: {:?}", buffer.peek_bytes(32));
+                        }
                         if !pending_quant[idx].transform.decode_parameters(original, buffer) {
                             return Err(DracoError::DracoError(
                                 "Failed to decode quantization parameters".to_string(),
@@ -629,12 +694,54 @@ impl MeshDecoder {
                     return Err(DracoError::DracoError("Failed to decode normals".to_string()));
                 }
             }
+
+            // Apply UpdatePointToAttributeIndexMapping for Edgebreaker (method 1)
+            // This creates the final mapping from mesh points to attribute values,
+            // matching C++ MeshTraversalSequencer::UpdatePointToAttributeIndexMapping.
+            //
+            // The key insight: values are stored in data_id order (determined by DFS).
+            // vertex_to_data_map[v] tells us which data_id holds vertex v's value.
+            // In the decoder, mesh point == corner table vertex (since faces are built from CT).
+            // So point p should get value from data_id = vertex_to_data_map[p].
+            if self.method == 1 {
+                if let Some(ref v_map) = sequenced_vertex_to_data_map {
+                    let num_points = mesh.num_points();
+                    for &att_id in att_ids {
+                        let att = mesh.attribute_mut(att_id);
+                        att.set_explicit_mapping(num_points);
+                        for p in 0..num_points {
+                            // In decoder, point p == vertex p (since mesh.face[corner] = corner_table.vertex[corner])
+                            if p < v_map.len() && v_map[p] >= 0 {
+                                att.set_point_map_entry(PointIndex(p as u32), AttributeValueIndex(v_map[p] as u32));
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())
     }
 
-    fn generate_point_ids_and_corners_dfs(&self, _mesh: &Mesh) -> (Vec<PointIndex>, Vec<u32>) {
+    /// Discovery-order traversal: use the order points were created during reconstruction.
+    #[allow(dead_code)]
+    fn generate_point_ids_and_corners_discovery(&self, mesh: &Mesh) -> (Vec<PointIndex>, Vec<u32>) {
+        let num_points = mesh.num_points();
+        let mut point_ids = Vec::with_capacity(num_points);
+        let mut data_to_corner_map = Vec::with_capacity(num_points);
+        
+        for i in 0..num_points {
+            let pid = PointIndex(i as u32);
+            point_ids.push(pid);
+            let corner = self.edgebreaker_vertex_to_corner_map.get(i).cloned().unwrap_or(u32::MAX);
+            data_to_corner_map.push(if corner == u32::MAX { 0 } else { corner });
+        }
+        
+        (point_ids, data_to_corner_map)
+    }
+
+    #[allow(dead_code)]
+    fn generate_point_ids_and_corners_dfs(&self, mesh: &Mesh, processed_connectivity_corners: &[u32]) -> (Vec<PointIndex>, Vec<u32>) {
         let corner_table = self.corner_table.as_ref().expect("corner_table must be set before generating point IDs");
         let num_vertices = corner_table.num_vertices();
         let num_faces = corner_table.num_faces();
@@ -644,21 +751,24 @@ impl MeshDecoder {
         let mut visited_vertices = vec![false; num_vertices];
         let mut visited_faces = vec![false; num_faces];
 
-        let mut visit_vertex = |v: VertexIndex, c: CornerIndex, point_ids: &mut Vec<PointIndex>, visited_vertices: &mut [bool]| {
-            if v == INVALID_VERTEX_INDEX {
-                return;
+        // Helper to get mesh PointIndex from corner (matches C++ Mesh::CornerToPointId)
+        let corner_to_point_id = |c: CornerIndex| -> PointIndex {
+            if c == INVALID_CORNER_INDEX {
+                return PointIndex(u32::MAX);
             }
-            let vi = v.0 as usize;
-            if vi >= visited_vertices.len() {
-                return;
-            }
-            if !visited_vertices[vi] {
-                visited_vertices[vi] = true;
-                point_ids.push(PointIndex(v.0));
-                data_to_corner_map.push(c.0);
-            }
+            let face_id = FaceIndex(c.0 / 3);
+            let corner_offset = (c.0 % 3) as usize;
+            mesh.face(face_id)[corner_offset]
         };
 
+        // Visit a corner table vertex and record it as a point ID.
+        // This matches C++ MeshAttributeIndicesEncodingObserver::OnNewVertexVisited
+        // which gets point_id from mesh_->face(corner / 3)[corner % 3]
+        
+        // DEBUG: Counter for DFS starts
+        static DFS_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        
+        // DFS traversal matching C++ DepthFirstTraverser::TraverseFromCorner exactly
         let mut traverse_from_corner = |start_corner: CornerIndex,
                         point_ids: &mut Vec<PointIndex>,
                         visited_vertices: &mut Vec<bool>,
@@ -668,56 +778,122 @@ impl MeshDecoder {
                 return;
             }
             if visited_faces[start_face.0 as usize] {
-                return;
+                return; // Already traversed
+            }
+
+            // DEBUG: First DFS call
+            let count = DFS_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if count < 3 && cfg!(feature = "debug_logs") {
+                eprintln!(
+                    "Rust Decoder TraverseFromCorner STARTED: seed_corner={} face={} offset={}",
+                    start_corner.0, start_corner.0 / 3, start_corner.0 % 3
+                );
+                // Show corner table structure
+                let opposites: Vec<u32> = (0..12.min(corner_table.num_faces() * 3))
+                    .map(|c| corner_table.opposite(CornerIndex(c as u32)).0)
+                    .collect();
+                let vertices: Vec<u32> = (0..12.min(corner_table.num_faces() * 3))
+                    .map(|c| corner_table.vertex(CornerIndex(c as u32)).0)
+                    .collect();
+                eprintln!("Rust Decoder corner_table opposites (first 12): {:?}", opposites);
+                eprintln!("Rust Decoder corner_table vertices (first 12): {:?}", vertices);
             }
 
             let mut corner_stack: Vec<CornerIndex> = Vec::new();
             corner_stack.push(start_corner);
-
-            // Pre-visit next and prev vertices for the first face.
-            let next_c = corner_table.next(start_corner);
-            let prev_c = corner_table.previous(start_corner);
-            let next_v = corner_table.vertex(next_c);
-            let prev_v = corner_table.vertex(prev_c);
-            visit_vertex(next_v, next_c, point_ids, visited_vertices);
-            visit_vertex(prev_v, prev_c, point_ids, visited_vertices);
-
-            while let Some(&corner_id) = corner_stack.last() {
-                let face_id = corner_table.face(corner_id);
-                if corner_id == INVALID_CORNER_INDEX || face_id == crate::geometry_indices::INVALID_FACE_INDEX || visited_faces[face_id.0 as usize] {
-                    corner_stack.pop();
-                    continue;
+            
+            // For the first face, check the remaining corners as they may not be processed yet.
+            // C++ visits Next, then Previous vertices BEFORE the main loop.
+            let next_vert = corner_table.vertex(corner_table.next(start_corner));
+            let prev_vert = corner_table.vertex(corner_table.previous(start_corner));
+            
+            if next_vert == crate::geometry_indices::INVALID_VERTEX_INDEX || 
+               prev_vert == crate::geometry_indices::INVALID_VERTEX_INDEX {
+                return;
+            }
+            
+            // DEBUG: Counter for visits
+            static VISIT_COUNT: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+            
+            // Visit Next vertex
+            if !visited_vertices[next_vert.0 as usize] {
+                visited_vertices[next_vert.0 as usize] = true;
+                let next_corner = corner_table.next(start_corner);
+                let point_id = corner_to_point_id(next_corner);
+                let data_id = VISIT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if data_id < 10 && cfg!(feature = "debug_logs") {
+                    eprintln!(
+                        "Rust Decoder OnNewVertexVisited: data_id={} vertex={} corner={} point_id={}",
+                        data_id, next_vert.0, next_corner.0, point_id.0
+                    );
                 }
+                point_ids.push(point_id);
+                data_to_corner_map.push(next_corner.0);
+            }
+            // Visit Previous vertex
+            if !visited_vertices[prev_vert.0 as usize] {
+                visited_vertices[prev_vert.0 as usize] = true;
+                let prev_corner = corner_table.previous(start_corner);
+                let point_id = corner_to_point_id(prev_corner);
+                let data_id = VISIT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if data_id < 10 && cfg!(feature = "debug_logs") {
+                    eprintln!(
+                        "Rust Decoder OnNewVertexVisited: data_id={} vertex={} corner={} point_id={}",
+                        data_id, prev_vert.0, prev_corner.0, point_id.0
+                    );
+                }
+                point_ids.push(point_id);
+                data_to_corner_map.push(prev_corner.0);
+            }
 
-                let mut corner_id = corner_id;
-                let mut face_id = face_id;
+            // Start the actual traversal (matching C++ while loop)
+            while let Some(mut corner_id) = corner_stack.pop() {
+                let mut face_id = corner_table.face(corner_id);
+                
+                // Make sure the face hasn't been visited yet
+                if corner_id == INVALID_CORNER_INDEX || visited_faces[face_id.0 as usize] {
+                    continue; // This face has been already traversed
+                }
+                
                 loop {
                     visited_faces[face_id.0 as usize] = true;
-
+                    
                     let vert_id = corner_table.vertex(corner_id);
-                    if vert_id == INVALID_VERTEX_INDEX {
+                    if vert_id == crate::geometry_indices::INVALID_VERTEX_INDEX {
                         break;
                     }
+                    
                     if !visited_vertices[vert_id.0 as usize] {
-                        let on_boundary = self.is_vertex_on_boundary(corner_table, vert_id);
-                        visit_vertex(vert_id, corner_id, point_ids, visited_vertices);
+                        let on_boundary = Self::is_vertex_on_boundary_impl(corner_table, vert_id);
+                        visited_vertices[vert_id.0 as usize] = true;
+                        // OnNewVertexVisited
+                        let point_id = corner_to_point_id(corner_id);
+                        let data_id = VISIT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if data_id < 10 && cfg!(feature = "debug_logs") {
+                            eprintln!(
+                                "Rust Decoder OnNewVertexVisited: data_id={} vertex={} corner={} point_id={}",
+                                data_id, vert_id.0, corner_id.0, point_id.0
+                            );
+                        }
+                        point_ids.push(point_id);
+                        data_to_corner_map.push(corner_id.0);
+                        
                         if !on_boundary {
-                            corner_id = corner_table.right_corner(corner_id);
+                            // Continue to right corner (GetRightCorner = Opposite(Next))
+                            corner_id = corner_table.opposite(corner_table.next(corner_id));
                             if corner_id == INVALID_CORNER_INDEX {
                                 break;
                             }
                             face_id = corner_table.face(corner_id);
-                            if face_id == crate::geometry_indices::INVALID_FACE_INDEX {
-                                break;
-                            }
                             continue;
                         }
                     }
-
-                    // Vertex already visited or boundary: try neighboring faces.
-                    let right_corner_id = corner_table.right_corner(corner_id);
-                    let left_corner_id = corner_table.left_corner(corner_id);
-
+                    
+                    // The current vertex has been already visited or it was on a boundary.
+                    // We need to determine whether we can visit any of its neighboring faces.
+                    let right_corner_id = corner_table.opposite(corner_table.next(corner_id)); // GetRightCorner
+                    let left_corner_id = corner_table.opposite(corner_table.previous(corner_id)); // GetLeftCorner
+                    
                     let right_face_id = if right_corner_id == INVALID_CORNER_INDEX {
                         crate::geometry_indices::INVALID_FACE_INDEX
                     } else {
@@ -728,57 +904,100 @@ impl MeshDecoder {
                     } else {
                         corner_table.face(left_corner_id)
                     };
-
-                    let right_visited = right_face_id == crate::geometry_indices::INVALID_FACE_INDEX
-                        || visited_faces[right_face_id.0 as usize];
-                    let left_visited = left_face_id == crate::geometry_indices::INVALID_FACE_INDEX
-                        || visited_faces[left_face_id.0 as usize];
-
+                    
+                    let right_visited = right_face_id == crate::geometry_indices::INVALID_FACE_INDEX || 
+                                        visited_faces[right_face_id.0 as usize];
+                    let left_visited = left_face_id == crate::geometry_indices::INVALID_FACE_INDEX || 
+                                       visited_faces[left_face_id.0 as usize];
+                    
                     if right_visited {
                         if left_visited {
-                            corner_stack.pop();
+                            // Both neighboring faces are visited. End reached.
                             break;
                         } else {
+                            // Go to the left face
                             corner_id = left_corner_id;
                             face_id = left_face_id;
                         }
                     } else if left_visited {
+                        // Left face visited, go to the right one
                         corner_id = right_corner_id;
                         face_id = right_face_id;
                     } else {
-                        // Split traversal.
-                        *corner_stack.last_mut().expect("stack non-empty in traversal") = left_corner_id;
+                        // Both neighboring faces are unvisited, we need to visit both.
+                        // Split the traversal.
+                        // First make the top of the current corner stack point to the left face
+                        // (this one will be processed second).
+                        // Add a new corner to the top of the stack (right face needs to be
+                        // traversed first).
+                        corner_stack.push(left_corner_id);
                         corner_stack.push(right_corner_id);
                         break;
                     }
                 }
             }
+
         };
 
-        // Traverse all components in face order.
-        for f in 0..num_faces {
-            if visited_faces[f] {
-                continue;
+        // Run the traverser in the same way as C++ MeshTraversalSequencer:
+        // - If a corner_order is provided, process only those corners.
+        // - Otherwise, process sequential CornerIndex(3 * face_id).
+        if !processed_connectivity_corners.is_empty() {
+            for &c in processed_connectivity_corners {
+                traverse_from_corner(
+                    CornerIndex(c),
+                    &mut point_ids,
+                    &mut visited_vertices,
+                    &mut visited_faces,
+                );
             }
-            let first_corner = corner_table.first_corner(FaceIndex(f as u32));
-            traverse_from_corner(first_corner, &mut point_ids, &mut visited_vertices, &mut visited_faces);
+        } else {
+            for f in 0..num_faces {
+                if !visited_faces[f] {
+                    traverse_from_corner(
+                        CornerIndex((f * 3) as u32),
+                        &mut point_ids,
+                        &mut visited_vertices,
+                        &mut visited_faces,
+                    );
+                }
+            }
         }
 
-        // Add any remaining isolated vertices.
+        if std::env::var("DRACO_VERBOSE").is_ok() {
+            eprintln!(
+                "Decoder: sequenced_point_ids (first 10) = {:?}",
+                point_ids.iter().take(10).map(|p| p.0).collect::<Vec<_>>()
+            );
+            eprintln!(
+                "Decoder: sequenced_data_to_corner_map (first 10) = {:?}",
+                data_to_corner_map.iter().take(10).collect::<Vec<_>>()
+            );
+        }
+        // Add any remaining isolated vertices or padding to match expected count
+        let total_points_expected = mesh.num_points();
         for i in 0..num_vertices {
-            if !visited_vertices[i] {
+            if !visited_vertices[i] && point_ids.len() < total_points_expected {
                 point_ids.push(PointIndex(i as u32));
                 let c = corner_table.left_most_corner(VertexIndex(i as u32));
-                data_to_corner_map.push(c.0);
+                data_to_corner_map.push(if c != INVALID_CORNER_INDEX { c.0 } else { 0 });
             }
+        }
+        
+        // Final padding if still short
+        while point_ids.len() < total_points_expected {
+            point_ids.push(PointIndex(0)); // fallback
+            data_to_corner_map.push(0);
         }
 
         (point_ids, data_to_corner_map)
     }
 
+    #[allow(dead_code)]
     fn generate_point_ids_and_corners_max_prediction_degree(
         &self,
-        _mesh: &Mesh,
+        mesh: &Mesh,
+        _processed_connectivity_corners: &[u32],
     ) -> (Vec<PointIndex>, Vec<u32>) {
         // Matches C++ MaxPredictionDegreeTraverser (MESH_TRAVERSAL_PREDICTION_DEGREE).
         let corner_table = self.corner_table.as_ref().expect("corner_table must be set before generating point IDs");
@@ -796,6 +1015,16 @@ impl MeshDecoder {
         let mut stacks: [Vec<CornerIndex>; 3] = [Vec::new(), Vec::new(), Vec::new()];
         let mut best_priority: usize = 0;
 
+        // Helper to get mesh PointIndex from corner (matches C++ Mesh::CornerToPointId)
+        let corner_to_point_id = |c: CornerIndex| -> PointIndex {
+            if c == INVALID_CORNER_INDEX {
+                return PointIndex(u32::MAX);
+            }
+            let face_id = FaceIndex(c.0 / 3);
+            let corner_offset = (c.0 % 3) as usize;
+            mesh.face(face_id)[corner_offset]
+        };
+
         let visit_vertex = |v: VertexIndex,
                                 c: CornerIndex,
                                 point_ids: &mut Vec<PointIndex>,
@@ -810,7 +1039,9 @@ impl MeshDecoder {
             }
             if !visited_vertices[vi] {
                 visited_vertices[vi] = true;
-                point_ids.push(PointIndex(v.0));
+                // Use corner_to_point_id to get mesh PointIndex from corner
+                let point_id = corner_to_point_id(c);
+                point_ids.push(point_id);
                 data_to_corner_map.push(c.0);
             }
         };
@@ -988,7 +1219,10 @@ impl MeshDecoder {
             }
         };
 
-        // Traverse all components in face order.
+        // C++ DECODER traverses faces SEQUENTIALLY (face 0, face 1, face 2, ...)
+        // NOT using processed_connectivity_corners (that's only for the ENCODER)!
+        // See C++ MeshTraversalSequencer::GenerateSequenceInternal() - when corner_order_ is null,
+        // it does: for (int i = 0; i < num_faces; ++i) ProcessCorner(CornerIndex(3 * i));
         for f in 0..num_faces {
             if visited_faces[f] {
                 continue;
@@ -1018,6 +1252,7 @@ impl MeshDecoder {
         (point_ids, data_to_corner_map)
     }
 
+    #[allow(dead_code)]
     fn is_vertex_on_boundary(&self, corner_table: &CornerTable, vert_id: VertexIndex) -> bool {
         let start_c = corner_table.left_most_corner(vert_id);
         if start_c == INVALID_CORNER_INDEX {
@@ -1040,6 +1275,20 @@ impl MeshDecoder {
             if c == start_c {
                 break;
             }
+        }
+        false
+    }
+
+    /// Helper function to check if a vertex is on the boundary
+    /// Matches C++ CornerTable::IsOnBoundary
+    fn is_vertex_on_boundary_impl(corner_table: &crate::corner_table::CornerTable, v: VertexIndex) -> bool {
+        let corner = corner_table.left_most_corner(v);
+        if corner == INVALID_CORNER_INDEX {
+            return true; // Isolated vertex - treat as boundary
+        }
+        // C++ checks: if (SwingLeft(corner) == kInvalidCornerIndex) return true;
+        if corner_table.swing_left(corner) == INVALID_CORNER_INDEX {
+            return true;
         }
         false
     }
