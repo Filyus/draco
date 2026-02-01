@@ -137,7 +137,7 @@ where
     ) -> bool {
         self.transform.init(in_data, size, num_components);
 
-        if num_components == 0 || size % num_components != 0 {
+        if num_components == 0 || !size.is_multiple_of(num_components) {
             return false;
         }
         let num_entries = size / num_components;
@@ -677,7 +677,7 @@ where
         if size == 0 {
             return true;
         }
-        if num_components == 0 || size % num_components != 0 {
+        if num_components == 0 || !size.is_multiple_of(num_components) {
             return false;
         }
         if size < num_components {

@@ -21,7 +21,11 @@ impl ParallelogramDataType for i32 {
     }
 }
 
+// Geometric parallelogram prediction requires 8 parameters: attribute data arrays,
+// vertex/corner mappings, face indices, and transform context. This is a mathematical
+// computation that genuinely needs all these inputs; grouping them would add indirection.
 // Helper function
+#[allow(clippy::too_many_arguments)]
 fn compute_parallelogram_prediction<DataType: ParallelogramDataType>(
     data_entry_id: i32,
     ci: CornerIndex,
@@ -30,29 +34,53 @@ fn compute_parallelogram_prediction<DataType: ParallelogramDataType>(
     in_data: &[DataType],
     num_components: usize,
     out_prediction: &mut [DataType],
+    label: &str,
 ) -> bool {
     let oci = table.opposite(ci);
     if oci == INVALID_CORNER_INDEX {
         return false;
     }
 
-    // Get entries from the OPPOSITE corner (oci), not the current corner (ci)
-    // This matches C++ GetParallelogramEntries which is called with oci
-    let vert_opp = vertex_to_data_map[table.vertex(oci).0 as usize];
-    let vert_next = vertex_to_data_map[table.vertex(table.next(oci)).0 as usize];
-    let vert_prev = vertex_to_data_map[table.vertex(table.previous(oci)).0 as usize];
+    // Get entries from the OPPOSITE corner (oci), not the current corner (ci).
+    // The opposite corner (oci) is the tip of the neighbor face.
+    // The shared vertices are next(oci) and prev(oci).
+    // The opposite vertex is vertex(oci).
+    let vert_opp_idx = table.vertex(oci).0 as usize;
+    let vert_next_idx = table.vertex(table.next(oci)).0 as usize;
+    let vert_prev_idx = table.vertex(table.previous(oci)).0 as usize;
+    
+    if vert_opp_idx >= vertex_to_data_map.len() 
+        || vert_next_idx >= vertex_to_data_map.len() 
+        || vert_prev_idx >= vertex_to_data_map.len() {
+        return false;
+    }
+    
+    let vert_opp = vertex_to_data_map[vert_opp_idx];
+    let vert_next = vertex_to_data_map[vert_next_idx];
+    let vert_prev = vertex_to_data_map[vert_prev_idx];
 
-    if vert_opp >= 0 && vert_next >= 0 && vert_prev >= 0 && vert_opp < data_entry_id && vert_next < data_entry_id && vert_prev < data_entry_id {
+    // Ensure all three neighbors have been processed already.
+    if vert_opp >= 0 && vert_next >= 0 && vert_prev >= 0 
+        && vert_opp < data_entry_id && vert_next < data_entry_id && vert_prev < data_entry_id {
+        
         let v_opp_off = (vert_opp as usize) * num_components;
         let v_next_off = (vert_next as usize) * num_components;
         let v_prev_off = (vert_prev as usize) * num_components;
 
         for c in 0..num_components {
+            // Parallelogram: Prediction = (Next + Prev) - Opp
             out_prediction[c] = DataType::compute_parallelogram_prediction(
                 in_data[v_next_off + c],
                 in_data[v_prev_off + c],
                 in_data[v_opp_off + c],
             );
+        }
+        
+        // Debug logging for first few predictions
+        if std::env::var("DRACO_VERBOSE").is_ok() {
+            println!("{} Pred p={} c={} (o={}): entries({}, {}, {})", 
+                label, data_entry_id, ci.0, oci.0,
+                vert_opp, vert_next, vert_prev);
         }
         return true;
     }
@@ -257,18 +285,12 @@ where
         let vertex_to_data_map = self.mesh_data.vertex_to_data_map().unwrap();
         let data_to_corner_map = self.mesh_data.data_to_corner_map().unwrap();
 
+        let num_entries = size / num_components;
         let mut pred_vals = vec![DataType::default(); num_components];
 
-        // Handle index 0 (no prediction)
-        if size > 0 {
-            let dst_offset = 0;
-            let original = &in_data[dst_offset..dst_offset + num_components];
-            let predicted = vec![DataType::default(); num_components];
-            let corr = &mut out_corr[dst_offset..dst_offset + num_components];
-            self.transform.compute_correction(original, &predicted, corr);
-        }
-
-        for p in (1..data_to_corner_map.len()).rev() {
+        // Process from the end (highest data_id) down to 1.
+        // Index 0 is handled separately at the end.
+        for p in (1..num_entries).rev() {
             let corner_id = CornerIndex(data_to_corner_map[p]);
             let dst_offset = p * num_components;
 
@@ -280,10 +302,11 @@ where
                 in_data,
                 num_components,
                 &mut pred_vals,
+                "Encoder",
             );
 
             if !is_parallelogram {
-                // Delta coding
+                // Delta coding: use previous entry as prediction
                 let src_offset = (p - 1) * num_components;
                 let original = &in_data[dst_offset..dst_offset + num_components];
                 let predicted = &in_data[src_offset..src_offset + num_components];
@@ -296,7 +319,7 @@ where
             }
         }
 
-        // First element
+        // First element: no prediction (use zero as prediction)
         for i in 0..num_components {
             pred_vals[i] = DataType::default();
         }
@@ -417,6 +440,7 @@ where
                 decoded_data,
                 num_components,
                 &mut pred_vals,
+                "Decoder",
             );
 
             if !is_parallelogram {
