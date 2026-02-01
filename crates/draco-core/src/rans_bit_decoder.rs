@@ -18,25 +18,27 @@ impl<'a> RAnsBitDecoder<'a> {
         
         // Read zero_prob
         if let Ok(prob) = source_buffer.decode::<u8>() {
+            if cfg!(feature = "debug_logs") {
+                println!("DEBUG: RAnsBitDecoder prob_zero: {}", prob);
+            }
             self.prob_zero = prob;
         } else {
             return false;
         }
 
         // Read size_in_bytes.
-        // The Rust encoder always writes varint (matching C++ >= 2.2 behavior).
-        // We read varint unconditionally since:
-        // 1. Our encoder writes varint
-        // 2. C++ files with version >= 2.2 write varint
-        // 3. Version 0.0 means unit test without header (use our encoder format)
-        // Note: C++ has backward compat for pre-2.2 files that wrote u32, but
-        // Rust doesn't need to support those legacy formats.
         let size: u32 = match source_buffer.decode_varint() {
             Ok(v) => v as u32,
             Err(_) => return false,
         };
+        if cfg!(feature = "debug_logs") {
+            println!("DEBUG: RAnsBitDecoder size: {}", size);
+        }
 
         if let Ok(slice) = source_buffer.decode_slice(size as usize) {
+            if cfg!(feature = "debug_logs") {
+                println!("DEBUG: RAnsBitDecoder slice: {:?}", slice);
+            }
             let mut decoder = AnsDecoder::new(slice);
             if decoder.read_init(crate::ans::ANS_L_BASE) {
                 self.ans_decoder = Some(decoder);

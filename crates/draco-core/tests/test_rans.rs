@@ -23,9 +23,9 @@ fn test_rans_bit_coding() {
     let mut decoder = RAnsBitDecoder::new();
     assert!(decoder.start_decoding(&mut decoder_buffer));
     
-    assert_eq!(decoder.decode_next_bit(), true);
-    assert_eq!(decoder.decode_next_bit(), false);
-    assert_eq!(decoder.decode_next_bit(), true);
+    assert!(decoder.decode_next_bit());
+    assert!(!decoder.decode_next_bit());
+    assert!(decoder.decode_next_bit());
     
     decoder.end_decoding();
 }
