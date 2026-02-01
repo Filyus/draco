@@ -28,6 +28,10 @@ pub mod geometry_indices;
 pub mod math_utils;
 pub mod mesh;
 pub mod mesh_edgebreaker_shared;
+pub mod edgebreaker_connectivity_decoder;
+
+// Test-only helpers (exposed so integration tests can access them)
+pub mod test_event_log;
 pub mod mesh_prediction_scheme_data;
 pub mod normal_compression_utils;
 pub mod point_cloud;
