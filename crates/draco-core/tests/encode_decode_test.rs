@@ -22,8 +22,8 @@ fn test_point_cloud_encode_decode() {
     ];
     
     let buffer = pos_att.buffer_mut();
-    for i in 0..9 {
-        let bytes = positions[i].to_le_bytes();
+    for (i, &position) in positions.iter().enumerate() {
+        let bytes = position.to_le_bytes();
         buffer.write(i * 4, &bytes);
     }
     
@@ -56,13 +56,13 @@ fn test_point_cloud_encode_decode() {
     
     // Check values (approximate due to quantization)
     let decoded_buffer = decoded_att.buffer();
-    for i in 0..9 {
+    for (i, &expected) in positions.iter().enumerate() {
         let mut bytes = [0u8; 4];
         decoded_buffer.read(i * 4, &mut bytes);
         let val = f32::from_le_bytes(bytes);
         
-        let diff = (val - positions[i]).abs();
-        eprintln!("i {}: decoded={} expected={} diff={}", i, val, positions[i], diff);
+        let diff = (val - expected).abs();
+        eprintln!("i {}: decoded={} expected={} diff={}", i, val, expected, diff);
         assert!(diff < 0.001, "Value mismatch at {}: {} vs {}", i, val, positions[i]);
     }
 }
@@ -133,8 +133,7 @@ fn test_point_cloud_encode_decode_kd_tree() {
             .then(a.2.partial_cmp(&b.2).unwrap())
     });
     
-    for i in 0..num_points {
-        let (x, y, z) = decoded_points[i];
+    for (i, &(x, y, z)) in decoded_points.iter().enumerate().take(num_points) {
         let expected_x = i as f32;
         let expected_y = (i * 2) as f32;
         let expected_z = (i * 3) as f32;

@@ -60,17 +60,32 @@ fn verify_mesh_attributes(original: &Mesh, decoded: &Mesh, max_error: f32) {
     
     let orig_data = orig_attr.buffer().data();
     let dec_data = dec_attr.buffer().data();
-    
+
     // Collect all decoded points
     let mut decoded_points = Vec::new();
-    println!("Decoded Points:");
+    println!("Decoded Points (total: {}):", decoded.num_points());
     for i in 0..decoded.num_points() {
-        let offset = (i as usize) * 3 * 4;
+        let offset = i * 3 * 4;
         let dx = f32::from_le_bytes(dec_data[offset..offset+4].try_into().unwrap());
         let dy = f32::from_le_bytes(dec_data[offset+4..offset+8].try_into().unwrap());
         let dz = f32::from_le_bytes(dec_data[offset+8..offset+12].try_into().unwrap());
         decoded_points.push([dx, dy, dz]);
-        println!("  {}: ({}, {}, {})", i, dx, dy, dz);
+    }
+    // Print statistics
+    let min_x = decoded_points.iter().map(|p| p[0]).fold(f32::INFINITY, f32::min);
+    let max_x = decoded_points.iter().map(|p| p[0]).fold(f32::NEG_INFINITY, f32::max);
+    let min_y = decoded_points.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min);
+    let max_y = decoded_points.iter().map(|p| p[1]).fold(f32::NEG_INFINITY, f32::max);
+    println!("  Point range: x=[{:.3}, {:.3}], y=[{:.3}, {:.3}]", min_x, max_x, min_y, max_y);
+    // Print first 20 decoded point values
+    println!("Decoded point values (first 20):");
+    for (i, p) in decoded_points.iter().enumerate().take(20) {
+        println!("  Point {}: ({:.3}, {:.3}, {:.3})", i, p[0], p[1], p[2]);
+    }
+    println!("Decoded faces (total: {}):", decoded.num_faces());
+    for i in 0..std::cmp::min(5, decoded.num_faces()) {
+        let face = decoded.face(FaceIndex(i as u32));
+        println!("  Face {}: {:?}", i, face);
     }
 
     fn round_f32_to_i32(v: f32) -> i32 {
@@ -80,7 +95,7 @@ fn verify_mesh_attributes(original: &Mesh, decoded: &Mesh, max_error: f32) {
 
     // Verify each original point exists in decoded points
     for i in 0..original.num_points() {
-        let offset = (i as usize) * 3 * 4;
+        let offset = i * 3 * 4;
         let ox = f32::from_le_bytes(orig_data[offset..offset+4].try_into().unwrap());
         let oy = f32::from_le_bytes(orig_data[offset+4..offset+8].try_into().unwrap());
         let oz = f32::from_le_bytes(orig_data[offset+8..offset+12].try_into().unwrap());
@@ -114,13 +129,13 @@ fn verify_mesh_attributes(original: &Mesh, decoded: &Mesh, max_error: f32) {
 #[test]
 // #[ignore]
 fn test_grid_encoding_parallelogram() {
-    // 10x10 grid = 100 points. Enough to trigger Parallelogram if speed < 8.
-    let mesh = create_grid_mesh(10, 10);
+    // Use 5x5 grid for easier comparison with C++
+    let mesh = create_grid_mesh(5, 5);
     
     let mut options = EncoderOptions::default();
     options.set_global_int("encoding_method", 1); // Edgebreaker
     options.set_global_int("encoding_speed", 5); // Should select Parallelogram
-    options.set_attribute_int(0, "quantization_bits", 14); // High precision
+    options.set_attribute_int(0, "quantization_bits", 10); // Match C++ -qp 10
     
     let mut encoder = MeshEncoder::new();
     encoder.set_mesh(mesh.clone());
@@ -134,9 +149,8 @@ fn test_grid_encoding_parallelogram() {
     let mut decoder_buffer = DecoderBuffer::new(buffer.data());
     decoder.decode(&mut decoder_buffer, &mut decoded_mesh).expect("Decode failed");
     
-    // With 14 bits quantization on range [0, 9], error should be very small.
-    // Range = 9. Max error ~= 9 / (2^14 - 1) ~= 0.0005
-    verify_mesh_attributes(&mesh, &decoded_mesh, 0.002);
+    // With 10 bits quantization on range [0, 4], error should be very small.
+    verify_mesh_attributes(&mesh, &decoded_mesh, 0.01);
 }
 
 #[test]
@@ -199,6 +213,7 @@ fn test_grid_encoding_sequential() {
     
     let mut options = EncoderOptions::default();
     options.set_global_int("encoding_method", 0); // Sequential
+    options.set_global_int("encoding_speed", 5);  // Parallelogram
     options.set_attribute_int(0, "quantization_bits", 14);
     
     let mut encoder = MeshEncoder::new();

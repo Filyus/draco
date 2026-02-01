@@ -432,6 +432,10 @@ fn test_15_wheel() {
 /// Run all tests and report which ones fail
 #[test]
 fn test_all_minimal_repros() {
+    // Test data structure contains boxed closures that return meshes.
+    // The type Vec<(&str, Box<dyn Fn() -> Mesh>)> is complex but necessary
+    // for parameterized test cases with dynamic dispatch.
+    #[allow(clippy::type_complexity)]
     let test_cases: Vec<(&str, Box<dyn Fn() -> Mesh>)> = vec![
         ("Single triangle", Box::new(|| {
             create_mesh_with_positions(
@@ -475,8 +479,15 @@ fn test_all_minimal_repros() {
 /// Test decoding a C++-encoded annulus file
 #[test]
 fn test_decode_cpp_annulus() {
-    let annulus_drc = std::fs::read("C:\\Projects\\Draco\\testdata\\annulus_eb.drc")
-        .expect("Failed to read annulus_eb.drc");
+    let path = "C:\\Projects\\Draco\\testdata\\annulus_eb.drc";
+    let annulus_drc = match std::fs::read(path) {
+        Ok(data) => data,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("Skipping test_decode_cpp_annulus: file not found at {}", path);
+            return; // Skip test if file doesn't exist
+        }
+        Err(e) => panic!("Failed to read annulus_eb.drc: {:?}", e),
+    };
     
     let mut decoder_buffer = DecoderBuffer::new(&annulus_drc);
     let mut decoded_mesh = Mesh::new();

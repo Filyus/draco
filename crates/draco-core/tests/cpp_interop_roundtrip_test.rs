@@ -443,7 +443,11 @@ fn rust_encode_then_cpp_decode() {
     let mut encoder = MeshEncoder::new();
     encoder.set_mesh(mesh);
 
-    let options = EncoderOptions::new();
+    // Set proper encoding options - use sequential encoding and quantization for C++ interop
+    let mut options = EncoderOptions::new();
+    options.set_global_int("encoding_method", 0); // Sequential encoding
+    options.set_attribute_int(0, "quantization_bits", 14);
+    
     let mut enc = EncoderBuffer::new();
     let status = encoder.encode(&options, &mut enc);
     assert!(status.is_ok(), "Rust MeshEncoder failed: {:?}", status.err());
@@ -510,7 +514,10 @@ fn cpp_encode_rust_decode_rust_encode_cpp_decode_chain() {
     // Rust encode back.
     let mut encoder = MeshEncoder::new();
     encoder.set_mesh(mesh);
-    let options = EncoderOptions::new();
+    // Set proper encoding options - use sequential encoding and quantization for C++ interop
+    let mut options = EncoderOptions::new();
+    options.set_global_int("encoding_method", 0); // Sequential encoding
+    options.set_attribute_int(0, "quantization_bits", 14);
     let mut enc = EncoderBuffer::new();
     let status = encoder.encode(&options, &mut enc);
     assert!(status.is_ok(), "Rust MeshEncoder failed: {:?}", status.err());

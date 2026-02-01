@@ -47,8 +47,8 @@ fn create_cube_mesh() -> Mesh {
     let mut pos_att = PointAttribute::new();
     pos_att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, 8);
     let buffer = pos_att.buffer_mut();
-    for i in 0..24 {
-        buffer.write(i * 4, &positions[i].to_le_bytes());
+    for (i, &position) in positions.iter().enumerate() {
+        buffer.write(i * 4, &position.to_le_bytes());
     }
     mesh.add_attribute(pos_att);
     
@@ -207,6 +207,9 @@ fn test_mesh_edgebreaker_position_roundtrip() {
     let decoded_positions = read_positions(&decoded_mesh);
     
     eprintln!("Decoded mesh: {} vertices, {} faces", decoded_positions.len(), decoded_mesh.num_faces());
+    for (i, pos) in decoded_positions.iter().enumerate() {
+        eprintln!("  Decoded Vertex {}: ({:.4}, {:.4}, {:.4})", i, pos[0], pos[1], pos[2]);
+    }
     
     // Note: Edgebreaker may reorder vertices, so we need to check that each original
     // vertex appears in the decoded mesh (not necessarily at the same index)

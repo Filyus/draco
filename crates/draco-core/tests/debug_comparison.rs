@@ -8,7 +8,6 @@ use draco_core::draco_types::DataType;
 use std::process::Command;
 use std::path::Path;
 use std::fs::File;
-use std::io::Write;
 
 fn get_cpp_tools_path() -> Option<std::path::PathBuf> {
     let path = Path::new("../../build/Debug");
@@ -38,37 +37,17 @@ fn create_simple_mesh() -> Mesh {
         [0.0, 1.0, 0.0],
     ];
     
-    for i in 0..3 {
+    for (i, point) in points.iter().enumerate() {
         let offset = i * 3 * 4;
-        pos_attr.buffer_mut().update(&points[i][0].to_le_bytes(), Some(offset));
-        pos_attr.buffer_mut().update(&points[i][1].to_le_bytes(), Some(offset + 4));
-        pos_attr.buffer_mut().update(&points[i][2].to_le_bytes(), Some(offset + 8));
+        pos_attr.buffer_mut().update(&point[0].to_le_bytes(), Some(offset));
+        pos_attr.buffer_mut().update(&point[1].to_le_bytes(), Some(offset + 4));
+        pos_attr.buffer_mut().update(&point[2].to_le_bytes(), Some(offset + 8));
     }
     mesh.add_attribute(pos_attr);
     
     mesh.set_face(FaceIndex(0), [PointIndex(0), PointIndex(1), PointIndex(2)]);
     
     mesh
-}
-
-fn write_obj(mesh: &Mesh, path: &Path) -> std::io::Result<()> {
-    let mut file = File::create(path)?;
-    let pos_attr = mesh.attribute(0);
-    
-    for i in 0..mesh.num_points() {
-        let offset = i * 3 * 4;
-        let bytes = &pos_attr.buffer().data()[offset..offset+12];
-        let x = f32::from_le_bytes(bytes[0..4].try_into().unwrap());
-        let y = f32::from_le_bytes(bytes[4..8].try_into().unwrap());
-        let z = f32::from_le_bytes(bytes[8..12].try_into().unwrap());
-        writeln!(file, "v {} {} {}", x, y, z)?;
-    }
-    
-    for i in 0..mesh.num_faces() {
-        let face = mesh.face(FaceIndex(i as u32));
-        writeln!(file, "f {} {} {}", face[0].0 + 1, face[1].0 + 1, face[2].0 + 1)?;
-    }
-    Ok(())
 }
 
 fn print_hex(label: &str, data: &[u8]) {
@@ -112,7 +91,7 @@ fn compare_encodings() {
     
     // C++ Encode
     let obj_path = Path::new("temp_simple.obj");
-    write_obj(&mesh, obj_path).expect("Failed to write obj");
+    draco_io::obj_writer::write_obj_mesh(obj_path, &mesh).expect("Failed to write obj");
     let drc_path = Path::new("temp_simple_cpp.drc");
     
     let output = Command::new(&encoder_path)

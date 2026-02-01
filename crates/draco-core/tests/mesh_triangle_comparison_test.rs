@@ -57,6 +57,21 @@ fn extract_triangles(mesh: &Mesh, att_id: i32, precision: i32) -> HashSet<Triang
     let buffer = att.buffer();
     let byte_stride = att.byte_stride() as usize;
     
+    // Debug: print the point->attribute mapping
+    println!("DEBUG: Extracting triangles with point->attribute mapping:");
+    for p in 0..mesh.num_points() {
+        let val_index = att.mapped_index(PointIndex(p as u32));
+        let byte_offset = val_index.0 as usize * byte_stride;
+        let mut bytes = [0u8; 12];
+        buffer.read(byte_offset, &mut bytes);
+        let pos = [
+            f32::from_le_bytes(bytes[0..4].try_into().unwrap()),
+            f32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+            f32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+        ];
+        println!("  point {} -> attr_value {} -> pos {:?}", p, val_index.0, pos);
+    }
+    
     for face_idx in 0..mesh.num_faces() {
         let face = mesh.face(FaceIndex(face_idx as u32));
         
@@ -146,6 +161,7 @@ fn roundtrip_and_compare(mesh: Mesh, method: i32, precision: i32) -> Result<(), 
         .map_err(|e| format!("Decoding failed: {:?}", e))?;
     
     println!("Decoded mesh: {} faces, {} points", decoded_mesh.num_faces(), decoded_mesh.num_points());
+    
     println!("Decoded triangles:");
     for face_idx in 0..decoded_mesh.num_faces() {
         let face = decoded_mesh.face(FaceIndex(face_idx as u32));

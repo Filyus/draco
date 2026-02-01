@@ -1,3 +1,7 @@
+// Test uses array indexing patterns that mirror C++ test structure for clarity.
+// needless_range_loop: for i in 0..n { arr[i] } makes index-based operations explicit
+#![allow(clippy::needless_range_loop)]
+
 use draco_core::point_cloud::PointCloud;
 use draco_core::mesh::Mesh;
 use draco_core::geometry_attribute::{PointAttribute, GeometryAttributeType};

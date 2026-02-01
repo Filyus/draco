@@ -19,8 +19,8 @@ fn test_mesh_quantization_encoding() {
         0.0, 1.0, 0.0,
     ];
     let buffer = pos_att.buffer_mut();
-    for i in 0..9 {
-        let bytes = positions[i].to_le_bytes();
+    for (i, &position) in positions.iter().enumerate() {
+        let bytes = position.to_le_bytes();
         buffer.write(i * 4, &bytes);
     }
     mesh.add_attribute(pos_att);

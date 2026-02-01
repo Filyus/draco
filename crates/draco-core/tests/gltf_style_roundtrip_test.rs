@@ -12,6 +12,9 @@ use draco_core::decoder_buffer::DecoderBuffer;
 use draco_core::geometry_indices::PointIndex;
 
 /// Creates a mesh with positions, normals, and UVs (like a glTF file)
+// Returns (Mesh, positions, normals, uvs, faces) tuple for test verification.
+// The tuple is complex but each component serves a distinct validation purpose.
+#[allow(clippy::type_complexity)]
 fn create_gltf_style_mesh() -> (Mesh, Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<[f32; 2]>, Vec<[u32; 3]>) {
     // 4 vertices forming a square
     let positions: Vec<[f32; 3]> = vec![

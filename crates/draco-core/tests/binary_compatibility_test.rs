@@ -11,6 +11,7 @@ use std::process::Command;
 use std::path::Path;
 use std::fs::File;
 use std::io::Write;
+use tempfile::Builder;
 
 fn read_ply_header(path: &Path) -> std::io::Result<String> {
     let bytes = std::fs::read(path)?;
@@ -70,32 +71,6 @@ fn create_torus_mesh() -> Mesh {
     mesh
 }
 
-fn write_obj(mesh: &Mesh, path: &Path) -> std::io::Result<()> {
-    let mut file = File::create(path)?;
-    let pos_attr = mesh.attribute(0);
-    
-    for i in 0..mesh.num_points() {
-        let _val_idx = draco_core::geometry_indices::AttributeValueIndex(i as u32);
-        // Assuming float32 position
-        // We need a way to read typed data from attribute. 
-        // For now, let's just assume we can get bytes and cast, or use a helper if available.
-        // The current API might be limited. Let's use the buffer directly.
-        let offset = i * 3 * 4; // 3 floats * 4 bytes
-        let bytes = &pos_attr.buffer().data()[offset..offset+12];
-        let x = f32::from_le_bytes(bytes[0..4].try_into().unwrap());
-        let y = f32::from_le_bytes(bytes[4..8].try_into().unwrap());
-        let z = f32::from_le_bytes(bytes[8..12].try_into().unwrap());
-        writeln!(file, "v {} {} {}", x, y, z)?;
-    }
-    
-    for i in 0..mesh.num_faces() {
-        let face = mesh.face(FaceIndex(i as u32));
-        // OBJ is 1-based
-        writeln!(file, "f {} {} {}", face[0].0 + 1, face[1].0 + 1, face[2].0 + 1)?;
-    }
-    Ok(())
-}
-
 #[test]
 fn test_rust_encode_cpp_decode() {
     let tools_path = match get_cpp_tools_path() {
@@ -112,19 +87,22 @@ fn test_rust_encode_cpp_decode() {
         return;
     }
 
+    let temp_dir = Builder::new().prefix("draco_test").tempdir().expect("Failed to create temp dir");
+    let temp_path = temp_dir.path();
+
     let mesh = create_torus_mesh();
     
     // Write OBJ for C++ encoder
-    let obj_path = Path::new("torus.obj");
-    write_obj(&mesh, obj_path).expect("Failed to write OBJ");
+    let obj_path = temp_path.join("torus.obj");
+    draco_io::obj_writer::write_obj_mesh(&obj_path, &mesh).expect("Failed to write OBJ");
     
     // Run C++ encoder
-    let cpp_drc_path = Path::new("cpp_encoded.drc");
+    let cpp_drc_path = temp_path.join("cpp_encoded.drc");
     let status = Command::new(&encoder_path)
         .arg("-i")
-        .arg(obj_path)
+        .arg(&obj_path)
         .arg("-o")
-        .arg(cpp_drc_path)
+        .arg(&cpp_drc_path)
         .arg("-method")
         .arg("edgebreaker")
         .arg("-qp")
@@ -142,8 +120,8 @@ fn test_rust_encode_cpp_decode() {
     let mut encoder_buffer = EncoderBuffer::new();
     encoder.encode(&options, &mut encoder_buffer).expect("Encode failed");
     
-    let drc_path = Path::new("rust_encoded.drc");
-    let mut file = File::create(drc_path).expect("Failed to create drc file");
+    let drc_path = temp_path.join("rust_encoded.drc");
+    let mut file = File::create(&drc_path).expect("Failed to create drc file");
     file.write_all(encoder_buffer.data()).expect("Failed to write drc file");
     
     // Compare files
@@ -152,7 +130,7 @@ fn test_rust_encode_cpp_decode() {
     
     let output = Command::new(&decoder_path)
         .arg("-i")
-        .arg(drc_path)
+        .arg(&drc_path)
         .output()
         .expect("Failed to run draco_decoder");
         
@@ -165,25 +143,41 @@ fn test_rust_encode_cpp_decode() {
     assert!(output.status.success(), "C++ decoder failed");
 
     // Verify decoded geometry by reading the generated PLY file
-    let ply_path = Path::new("rust_encoded.drc.ply");
-    if ply_path.exists() {
-        let ply_content = read_ply_header(ply_path).expect("Failed to read PLY file header");
+    // Note: draco_decoder saves decoded mesh to .ply file with the same name as input + .ply
+    // when no output file is specified? Or we need to check stdout. 
+    // draco_decoder behavior: "Decoded mesh saved to ..."
+    // By default it might save to current dir if we don't specify output? 
+    // Actually, looking at original test: it checked `rust_encoded.drc.ply`.
+    // We should check file existence in current dir? 
+    // Wait, if I run draco_decoder on a file in temp dir, where does it save the output?
+    // It usually saves to the same directory as input or current directory.
+    // Let's check `ply_path`.
+    
+    // To be safe, we should specify output path for decoder if possible, but draco_decoder 
+    // might not expose it easily via CLI args we used (it usually auto-names).
+    // If it saves to CWD, we are still polluting.
+    // Let's specify output file if possible. `draco_decoder -i <input> -o <output>`
+    
+    let decoded_ply_path = temp_path.join("rust_encoded.decoded.ply");
+    let output = Command::new(&decoder_path)
+        .arg("-i")
+        .arg(&drc_path)
+        .arg("-o")
+        .arg(&decoded_ply_path)
+        .output()
+        .expect("Failed to run draco_decoder again");
+        
+    assert!(output.status.success(), "C++ decoder failed 2nd run");
+    
+    if decoded_ply_path.exists() {
+        let ply_content = read_ply_header(&decoded_ply_path).expect("Failed to read PLY file header");
         assert!(ply_content.contains("element vertex 4"), "Decoded mesh has incorrect number of points");
         assert!(ply_content.contains("element face 2"), "Decoded mesh has incorrect number of faces");
     } else {
-        // If PLY file is not generated, check stdout for stats (older draco versions)
-        // But since we saw "saved to .ply", it should be there.
-        // If not found, maybe CWD issue?
-        // Try to find it in current dir
-        let current_dir = std::env::current_dir().unwrap();
-        println!("Current dir: {:?}", current_dir);
-        panic!("PLY file not found at {:?}", ply_path);
+        // Fallback or failure
+        println!("Decoder output files not found at {}", decoded_ply_path.display());
+        panic!("PLY file not found");
     }
-    // let _ = std::fs::remove_file(drc_path);
-    // let _ = std::fs::remove_file(cpp_drc_path);
-    // let _ = std::fs::remove_file(obj_path);
-    
-    assert!(output.status.success(), "C++ decoder failed");
 }
 
 #[test]
@@ -226,17 +220,20 @@ fn test_cpp_encode_rust_decode() {
         return;
     }
 
+    let temp_dir = Builder::new().prefix("draco_test_cpp").tempdir().expect("Failed to create temp dir");
+    let temp_path = temp_dir.path();
+
     let mesh = create_torus_mesh();
-    let obj_path = Path::new("temp_input.obj");
-    write_obj(&mesh, obj_path).expect("Failed to write obj");
+    let obj_path = temp_path.join("temp_input.obj");
+    draco_io::obj_writer::write_obj_mesh(&obj_path, &mesh).expect("Failed to write obj");
     
-    let drc_path = Path::new("temp_cpp_out.drc");
+    let drc_path = temp_path.join("temp_cpp_out.drc");
     
     let output = Command::new(&encoder_path)
         .arg("-i")
-        .arg(obj_path)
+        .arg(&obj_path)
         .arg("-o")
-        .arg(drc_path)
+        .arg(&drc_path)
         .arg("-method")
         .arg("edgebreaker") // or "1"
         .arg("-cl")
@@ -253,11 +250,11 @@ fn test_cpp_encode_rust_decode() {
     
     assert!(output.status.success(), "C++ encoder failed");
     
-    let metadata = std::fs::metadata(drc_path).unwrap();
+    let metadata = std::fs::metadata(&drc_path).unwrap();
     println!("C++ encoded size: {}", metadata.len());
     
     // Decode with Rust
-    let mut file = File::open(drc_path).expect("Failed to open drc file");
+    let mut file = File::open(&drc_path).expect("Failed to open drc file");
     let mut buffer = Vec::new();
     std::io::Read::read_to_end(&mut file, &mut buffer).expect("Failed to read drc file");
     
@@ -276,10 +273,6 @@ fn test_cpp_encode_rust_decode() {
             panic!("Rust decoder failed: {:?}", e);
         }
     }
-    
-    // Clean up
-    let _ = std::fs::remove_file(obj_path);
-    let _ = std::fs::remove_file(drc_path);
 }
 
 #[test]

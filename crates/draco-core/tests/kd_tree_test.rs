@@ -100,9 +100,7 @@ fn test_kd_tree_multi_attribute() {
             .then(a.0.2.partial_cmp(&b.0.2).unwrap())
     });
     
-    for i in 0..num_points {
-        let ((x, y, z), (r, g, b)) = decoded_points[i];
-        
+    for (i, &((x, y, z), (r, g, b))) in decoded_points.iter().enumerate().take(num_points) {
         let expected_x = i as f32;
         let expected_y = (i * 2) as f32;
         let expected_z = (i * 3) as f32;
@@ -171,8 +169,7 @@ fn test_kd_tree_signed_integers() {
     // Sort by v1 then v2
     decoded_values.sort();
     
-    for i in 0..num_points {
-        let (v1, v2) = decoded_values[i];
+    for (i, &(v1, v2)) in decoded_values.iter().enumerate().take(num_points) {
         // Reconstruct expected values based on sorted order.
         // Since v1 = i - 25, and i goes 0..49, v1 goes -25..24.
         // v1 is unique and strictly increasing with i.

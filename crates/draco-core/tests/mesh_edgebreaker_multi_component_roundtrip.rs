@@ -1,3 +1,8 @@
+// Test uses C++ style array indexing patterns and explicit vec construction for clarity.
+// needless_range_loop: for i in 0..n { arr[i] } mirrors C++ test structure
+// useless_vec: vec![...] makes test data initialization explicit and easy to modify
+#![allow(clippy::needless_range_loop, clippy::useless_vec)]
+
 use draco_core::mesh::Mesh;
 use draco_core::mesh_encoder::MeshEncoder;
 use draco_core::mesh_decoder::MeshDecoder;

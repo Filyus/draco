@@ -268,32 +268,14 @@ fn encode_mesh_like_gltf_writer(
         draco_mesh.add_face([i0, i1, i2]);
     }
 
-    // Encode
-    let mut encoder = MeshEncoder::new();
-    let mut encoder_buffer = EncoderBuffer::new();
+    let quant = draco_io::gltf_writer::QuantizationBits {
+        position: position_quantization,
+        normal: normal_quantization,
+        texcoord: texcoord_quantization,
+        ..Default::default()
+    };
 
-    let mut enc_options = EncoderOptions::default();
-    
-    // Set quantization bits like gltf-writer does
-    let pos_att_id = draco_mesh.named_attribute_id(GeometryAttributeType::Position);
-    if pos_att_id != -1 {
-        enc_options.set_attribute_int(pos_att_id, "quantization_bits", position_quantization);
-    }
-    let norm_att_id = draco_mesh.named_attribute_id(GeometryAttributeType::Normal);
-    if norm_att_id != -1 {
-        enc_options.set_attribute_int(norm_att_id, "quantization_bits", normal_quantization);
-    }
-    let uv_att_id = draco_mesh.named_attribute_id(GeometryAttributeType::TexCoord);
-    if uv_att_id != -1 {
-        enc_options.set_attribute_int(uv_att_id, "quantization_bits", texcoord_quantization);
-    }
-
-    encoder.set_mesh(draco_mesh);
-    encoder
-        .encode(&enc_options, &mut encoder_buffer)
-        .map_err(|e| format!("{:?}", e))?;
-
-    Ok(encoder_buffer.data().to_vec())
+    draco_io::gltf_writer::encode_draco_mesh(&draco_mesh, quant).map_err(|e| e.to_string())
 }
 
 fn parse_obj_positions(obj_content: &str) -> Vec<[f32; 3]> {

@@ -62,8 +62,14 @@ fn test_rust_encoder_normal_bytes() {
     }
     println!();
     
-    // Write to file
+    // Write to temp file (optional, doesn't fail if temp dir doesn't exist)
     use std::fs;
-    fs::write("c:/temp/rust_test_normals.drc", data).expect("Write failed");
-    println!("Saved to c:/temp/rust_test_normals.drc");
+    use std::env;
+    let temp_dir = env::temp_dir();
+    let path = temp_dir.join("rust_test_normals.drc");
+    if let Err(e) = fs::write(&path, data) {
+        eprintln!("Note: Could not write temp file: {:?}", e);
+    } else {
+        println!("Saved to {:?}", path);
+    }
 }
