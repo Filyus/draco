@@ -24,6 +24,7 @@ pub trait GeometryEncoder {
     fn get_geometry_type(&self) -> EncodedGeometryType;
     fn get_encoding_method(&self) -> Option<i32> { None }
     fn get_data_to_corner_map(&self) -> Option<Vec<u32>> { None }
+    fn get_vertex_to_data_map(&self) -> Option<Vec<i32>> { None }
 }
 
 pub struct PointCloudEncoder {

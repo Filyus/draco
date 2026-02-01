@@ -212,7 +212,7 @@ impl PointCloudDecoder {
                         1 => {
                             let mut att_decoder = SequentialIntegerAttributeDecoder::new();
                             att_decoder.init(self, att_id);
-                            if !att_decoder.decode_values(pc, &point_ids, buffer, None, None, None) {
+                            if !att_decoder.decode_values(pc, &point_ids, buffer, None, None, None, None) {
                                 return Err(DracoError::DracoError("Failed to decode integer attribute".to_string()));
                             }
                         }
@@ -228,7 +228,7 @@ impl PointCloudDecoder {
                             );
                             let mut att_decoder = SequentialIntegerAttributeDecoder::new();
                             att_decoder.init(self, att_id);
-                            if !att_decoder.decode_values(pc, &point_ids, buffer, None, None, Some(&mut portable)) {
+                            if !att_decoder.decode_values(pc, &point_ids, buffer, None, None, None, Some(&mut portable)) {
                                 return Err(DracoError::DracoError("Failed to decode quantized portable values".to_string()));
                             }
                             pending_quant.push(PendingQuant {
@@ -242,7 +242,7 @@ impl PointCloudDecoder {
                             portable.init(GeometryAttributeType::Generic, 2, DataType::Uint32, false, num_points);
                             let mut att_decoder = SequentialIntegerAttributeDecoder::new();
                             att_decoder.init(self, att_id);
-                            if !att_decoder.decode_values(pc, &point_ids, buffer, None, None, Some(&mut portable)) {
+                            if !att_decoder.decode_values(pc, &point_ids, buffer, None, None, None, Some(&mut portable)) {
                                 return Err(DracoError::DracoError("Failed to decode normal portable values".to_string()));
                             }
                             pending_normals.push(PendingNormal { att_id, portable, quantization_bits: 0 });
@@ -285,6 +285,7 @@ impl PointCloudDecoder {
                         2 => {
                             let idx = pending_quant.iter().position(|p| p.att_id == att_id).unwrap();
                             let original = pc.attribute(att_id);
+                            println!("DEBUG: Decoding quantization params. Pos: {}, Remaining: {}", buffer.position(), buffer.remaining_size());
                             if !pending_quant[idx].transform.decode_parameters(original, buffer) {
                                 return Err(DracoError::DracoError("Failed to decode quantization parameters".to_string()));
                             }

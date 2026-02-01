@@ -10,6 +10,24 @@ pub struct VertexIndex(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CornerIndex(pub u32);
 
+impl std::ops::Add<u32> for CornerIndex {
+    type Output = CornerIndex;
+    fn add(self, rhs: u32) -> CornerIndex {
+        CornerIndex(self.0 + rhs)
+    }
+}
+
+impl std::ops::Sub<u32> for CornerIndex {
+    type Output = CornerIndex;
+    fn sub(self, rhs: u32) -> CornerIndex {
+        CornerIndex(self.0 - rhs)
+    }
+}
+
+impl From<CornerIndex> for u32 {
+    fn from(ci: CornerIndex) -> u32 { ci.0 }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FaceIndex(pub u32);
 

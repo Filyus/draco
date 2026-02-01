@@ -19,6 +19,19 @@ impl EncoderOptions {
         self.get_global_int("decoding_speed", 5)
     }
 
+    /// Returns the maximum speed for both encoding/decoding.
+    /// Matches C++ ExpertEncoder::GetSpeed() behavior.
+    pub fn get_speed(&self) -> i32 {
+        let encoding_speed = self.global_options.get("encoding_speed").copied().unwrap_or(-1);
+        let decoding_speed = self.global_options.get("decoding_speed").copied().unwrap_or(-1);
+        let max_speed = encoding_speed.max(decoding_speed);
+        if max_speed == -1 {
+            5 // Default value
+        } else {
+            max_speed
+        }
+    }
+
     pub fn get_prediction_scheme(&self) -> i32 {
         self.get_global_int("prediction_scheme", -1)
     }

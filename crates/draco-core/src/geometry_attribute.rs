@@ -39,6 +39,10 @@ impl Default for GeometryAttribute {
 }
 
 impl GeometryAttribute {
+    // Attribute initialization requires 7 parameters to fully specify metadata:
+    // type, components, data_type, normalized flag, num_values, byte_stride, byte_offset.
+    // This matches the C++ PointAttribute::Init() signature and cannot be simplified
+    // without breaking API compatibility or making attribute setup less explicit.
     #[allow(clippy::too_many_arguments)]
     pub fn init(&mut self, attribute_type: GeometryAttributeType, _buffer: Option<&DataBuffer>, num_components: u8, data_type: DataType, normalized: bool, byte_stride: i64, byte_offset: i64) {
         self.attribute_type = attribute_type;
