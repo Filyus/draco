@@ -1,5 +1,20 @@
+param(
+    [switch]$Debug,
+    [switch]$NoOptimize,
+    [string[]]$Features,
+    [switch]$Serve,
+    [int]$Port = 8080
+)
+
 # Build script for Draco Web WASM modules
 # Requires wasm-pack to be installed: cargo install wasm-pack
+# Usage examples:
+#  .\build.ps1                 # Release build (default)
+#  .\build.ps1 -Debug         # Debug/dev build (no wasm-opt, dev profile)
+#  .\build.ps1 -NoOptimize    # Skip wasm-opt step
+#  .\build.ps1 -Features console_error_panic_hook  # Pass cargo features to wasm-pack
+#  .\build.ps1 -Serve         # Build and start web server on port 8080
+#  .\build.ps1 -Serve -Port 9000  # Build and start web server on port 9000
 
 $ErrorActionPreference = "Stop"
 
@@ -41,18 +56,41 @@ foreach ($module in $modules) {
     Push-Location $modulePath
     
     try {
-        # Build with wasm-pack (--no-opt to skip wasm-opt, we'll optimize manually)
+        # Build with wasm-pack. Debug builds use --dev; release builds use --release and run wasm-opt by default.
         # Remove -wasm suffix and convert remaining dashes to underscores
         $outputName = ($module -replace '-wasm$', '') -replace '-', '_'
-        wasm-pack build --release --target web --out-dir "$outputDir" --out-name $outputName --no-opt
+
+        $wasmPackArgs = @('build')
+        if ($Debug) { $wasmPackArgs += '--dev' } else { $wasmPackArgs += '--release'; $wasmPackArgs += '--no-opt' }
+        $wasmPackArgs += '--target'; $wasmPackArgs += 'web'
+        $wasmPackArgs += '--out-dir'; $wasmPackArgs += $outputDir
+        $wasmPackArgs += '--out-name'; $wasmPackArgs += $outputName
+
+        # Auto-enable console_error_panic_hook for Debug builds unless the user specified features.
+        if ($Debug) {
+            if (-not $Features -or $Features.Count -eq 0) {
+                $Features = @('console_error_panic_hook')
+                Write-Host "  Debug build: enabling feature 'console_error_panic_hook'" -ForegroundColor Gray
+            } elseif (-not ($Features -contains 'console_error_panic_hook')) {
+                $Features += 'console_error_panic_hook'
+                Write-Host "  Debug build: appending feature 'console_error_panic_hook'" -ForegroundColor Gray
+            }
+        }
+
+        if ($Features -and $Features.Count -gt 0) {
+            $featStr = $Features -join ","
+            $wasmPackArgs += '--'; $wasmPackArgs += '--features'; $wasmPackArgs += $featStr
+        }
+
+        Write-Host "  Running: wasm-pack $($wasmPackArgs -join ' ')" -ForegroundColor Gray
+        & wasm-pack @wasmPackArgs
         
         if ($LASTEXITCODE -eq 0) {
             Write-Host "  Success!" -ForegroundColor Green
             
-            # Run wasm-opt manually with all necessary WASM features enabled
-            $outputName = ($module -replace '-wasm$', '') -replace '-', '_'
+            # Run wasm-opt manually with all necessary WASM features enabled (skip during Debug or when NoOptimize is set)
             $wasmFile = Join-Path $outputDir ($outputName + "_bg.wasm")
-            if (Test-Path $wasmFile) {
+            if (-not $Debug -and -not $NoOptimize -and (Test-Path $wasmFile)) {
                 Write-Host "  Optimizing with wasm-opt..." -ForegroundColor Gray
                 $wasmOptPath = "$env:USERPROFILE\.cargo\bin\wasm-opt.exe"
                 if (-not (Test-Path $wasmOptPath)) {
@@ -65,19 +103,21 @@ foreach ($module in $modules) {
                         Write-Host "  Optimization complete!" -ForegroundColor Green
                     }
                 }
-                
-                # Rename _bg.wasm to .wasm to remove the suffix
+            }
+
+            # Rename _bg.wasm to .wasm to remove the suffix if present
+            if (Test-Path $wasmFile) {
                 $cleanWasmFile = Join-Path $outputDir ($outputName + ".wasm")
                 Move-Item -Path $wasmFile -Destination $cleanWasmFile -Force
                 Write-Host "  Renamed to $(Split-Path $cleanWasmFile -Leaf)" -ForegroundColor Gray
-                
-                # Update the .js file to reference the new filename
-                $jsFile = Join-Path $outputDir ($outputName + ".js")
-                if (Test-Path $jsFile) {
-                    $jsContent = Get-Content $jsFile -Raw
-                    $jsContent = $jsContent -replace '_bg\.wasm', '.wasm'
-                    Set-Content $jsFile $jsContent -NoNewline
-                }
+            }
+            
+            # Update the .js file to reference the new filename
+            $jsFile = Join-Path $outputDir ($outputName + ".js")
+            if (Test-Path $jsFile) {
+                $jsContent = Get-Content $jsFile -Raw
+                $jsContent = $jsContent -replace '_bg\.wasm', '.wasm'
+                Set-Content $jsFile $jsContent -NoNewline
             }
         } else {
             Write-Host "  Build failed with exit code $LASTEXITCODE" -ForegroundColor Red
@@ -93,8 +133,34 @@ foreach ($module in $modules) {
 
 Write-Host "`n================================" -ForegroundColor Cyan
 Write-Host "Build complete!" -ForegroundColor Green
-Write-Host "`nTo serve the web app, run:" -ForegroundColor White
-Write-Host "  cd www" -ForegroundColor Gray
-Write-Host "  python -m http.server 8080" -ForegroundColor Gray
-Write-Host "  # Or use any static file server" -ForegroundColor Gray
-Write-Host "`nThen open http://localhost:8080 in your browser" -ForegroundColor White
+
+if ($Serve) {
+    $wwwDir = Join-Path $webDir "www"
+    Write-Host "`nStarting web server..." -ForegroundColor Cyan
+    Write-Host "Serving from: $wwwDir" -ForegroundColor Gray
+    Write-Host "URL: http://localhost:$Port" -ForegroundColor White
+    Write-Host "Press Ctrl+C to stop the server" -ForegroundColor Gray
+    
+    Push-Location $wwwDir
+    try {
+        python -m http.server $Port
+    }
+    catch {
+        Write-Host "Failed to start Python web server. Trying npx serve..." -ForegroundColor Yellow
+        try {
+            npx serve -l $Port
+        }
+        catch {
+            Write-Host "Failed to start any web server." -ForegroundColor Red
+        }
+    }
+    finally {
+        Pop-Location
+    }
+} else {
+    Write-Host "`nTo serve the web app, run:" -ForegroundColor White
+    Write-Host "  cd www" -ForegroundColor Gray
+    Write-Host "  python -m http.server 8080" -ForegroundColor Gray
+    Write-Host "  # Or use any static file server" -ForegroundColor Gray
+    Write-Host "`nThen open http://localhost:8080 in your browser" -ForegroundColor White
+}

@@ -6,6 +6,14 @@
 use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+}
+
+
+
 /// Mesh data structure for JavaScript interop.
 #[derive(Serialize, Deserialize)]
 pub struct MeshData {
@@ -64,25 +72,55 @@ pub fn supported_extensions() -> Vec<String> {
     vec!["ply".to_string()]
 }
 
+/// Helper to convert a ParseResult to JsValue via JSON.
+fn to_js_value(result: &ParseResult) -> JsValue {
+    let json = serde_json::to_string(result).unwrap_or_else(|_| "{}".to_string());
+    js_sys::JSON::parse(&json).unwrap_or(JsValue::NULL)
+}
+
 /// Parse PLY file content from a string (ASCII PLY).
 #[wasm_bindgen]
 pub fn parse_ply(content: &str) -> JsValue {
     let result = parse_ply_internal(content);
-    serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
+    to_js_value(&result)
 }
 
 /// Parse PLY file content from bytes.
 #[wasm_bindgen]
 pub fn parse_ply_bytes(data: &[u8]) -> JsValue {
-    // Try to detect if it's ASCII or binary
-    match std::str::from_utf8(data) {
-        Ok(content) => parse_ply(content),
-        Err(_) => {
-            // Could be binary PLY - try to parse header and detect format
-            let result = parse_binary_ply(data);
-            serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
+    // Catch any panics
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // Try to detect if it's ASCII or binary
+        match std::str::from_utf8(data) {
+            Ok(content) => parse_ply_internal(content),
+            Err(_) => {
+                // Could be binary PLY - try to parse header and detect format
+                parse_binary_ply(data)
+            }
         }
-    }
+    }));
+    
+    let result = match result {
+        Ok(r) => r,
+        Err(e) => {
+            let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = e.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown panic during PLY parsing".to_string()
+            };
+            ParseResult {
+                success: false,
+                meshes: vec![],
+                error: Some(format!("Internal error: {}", msg)),
+                warnings: vec![],
+                header: None,
+            }
+        }
+    };
+    
+    to_js_value(&result)
 }
 
 #[derive(Debug, Clone)]
@@ -379,5 +417,34 @@ end_header
         assert_eq!(result.meshes.len(), 1);
         assert_eq!(result.meshes[0].positions.len(), 9); // 3 vertices * 3 components
         assert_eq!(result.meshes[0].indices.len(), 3); // 1 triangle
+    }
+
+    #[test]
+    fn test_parse_bunny_ply() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/bun_zipper.ply");
+        let content = std::fs::read_to_string(&path).expect("Failed to read bunny PLY");
+        println!("Content length: {} bytes", content.len());
+        
+        let result = parse_ply_internal(&content);
+        println!("Result success: {}", result.success);
+        if let Some(ref err) = result.error {
+            println!("Error: {}", err);
+        }
+        for w in &result.warnings {
+            println!("Warning: {}", w);
+        }
+        if let Some(ref header) = result.header {
+            println!("Header: {} vertices, {} faces", header.vertex_count, header.face_count);
+        }
+        if !result.meshes.is_empty() {
+            let mesh = &result.meshes[0];
+            println!("Mesh: {} positions, {} indices", mesh.positions.len(), mesh.indices.len());
+        }
+        
+        assert!(result.success, "Parsing should succeed");
+        assert_eq!(result.meshes.len(), 1, "Should have 1 mesh");
+        assert_eq!(result.meshes[0].positions.len(), 35947 * 3, "Should have 35947 vertices");
+        assert_eq!(result.meshes[0].indices.len(), 69451 * 3, "Should have 69451 faces (triangulated)");
     }
 }

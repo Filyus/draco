@@ -55,15 +55,17 @@ async function init() {
 
 // Load all WASM modules
 async function loadAllModules() {
+    // Cache-bust to ensure fresh WASM/JS are loaded (helps avoid stale cached files during development)
+    const CACHE_BUST = `?v=${Date.now()}`;
     const moduleConfigs = [
-        { key: 'objReader', path: './pkg/obj_reader.js', statusId: 'obj-reader-status' },
-        { key: 'objWriter', path: './pkg/obj_writer.js', statusId: 'obj-writer-status' },
-        { key: 'plyReader', path: './pkg/ply_reader.js', statusId: 'ply-reader-status' },
-        { key: 'plyWriter', path: './pkg/ply_writer.js', statusId: 'ply-writer-status' },
-        { key: 'gltfReader', path: './pkg/gltf_reader.js', statusId: 'gltf-reader-status' },
-        { key: 'gltfWriter', path: './pkg/gltf_writer.js', statusId: 'gltf-writer-status' },
-        { key: 'fbxReader', path: './pkg/fbx_reader.js', statusId: 'fbx-reader-status' },
-        { key: 'fbxWriter', path: './pkg/fbx_writer.js', statusId: 'fbx-writer-status' },
+        { key: 'objReader', path: `./pkg/obj_reader.js${CACHE_BUST}`, statusId: 'obj-reader-status' },
+        { key: 'objWriter', path: `./pkg/obj_writer.js${CACHE_BUST}`, statusId: 'obj-writer-status' },
+        { key: 'plyReader', path: `./pkg/ply_reader.js${CACHE_BUST}`, statusId: 'ply-reader-status' },
+        { key: 'plyWriter', path: `./pkg/ply_writer.js${CACHE_BUST}`, statusId: 'ply-writer-status' },
+        { key: 'gltfReader', path: `./pkg/gltf_reader.js${CACHE_BUST}`, statusId: 'gltf-reader-status' },
+        { key: 'gltfWriter', path: `./pkg/gltf_writer.js${CACHE_BUST}`, statusId: 'gltf-writer-status' },
+        { key: 'fbxReader', path: `./pkg/fbx_reader.js${CACHE_BUST}`, statusId: 'fbx-reader-status' },
+        { key: 'fbxWriter', path: `./pkg/fbx_writer.js${CACHE_BUST}`, statusId: 'fbx-writer-status' },
     ];
 
     const loadPromises = moduleConfigs.map(config => loadModule(config));
@@ -245,7 +247,16 @@ async function parsePlyFile(data) {
         return { success: false, error: 'PLY Reader module not loaded' };
     }
     
-    return modules.plyReader.module.parse_ply_bytes(data);
+    const result = modules.plyReader.module.parse_ply_bytes(data);
+    console.log('[JS] PLY parse result:', result);
+    if (result.meshes) {
+        for (const mesh of result.meshes) {
+            console.log('[JS] PLY mesh: positions=', mesh.positions?.length, 
+                ', indices=', mesh.indices?.length,
+                ', normals=', mesh.normals?.length);
+        }
+    }
+    return result;
 }
 
 // Parse glTF/GLB file
@@ -368,13 +379,33 @@ function prepareMeshesForExport(meshes) {
     const includeNormals = document.getElementById('include-normals').checked;
     const includeUvs = document.getElementById('include-uvs').checked;
     
-    return meshes.map((mesh, idx) => ({
+    console.log('[JS] prepareMeshesForExport called with', meshes.length, 'meshes');
+    for (const mesh of meshes) {
+        console.log('[JS] Input mesh:', 
+            'positions:', mesh.positions?.length,
+            'indices:', mesh.indices?.length,
+            'normals:', mesh.normals?.length,
+            'uvs:', mesh.uvs?.length);
+    }
+    
+    const result = meshes.map((mesh, idx) => ({
         name: mesh.name || `mesh_${idx}`,
         positions: Array.from(mesh.positions || []),
         indices: Array.from(mesh.indices || []),
         normals: includeNormals ? Array.from(mesh.normals || []) : null,
         uvs: includeUvs ? Array.from(mesh.uvs || []) : null,
     }));
+    
+    console.log('[JS] Output meshes:');
+    for (const mesh of result) {
+        console.log('[JS] Output mesh:', 
+            'positions:', mesh.positions?.length,
+            'indices:', mesh.indices?.length,
+            'normals:', mesh.normals?.length,
+            'uvs:', mesh.uvs?.length);
+    }
+    
+    return result;
 }
 
 // Export to OBJ

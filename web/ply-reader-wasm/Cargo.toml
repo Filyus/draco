@@ -6,6 +6,9 @@ description = "Draco web PLY reader (WASM)"
 repository = "https://github.com/google/draco"
 license = "Apache-2.0"
 
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
