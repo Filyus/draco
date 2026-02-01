@@ -59,3 +59,28 @@ fn test_corner_table_torus() {
     
     assert_eq!(boundary_edges, 0, "Torus should have no boundary edges");
 }
+
+#[test]
+fn test_corner_table_invariants_and_determinism() {
+    let mesh = create_torus_mesh();
+    let faces: Vec<[VertexIndex; 3]> = (0..mesh.num_faces())
+        .map(|i| {
+            let face = mesh.face(FaceIndex(i as u32));
+            [
+                VertexIndex(face[0].0),
+                VertexIndex(face[1].0),
+                VertexIndex(face[2].0),
+            ]
+        })
+        .collect();
+
+    let mut ct1 = CornerTable::new(faces.len());
+    assert!(ct1.init(&faces));
+    // In debug builds, init() will have asserted invariants. Explicitly check here too.
+    assert!(ct1.validate_invariants());
+
+    // Re-init and ensure deterministic vertex_corners mapping
+    let mut ct2 = CornerTable::new(faces.len());
+    assert!(ct2.init(&faces));
+    assert_eq!(ct1.vertex_corners, ct2.vertex_corners, "Vertex corner mapping should be deterministic and repeatable");
+}

@@ -23,8 +23,17 @@ impl CornerTable {
         }
     }
 
-    pub fn map_corner_to_vertex(&mut self, corner: u32, vertex: VertexIndex) {
-        self.corner_to_vertex_map[corner as usize] = vertex;
+    pub fn map_corner_to_vertex(&mut self, corner: CornerIndex, vertex: VertexIndex) {
+        // Debug logging is intentionally gated because connectivity decode/encode
+        // touches many corners and can easily flood stdout.
+        if std::env::var("DRACO_CT_DEBUG").is_ok() && (corner.0 < 60 || vertex.0 < 60) {
+            let prev = self.corner_to_vertex_map[corner.0 as usize].0;
+            eprintln!(
+                "CT_MAP_CORNER_DEBUG: corner {} mapped to vertex {} (prev={})",
+                corner.0, vertex.0, prev
+            );
+        }
+        self.corner_to_vertex_map[corner.0 as usize] = vertex;
     }
 
     pub fn set_face_vertices(&mut self, face: FaceIndex, v0: crate::geometry_indices::PointIndex, v1: crate::geometry_indices::PointIndex, v2: crate::geometry_indices::PointIndex) {
@@ -32,17 +41,36 @@ impl CornerTable {
         let c1 = self.next(c0);
         let c2 = self.previous(c0);
         
-        self.map_corner_to_vertex(c0.0, VertexIndex(v0.0));
-        self.map_corner_to_vertex(c1.0, VertexIndex(v1.0));
-        self.map_corner_to_vertex(c2.0, VertexIndex(v2.0));
+        self.map_corner_to_vertex(c0, VertexIndex(v0.0));
+        self.map_corner_to_vertex(c1, VertexIndex(v1.0));
+        self.map_corner_to_vertex(c2, VertexIndex(v2.0));
         
-        // Update vertex_corners if needed
-        if (v0.0 as usize) < self.vertex_corners.len() { self.vertex_corners[v0.0 as usize] = c0; }
-        if (v1.0 as usize) < self.vertex_corners.len() { self.vertex_corners[v1.0 as usize] = c1; }
-        if (v2.0 as usize) < self.vertex_corners.len() { self.vertex_corners[v2.0 as usize] = c2; }
+        // Ensure vertex_corners is large enough and set deterministically
+        let max_v = usize::max(v0.0 as usize, usize::max(v1.0 as usize, v2.0 as usize));
+        if self.vertex_corners.len() <= max_v {
+            self.vertex_corners.resize(max_v + 1, INVALID_CORNER_INDEX);
+        }
+        self.vertex_corners[v0.0 as usize] = c0;
+        self.vertex_corners[v1.0 as usize] = c1;
+        self.vertex_corners[v2.0 as usize] = c2;
     }
 
     pub fn set_opposite(&mut self, corner: CornerIndex, opposite: CornerIndex) {
+        if std::env::var("DRACO_CT_DEBUG").is_ok() {
+            // Debug: print small-corner changes to help correlate encoder/decoder operations.
+            if corner.0 < 60 || opposite.0 < 60 {
+                let a_next = self.vertex(self.next(corner)).0;
+                let a_prev = self.vertex(self.previous(corner)).0;
+                let b_next = self.vertex(self.next(opposite)).0;
+                let b_prev = self.vertex(self.previous(opposite)).0;
+                let prev_opp = self.opposite_corners[corner.0 as usize].0;
+                eprintln!(
+                    "CT_SET_OP_DEBUG: set_opposite {} <-> {}  a_next_prev=({},{}), b_next_prev=({},{}), prev_opp={}",
+                    corner.0, opposite.0, a_next, a_prev, b_next, b_prev, prev_opp
+                );
+            }
+        }
+
         self.opposite_corners[corner.0 as usize] = opposite;
     }
 
@@ -81,6 +109,9 @@ impl CornerTable {
             }
         }
 
+        // In debug builds perform an invariant check to catch subtle topology bugs early.
+        debug_assert!(self.validate_invariants());
+
         true
     }
 
@@ -115,6 +146,34 @@ impl CornerTable {
         self.corner_to_vertex_map.len() / 3
     }
 
+    pub fn add_new_vertex(&mut self) -> VertexIndex {
+        let new_idx = self.vertex_corners.len();
+        self.vertex_corners.push(INVALID_CORNER_INDEX);
+        VertexIndex(new_idx as u32)
+    }
+
+    pub fn left_most_corner(&self, v: VertexIndex) -> CornerIndex {
+        if v.0 < self.vertex_corners.len() as u32 {
+            self.vertex_corners[v.0 as usize]
+        } else {
+            INVALID_CORNER_INDEX
+        }
+    }
+
+    pub fn set_left_most_corner(&mut self, v: VertexIndex, c: CornerIndex) {
+        let idx = v.0 as usize;
+        if idx >= self.vertex_corners.len() {
+            self.vertex_corners.resize(idx + 1, INVALID_CORNER_INDEX);
+        }
+        self.vertex_corners[idx] = c;
+    }
+
+    pub fn make_vertex_isolated(&mut self, v: VertexIndex) {
+        if v.0 < self.vertex_corners.len() as u32 {
+            self.vertex_corners[v.0 as usize] = INVALID_CORNER_INDEX;
+        }
+    }
+
     pub fn opposite(&self, corner: CornerIndex) -> CornerIndex {
         if corner == INVALID_CORNER_INDEX {
             return corner;
@@ -126,7 +185,7 @@ impl CornerTable {
         if corner == INVALID_CORNER_INDEX {
             return corner;
         }
-        if (corner.0 + 1) % 3 != 0 {
+        if !(corner.0 + 1).is_multiple_of(3) {
             CornerIndex(corner.0 + 1)
         } else {
             CornerIndex(corner.0 - 2)
@@ -137,7 +196,7 @@ impl CornerTable {
         if corner == INVALID_CORNER_INDEX {
             return corner;
         }
-        if corner.0 % 3 != 0 {
+        if !corner.0.is_multiple_of(3) {
             CornerIndex(corner.0 - 1)
         } else {
             CornerIndex(corner.0 + 2)
@@ -162,17 +221,33 @@ impl CornerTable {
         CornerIndex(face.0 * 3)
     }
 
-    pub fn left_most_corner(&self, v: VertexIndex) -> CornerIndex {
-        if v.0 as usize >= self.vertex_corners.len() {
-            return INVALID_CORNER_INDEX;
+    /// Swings from a corner to the next corner sharing the same vertex in a counter-clockwise direction.
+    /// Validate that every opposite corner pair corresponds to the same undirected edge.
+    /// Returns true when all assigned opposites match edge endpoints.
+    pub fn validate_opposite_edge_consistency(&self) -> bool {
+        for c_idx in 0..self.num_corners() {
+            let c = CornerIndex(c_idx as u32);
+            let opp = self.opposite(c);
+            if opp == INVALID_CORNER_INDEX { continue; }
+            let a = self.vertex(self.next(c)).0;
+            let b = self.vertex(self.previous(c)).0;
+            let oa = self.vertex(self.next(opp)).0;
+            let ob = self.vertex(self.previous(opp)).0;
+            if !((a == oa && b == ob) || (a == ob && b == oa)) {
+                return false;
+            }
         }
-        self.vertex_corners[v.0 as usize]
+        true
     }
 
+    /// Returns the corner on the left-adjacent face.
+    /// C++: Opposite(Previous(corner))
     pub fn left_corner(&self, corner: CornerIndex) -> CornerIndex {
         self.opposite(self.previous(corner))
     }
 
+    /// Returns the corner on the right-adjacent face.
+    /// C++: Opposite(Next(corner))
     pub fn right_corner(&self, corner: CornerIndex) -> CornerIndex {
         self.opposite(self.next(corner))
     }
@@ -362,41 +437,51 @@ impl CornerTable {
             
             let mut found_match = false;
             
-            // Search for matching half-edge on sink vertex
+            // Search for matching half-edge on sink vertex. Prefer the candidate with
+            // the smallest corner index to ensure deterministic pairing independent
+            // of insertion order.
+            let mut chosen_match_pos: Option<usize> = None;
             for i in 0..num_corners_on_vert {
                 let other_v = vertex_edges[offset].sink_vert;
                 if other_v == INVALID_VERTEX_INDEX {
                     break;
                 }
                 if other_v == source_v {
-                    // Found match?
                     // Check for mirrored faces
                     if tip_v == self.vertex(vertex_edges[offset].edge_corner) {
                         offset += 1;
                         continue;
                     }
-                    
-                    opposite_c = vertex_edges[offset].edge_corner;
-                    
-                    // Remove from sink vertex list (shift remaining)
-                    let start = vertex_offset[sink_v.0 as usize];
-                    let count = num_corners_on_vertices[sink_v.0 as usize];
-                    let match_pos = start + i;
-                    
-                    // Shift elements left
-                    if match_pos + 1 < start + count {
-                        vertex_edges.copy_within(match_pos + 1..start + count, match_pos);
+                    let match_pos = vertex_offset[sink_v.0 as usize] + i;
+                    if let Some(prev) = chosen_match_pos {
+                        if vertex_edges[match_pos].edge_corner.0 < vertex_edges[prev].edge_corner.0 {
+                            chosen_match_pos = Some(match_pos);
+                        }
+                    } else {
+                        chosen_match_pos = Some(match_pos);
                     }
-                    // Mark the last element as invalid
-                    if count > 0 {
-                        vertex_edges[start + count - 1].sink_vert = INVALID_VERTEX_INDEX;
-                        vertex_edges[start + count - 1].edge_corner = INVALID_CORNER_INDEX;
-                    }
-                    
-                    found_match = true;
-                    break;
                 }
                 offset += 1;
+            }
+
+            if let Some(match_pos) = chosen_match_pos {
+                let start = vertex_offset[sink_v.0 as usize];
+                let count = num_corners_on_vertices[sink_v.0 as usize];
+                opposite_c = vertex_edges[match_pos].edge_corner;
+
+                // Shift elements left to remove the matched entry
+                if match_pos + 1 < start + count {
+                    vertex_edges.copy_within(match_pos + 1..start + count, match_pos);
+                }
+                if count > 0 {
+                    vertex_edges[start + count - 1].sink_vert = INVALID_VERTEX_INDEX;
+                    vertex_edges[start + count - 1].edge_corner = INVALID_CORNER_INDEX;
+                }
+                found_match = true;
+            }
+
+            if c < 60 && cfg!(feature = "debug_logs") {
+                eprintln!("COMPUTE_OP_DEBUG: c={} tip_v={} source_v={} sink_v={} found_match={} opposite_c={} ", c, tip_v.0, source_v.0, sink_v.0, found_match, opposite_c.0);
             }
 
             if !found_match {
@@ -443,32 +528,33 @@ impl CornerTable {
                 if visited_corners[c.0 as usize] {
                     continue;
                 }
-                
+
                 let mut v = self.corner_to_vertex_map[c.0 as usize];
-                
-                // Note that one vertex maps to many corners, but we just keep track
-                // of the vertex which has a boundary on the left if the vertex lies on
-                // the boundary. This means that all the related corners can be accessed
-                // by iterating over the SwingRight() operator.
-                // In case of a vertex inside the mesh, the choice is arbitrary.
+
+                // Note that one vertex maps to many corners; if the vertex was already
+                // visited on another corner of the same original vertex, we must
+                // create a new vertex (non-manifold handling).
                 let mut is_non_manifold_vertex = false;
+                if v.0 as usize >= visited_vertices.len() {
+                    // Defensive: grow visited_vertices if corner table had larger index.
+                    visited_vertices.resize(v.0 as usize + 1, false);
+                }
                 if visited_vertices[v.0 as usize] {
-                    // A visited vertex of an unvisited corner found. Must be a non-manifold
-                    // vertex.
-                    // Create a new vertex for it.
                     self.vertex_corners.push(INVALID_CORNER_INDEX);
                     visited_vertices.push(false);
                     v = VertexIndex(num_vertices as u32);
                     num_vertices += 1;
                     is_non_manifold_vertex = true;
                 }
-                
+
                 // Mark the vertex as visited.
                 visited_vertices[v.0 as usize] = true;
 
                 // First swing all the way to the left and mark all corners on the way.
+                // Vertex will eventually point to the left most corner (the corner from
+                // which SwingLeft returns invalid - i.e., boundary corner).
                 let mut act_c = c;
-                loop {
+                while act_c != INVALID_CORNER_INDEX {
                     visited_corners[act_c.0 as usize] = true;
                     // Vertex will eventually point to the left most corner.
                     self.vertex_corners[v.0 as usize] = act_c;
@@ -478,10 +564,7 @@ impl CornerTable {
                     }
                     act_c = self.swing_left(act_c);
                     if act_c == c {
-                        break;  // Full circle reached.
-                    }
-                    if act_c == INVALID_CORNER_INDEX {
-                        break;
+                        break; // Full circle reached.
                     }
                 }
                 
@@ -509,6 +592,43 @@ impl CornerTable {
             }
         }
         
+        true
+    }
+
+    /// Validates basic corner-table invariants. Returns true if all checks pass.
+    /// Note: this is an O(N) check intended for debug builds only (invoked via debug_assert!).
+    pub fn validate_invariants(&self) -> bool {
+        // Opposite corner symmetry: opposite(opposite(c)) == c or INVALID
+        for c in 0..self.num_corners() {
+            let ci = CornerIndex(c as u32);
+            let o = self.opposite(ci);
+            if o != INVALID_CORNER_INDEX && self.opposite(o) != ci {
+                eprintln!("CornerTable invariant failed: opposite(opposite({})) != {} (got {})", c, c, self.opposite(o).0);
+                return false;
+            }
+        }
+
+        // Non-degenerated faces must have valid vertex mappings
+        for f in 0..self.num_faces() {
+            let face = FaceIndex(f as u32);
+            if self.is_degenerated(face) { continue; }
+            let c0 = self.first_corner(face);
+            if self.vertex(c0) == INVALID_VERTEX_INDEX || self.vertex(self.next(c0)) == INVALID_VERTEX_INDEX || self.vertex(self.previous(c0)) == INVALID_VERTEX_INDEX {
+                eprintln!("CornerTable invariant failed: face {} contains INVALID vertex mapping", f);
+                return false;
+            }
+        }
+
+        // vertex_corners must reference the expected vertex
+        for v in 0..self.vertex_corners.len() {
+            let c = self.vertex_corners[v];
+            if c == INVALID_CORNER_INDEX { continue; }
+            if self.vertex(c) != VertexIndex(v as u32) {
+                eprintln!("CornerTable invariant failed: vertex_corners[{}] -> corner {} maps to vertex {}", v, c.0, self.vertex(c).0);
+                return false;
+            }
+        }
+
         true
     }
 }
