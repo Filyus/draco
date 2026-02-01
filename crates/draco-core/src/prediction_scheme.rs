@@ -2,8 +2,11 @@ use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PredictionSchemeMethod {
-    Undefined = -2,
-    None = -1,
+    // Special value indicating that no prediction scheme was used.
+    // CRITICAL: These values must match C++ enum values exactly:
+    //   C++: PREDICTION_NONE = -2, PREDICTION_UNDEFINED = -1
+    None = -2,
+    Undefined = -1,
     Difference = 0,
     MeshPredictionParallelogram = 1,
     MeshPredictionMultiParallelogram = 2,
