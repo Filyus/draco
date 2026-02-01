@@ -63,6 +63,9 @@ impl SequentialIntegerAttributeEncoder {
         }
     }
 
+    // Symmetric to decode_values: requires 7 parameters for mesh encoding including
+    // traversal order, corner table for prediction schemes, and buffer management.
+    // Parameter count matches C++ API design for complex mesh attribute encoding.
     #[allow(clippy::too_many_arguments)]
     pub fn encode_values(
         &mut self,
@@ -132,6 +135,10 @@ impl SequentialIntegerAttributeEncoder {
         let num_components = current_attribute.num_components() as usize;
         let num_points = point_ids.len();
         let num_values = num_points * num_components;
+        if cfg!(feature = "debug_logs") {
+            println!("DEBUG: encode_values: num_points={} num_components={} num_values={}", num_points, num_components, num_values);
+            println!("DEBUG: is_portable_attribute={}", is_portable_attribute);
+        }
         
         let mut values = Vec::with_capacity(num_values);
         let byte_stride = current_attribute.byte_stride() as usize;
@@ -154,6 +161,18 @@ impl SequentialIntegerAttributeEncoder {
                     data_type,
                 );
                 values.push(val);
+            }
+        }
+        
+        // Debug: print encoded values
+        if num_components == 3 && cfg!(feature = "debug_logs") {
+            println!("DEBUG encoder values (first 25 x/y/z):");
+            for i in 0..std::cmp::min(25, num_points) {
+                let x = values[i * 3];
+                let y = values[i * 3 + 1];
+                let z = values[i * 3 + 2];
+                println!("  data_id={} -> point_ids[{}]={:?}: quantized({}, {}, {})", 
+                    i, i, point_ids[i], x, y, z);
             }
         }
 
@@ -219,48 +238,33 @@ impl SequentialIntegerAttributeEncoder {
                     predictor_delta = Some(predictor);
                 }
                 PredictionSchemeMethod::MeshPredictionParallelogram => {
-                    if let Some(mesh) = encoder.mesh() {
+                    if let Some(_mesh) = encoder.mesh() {
                         if let Some(corner_table) = encoder.corner_table() {
                             // Generate maps
-                            // For Edgebreaker, the corner table uses remapped vertex indices (0..N-1).
-                            // For Sequential, it uses original vertex indices.
-                            let is_edgebreaker = encoder.options().get_global_int("encoding_method", -1) == 1;
-                            let map_size = if is_edgebreaker {
-                                point_ids.len()
-                            } else {
-                                mesh.num_points()
-                            };
+                            // For Edgebreaker, vertex_to_data_map is indexed by corner table VertexIndex.
+                            // For Sequential, it's indexed by mesh PointIndex (which equals VertexIndex).
+                            let is_edgebreaker = encoder.get_encoding_method() == Some(1);
                             
+                            // vertex_to_data_map must be indexed by corner table VertexIndex
+                            let map_size = corner_table.num_vertices();
                             vertex_to_data_map.resize(map_size, -1);
                             data_to_corner_map.resize(num_points, 0);
                             
                             if is_edgebreaker {
-                                // For Edgebreaker, point_ids define the attribute (data) order.
-                                // Build vertex->data and data->corner maps in that order.
-                                for (data_id, &point_id) in point_ids.iter().enumerate() {
-                                    if (point_id.0 as usize) < vertex_to_data_map.len() {
-                                        vertex_to_data_map[point_id.0 as usize] = data_id as i32;
-                                    }
-                                }
-
+                                // For Edgebreaker, get both maps from the encoder.
+                                // These maps were computed during connectivity encoding and
+                                // are consistent with each other.
                                 if let Some(map) = encoder.get_data_to_corner_map() {
-                                    // Draco stores this mapping in attribute (data) order.
                                     if map.len() == num_points {
                                         data_to_corner_map = map;
-                                    } else {
-                                        // Defensive fallback: derive from left-most corners.
-                                        for (data_id, &point_id) in point_ids.iter().enumerate() {
-                                            let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
-                                            data_to_corner_map[data_id] = ci.0;
-                                        }
-                                    }
-                                } else {
-                                    for (data_id, &point_id) in point_ids.iter().enumerate() {
-                                        let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
-                                        data_to_corner_map[data_id] = ci.0;
                                     }
                                 }
+                                if let Some(map) = encoder.get_vertex_to_data_map() {
+                                    // Use the pre-computed vertex_to_data_map from the encoder
+                                    vertex_to_data_map = map;
+                                }
                             } else {
+                                // Sequential encoding: PointIndex == VertexIndex (1:1 mapping)
                                 for (i, &point_id) in point_ids.iter().enumerate() {
                                     if (point_id.0 as usize) < vertex_to_data_map.len()
                                         && vertex_to_data_map[point_id.0 as usize] == -1 {
@@ -270,10 +274,29 @@ impl SequentialIntegerAttributeEncoder {
                                     data_to_corner_map[i] = ci.0;
                                 }
                             }
-                            
+
                             let mut mesh_data = MeshPredictionSchemeData::new();
                             mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
-                            
+
+                            if cfg!(feature = "debug_logs") {
+                                let head = vertex_to_data_map.iter().take(16).collect::<Vec<_>>();
+                                let tail = vertex_to_data_map
+                                    .iter()
+                                    .rev()
+                                    .take(16)
+                                    .collect::<Vec<_>>();
+                                eprintln!(
+                                    "Parallelogram encoder: vertex_to_data_map size={}, head={:?}, tail(reversed)={:?}",
+                                    vertex_to_data_map.len(),
+                                    head,
+                                    tail
+                                );
+                                eprintln!(
+                                    "Parallelogram encoder: data_to_corner_map head={:?}",
+                                    data_to_corner_map.iter().take(16).collect::<Vec<_>>()
+                                );
+                            }
+
                             let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
                             let mut predictor = PredictionSchemeParallelogramEncoder::new(current_attribute, transform, mesh_data);
                             selected_transform_type = predictor.get_transform_type();
@@ -324,40 +347,24 @@ impl SequentialIntegerAttributeEncoder {
                     }
                 }
                 PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram => {
-                    if let Some(mesh) = encoder.mesh() {
+                    if let Some(_mesh) = encoder.mesh() {
                         if let Some(corner_table) = encoder.corner_table() {
-                            // Generate maps
-                            let is_edgebreaker = encoder.options().get_global_int("encoding_method", -1) == 1;
-                            let map_size = if is_edgebreaker {
-                                point_ids.len()
-                            } else {
-                                mesh.num_points()
-                            };
+                            // Generate maps - vertex_to_data_map indexed by corner table VertexIndex
+                            let is_edgebreaker = encoder.get_encoding_method() == Some(1);
                             
+                            let map_size = corner_table.num_vertices();
                             vertex_to_data_map.resize(map_size, -1);
                             data_to_corner_map.resize(num_points, 0);
                             
                             if is_edgebreaker {
-                                for (data_id, &point_id) in point_ids.iter().enumerate() {
-                                    if (point_id.0 as usize) < vertex_to_data_map.len() {
-                                        vertex_to_data_map[point_id.0 as usize] = data_id as i32;
-                                    }
-                                }
-
+                                // For Edgebreaker, get both maps from the encoder.
                                 if let Some(map) = encoder.get_data_to_corner_map() {
                                     if map.len() == num_points {
                                         data_to_corner_map = map;
-                                    } else {
-                                        for (data_id, &point_id) in point_ids.iter().enumerate() {
-                                            let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
-                                            data_to_corner_map[data_id] = ci.0;
-                                        }
                                     }
-                                } else {
-                                    for (data_id, &point_id) in point_ids.iter().enumerate() {
-                                        let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
-                                        data_to_corner_map[data_id] = ci.0;
-                                    }
+                                }
+                                if let Some(map) = encoder.get_vertex_to_data_map() {
+                                    vertex_to_data_map = map;
                                 }
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {
@@ -421,39 +428,24 @@ impl SequentialIntegerAttributeEncoder {
                     }
                 }
                 PredictionSchemeMethod::MeshPredictionTexCoordsPortable => {
-                    if let Some(mesh) = encoder.mesh() {
+                    if let Some(_mesh) = encoder.mesh() {
                         if let Some(corner_table) = encoder.corner_table() {
-                            let is_edgebreaker = encoder.options().get_global_int("encoding_method", -1) == 1;
-                            let map_size = if is_edgebreaker {
-                                point_ids.len()
-                            } else {
-                                mesh.num_points()
-                            };
+                            let is_edgebreaker = encoder.get_encoding_method() == Some(1);
                             
+                            // vertex_to_data_map indexed by corner table VertexIndex
+                            let map_size = corner_table.num_vertices();
                             vertex_to_data_map.resize(map_size, -1);
                             data_to_corner_map.resize(num_points, 0);
                             
                             if is_edgebreaker {
-                                for (data_id, &point_id) in point_ids.iter().enumerate() {
-                                    if (point_id.0 as usize) < vertex_to_data_map.len() {
-                                        vertex_to_data_map[point_id.0 as usize] = data_id as i32;
-                                    }
-                                }
-
+                                // For Edgebreaker, get both maps from the encoder.
                                 if let Some(map) = encoder.get_data_to_corner_map() {
                                     if map.len() == num_points {
                                         data_to_corner_map = map;
-                                    } else {
-                                        for (data_id, &point_id) in point_ids.iter().enumerate() {
-                                            let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
-                                            data_to_corner_map[data_id] = ci.0;
-                                        }
                                     }
-                                } else {
-                                    for (data_id, &point_id) in point_ids.iter().enumerate() {
-                                        let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
-                                        data_to_corner_map[data_id] = ci.0;
-                                    }
+                                }
+                                if let Some(map) = encoder.get_vertex_to_data_map() {
+                                    vertex_to_data_map = map;
                                 }
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {
@@ -530,39 +522,24 @@ impl SequentialIntegerAttributeEncoder {
                     }
                 }
                 PredictionSchemeMethod::MeshPredictionGeometricNormal => {
-                    if let Some(mesh) = encoder.mesh() {
+                    if let Some(_mesh) = encoder.mesh() {
                         if let Some(corner_table) = encoder.corner_table() {
-                            let is_edgebreaker = encoder.options().get_global_int("encoding_method", -1) == 1;
-                            let map_size = if is_edgebreaker {
-                                point_ids.len()
-                            } else {
-                                mesh.num_points()
-                            };
+                            let is_edgebreaker = encoder.get_encoding_method() == Some(1);
                             
+                            // vertex_to_data_map indexed by corner table VertexIndex
+                            let map_size = corner_table.num_vertices();
                             vertex_to_data_map.resize(map_size, -1);
                             data_to_corner_map.resize(num_points, 0);
                             
                             if is_edgebreaker {
-                                for (data_id, &point_id) in point_ids.iter().enumerate() {
-                                    if (point_id.0 as usize) < vertex_to_data_map.len() {
-                                        vertex_to_data_map[point_id.0 as usize] = data_id as i32;
-                                    }
-                                }
-
+                                // For Edgebreaker, get both maps from the encoder.
                                 if let Some(map) = encoder.get_data_to_corner_map() {
                                     if map.len() == num_points {
                                         data_to_corner_map = map;
-                                    } else {
-                                        for (data_id, &point_id) in point_ids.iter().enumerate() {
-                                            let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
-                                            data_to_corner_map[data_id] = ci.0;
-                                        }
                                     }
-                                } else {
-                                    for (data_id, &point_id) in point_ids.iter().enumerate() {
-                                        let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
-                                        data_to_corner_map[data_id] = ci.0;
-                                    }
+                                }
+                                if let Some(map) = encoder.get_vertex_to_data_map() {
+                                    vertex_to_data_map = map;
                                 }
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {

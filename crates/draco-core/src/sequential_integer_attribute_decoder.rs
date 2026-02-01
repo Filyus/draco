@@ -1,6 +1,6 @@
 use crate::prediction_scheme::{PredictionScheme, PredictionSchemeDecoder, PredictionSchemeMethod, PredictionSchemeTransformType};
 use crate::decoder_buffer::DecoderBuffer;
-use crate::geometry_indices::{CornerIndex, PointIndex, VertexIndex, INVALID_CORNER_INDEX};
+use crate::geometry_indices::{CornerIndex, PointIndex, INVALID_CORNER_INDEX};
 use crate::point_cloud_decoder::PointCloudDecoder;
 use crate::point_cloud::PointCloud;
 use crate::prediction_scheme_delta::PredictionSchemeDeltaDecoder;
@@ -50,6 +50,10 @@ impl SequentialIntegerAttributeDecoder {
         self.prediction_scheme = Some(scheme);
     }
 
+    // Complex mesh decoding requires all 8 parameters: mesh data, traversal maps,
+    // corner table for prediction, and optional portable attribute output.
+    // Refactoring into a struct would obscure the data flow and break C++ API parity.
+    #[allow(clippy::too_many_arguments)]
     pub fn decode_values(
         &mut self,
         point_cloud: &mut PointCloud,
@@ -57,6 +61,7 @@ impl SequentialIntegerAttributeDecoder {
         in_buffer: &mut DecoderBuffer,
         corner_table: Option<&CornerTable>,
         data_to_corner_map_override: Option<&[u32]>,
+        vertex_to_data_map_override: Option<&[i32]>,
         portable_attribute: Option<&mut PointAttribute>,
     ) -> bool {
         let att_id = self.attribute;
@@ -179,28 +184,38 @@ impl SequentialIntegerAttributeDecoder {
                                      vertex_to_data_map[v] = data_id as i32;
                                  }
                              }
-                         } else {
-                             let vertex_to_data_size = point_ids
-                                 .iter()
-                                 .map(|p| p.0 as usize)
-                                 .max()
-                                 .unwrap_or(0)
-                                 + 1;
-                             vertex_to_data_map.resize(vertex_to_data_size, -1);
-
-                             for (i, &point_id) in point_ids.iter().enumerate() {
-                                 vertex_to_data_map[point_id.0 as usize] = i as i32;
+                         } else if let Some(map) = vertex_to_data_map_override {
+                             // Use the pre-built vertex_to_data_map from mesh decoder
+                             if map.len() != corner_table.num_vertices() {
+                                 eprintln!("Invalid vertex_to_data_map_override length");
+                                 return false;
                              }
-
-                             for (i, &point_id) in point_ids.iter().enumerate() {
-                                 let ci = corner_table.left_most_corner(VertexIndex(point_id.0));
-                                 data_to_corner_map[i] = ci.0;
+                             vertex_to_data_map.resize(map.len(), 0);
+                             vertex_to_data_map.copy_from_slice(map);
+                         } else {
+                             // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
+                             // This is the same logic as the 'if' branch above
+                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                                 let corner_id = CornerIndex(corner_u32);
+                                 if corner_id == INVALID_CORNER_INDEX {
+                                     continue;
+                                 }
+                                 let v = corner_table.vertex(corner_id).0 as usize;
+                                 if v < vertex_to_data_map.len() {
+                                     vertex_to_data_map[v] = data_id as i32;
+                                 }
                              }
                          }
-                         
+
                          let mut mesh_data = MeshPredictionSchemeData::new();
                          mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
-                         
+
+                     if cfg!(feature = "debug_logs") {
+                         eprintln!("Parallelogram decoder: vertex_to_data_map = {:?}", vertex_to_data_map.iter().take(10).collect::<Vec<_>>());
+                         eprintln!("Parallelogram decoder: data_to_corner_map = {:?}", data_to_corner_map.iter().take(10).collect::<Vec<_>>());
+                     }
+
                          let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
                          let predictor = PredictionSchemeParallelogramDecoder::new(attribute, transform, mesh_data);
                          predictor_parallelogram_opt = Some(predictor);
@@ -232,21 +247,18 @@ impl SequentialIntegerAttributeDecoder {
                                  }
                              }
                          } else {
-                             let vertex_to_data_size = point_ids
-                                 .iter()
-                                 .map(|p| p.0 as usize)
-                                 .max()
-                                 .unwrap_or(0)
-                                 + 1;
-                             vertex_to_data_map.resize(vertex_to_data_size, -1);
-
-                             for (i, &point_id) in point_ids.iter().enumerate() {
-                                 vertex_to_data_map[point_id.0 as usize] = i as i32;
-                             }
-
-                             for (i, &point_id) in point_ids.iter().enumerate() {
-                                 let ci = corner_table.left_most_corner(VertexIndex(point_id.0));
-                                 data_to_corner_map[i] = ci.0;
+                             // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
+                             // This is the same logic as the 'if' branch above
+                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                                 let corner_id = CornerIndex(corner_u32);
+                                 if corner_id == INVALID_CORNER_INDEX {
+                                     continue;
+                                 }
+                                 let v = corner_table.vertex(corner_id).0 as usize;
+                                 if v < vertex_to_data_map.len() {
+                                     vertex_to_data_map[v] = data_id as i32;
+                                 }
                              }
                          }
                          
@@ -283,21 +295,18 @@ impl SequentialIntegerAttributeDecoder {
                                  }
                              }
                          } else {
-                             let vertex_to_data_size = point_ids
-                                 .iter()
-                                 .map(|p| p.0 as usize)
-                                 .max()
-                                 .unwrap_or(0)
-                                 + 1;
-                             vertex_to_data_map.resize(vertex_to_data_size, -1);
-
-                             for (i, &point_id) in point_ids.iter().enumerate() {
-                                 vertex_to_data_map[point_id.0 as usize] = i as i32;
-                             }
-
-                             for (i, &point_id) in point_ids.iter().enumerate() {
-                                 let ci = corner_table.left_most_corner(VertexIndex(point_id.0));
-                                 data_to_corner_map[i] = ci.0;
+                             // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
+                             // This is the same logic as the 'if' branch above
+                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                                 let corner_id = CornerIndex(corner_u32);
+                                 if corner_id == INVALID_CORNER_INDEX {
+                                     continue;
+                                 }
+                                 let v = corner_table.vertex(corner_id).0 as usize;
+                                 if v < vertex_to_data_map.len() {
+                                     vertex_to_data_map[v] = data_id as i32;
+                                 }
                              }
                          }
                          
@@ -349,21 +358,18 @@ impl SequentialIntegerAttributeDecoder {
                                  }
                              }
                          } else {
-                             let vertex_to_data_size = point_ids
-                                 .iter()
-                                 .map(|p| p.0 as usize)
-                                 .max()
-                                 .unwrap_or(0)
-                                 + 1;
-                             vertex_to_data_map.resize(vertex_to_data_size, -1);
-
-                             for (i, &point_id) in point_ids.iter().enumerate() {
-                                 vertex_to_data_map[point_id.0 as usize] = i as i32;
-                             }
-
-                             for (i, &point_id) in point_ids.iter().enumerate() {
-                                 let ci = corner_table.left_most_corner(VertexIndex(point_id.0));
-                                 data_to_corner_map[i] = ci.0;
+                             // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
+                             // This is the same logic as the 'if' branch above
+                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                                 let corner_id = CornerIndex(corner_u32);
+                                 if corner_id == INVALID_CORNER_INDEX {
+                                     continue;
+                                 }
+                                 let v = corner_table.vertex(corner_id).0 as usize;
+                                 if v < vertex_to_data_map.len() {
+                                     vertex_to_data_map[v] = data_id as i32;
+                                 }
                              }
                          }
                          
@@ -665,17 +671,32 @@ impl SequentialIntegerAttributeDecoder {
             }
         }
 
-           let _ = values.len();
+        if num_points > 0 && cfg!(feature = "debug_logs") {
+             println!("Sequential Decoded: Point 0 ID = {:?}, Value[0] = {}", point_ids[0], values[0]);
+             // Debug: print all decoded values (quantized) and where they go
+             println!("DEBUG decoded values (first 25 x/y/z):");
+             for i in 0..std::cmp::min(25, num_points) {
+                 let x = values[i * 3];
+                 let y = values[i * 3 + 1];
+                 let z = values[i * 3 + 2];
+                 println!("  data_id={} -> point_ids[{}]={:?}: quantized({}, {}, {})", 
+                     i, i, point_ids[i], x, y, z);
+             }
+        }
 
         // 5. Store values (+ optional inverse transform)
         if let Some(portable_att) = portable_attribute {
-             // Write values to portable_att
+             // Write values to portable_att sequentially.
+             // C++ stores values at sequential positions (0, 1, 2, ...),
+             // then the inverse transform and point-to-attr mapping handle
+             // putting the values in the right places.
              let byte_stride = portable_att.byte_stride() as usize;
              let data_type = portable_att.data_type();
              let component_size = data_type.byte_length();
              let dst_buffer = portable_att.buffer_mut();
              
              for i in 0..num_points {
+                 // Write to sequential positions (index i), NOT to point_ids[i]
                  let entry_offset = i * byte_stride;
                  for c in 0..num_components {
                      let component_offset = entry_offset + c * component_size;
@@ -688,22 +709,20 @@ impl SequentialIntegerAttributeDecoder {
                  }
              }
         } else {
-            // No transform: store values directly using the attribute's mapping.
-            let entry_indices: Vec<crate::geometry_indices::AttributeValueIndex> = {
-                let attribute = point_cloud.attribute(att_id);
-                point_ids
-                    .iter()
-                    .map(|&pid| attribute.mapped_index(pid))
-                    .collect()
-            };
+            // No transform: store values directly in sequential order.
+            // C++ writes to sequential positions in the attribute buffer,
+            // then uses vertex_to_data_map in UpdatePointToAttributeIndexMapping
+            // to map points to the correct attribute value indices.
             let dst_attribute = point_cloud.attribute_mut(att_id);
             let byte_stride = dst_attribute.byte_stride() as usize;
             let data_type = dst_attribute.data_type();
             let component_size = data_type.byte_length();
             let dst_buffer = dst_attribute.buffer_mut();
 
-            for i in 0..num_points {
-                let entry_offset = entry_indices[i].0 as usize * byte_stride;
+            let num_values_decoded = values.len() / num_components;
+            for i in 0..std::cmp::min(num_points, num_values_decoded) {
+                // Write to sequential positions (index i), NOT to mapped positions
+                let entry_offset = i * byte_stride;
                 for c in 0..num_components {
                     let component_offset = entry_offset + c * component_size;
                     write_value_from_i32(
