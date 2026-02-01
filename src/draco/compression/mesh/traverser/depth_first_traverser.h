@@ -61,6 +61,29 @@ class DepthFirstTraverser
       return true;  // Already traversed.
     }
 
+    // DEBUG: First non-visited face triggers actual DFS
+    static int dfs_start_count = 0;
+    if (dfs_start_count < 3) {
+      std::cout << "C++ TraverseFromCorner STARTED: seed_corner=" << corner_id.value() 
+                << " face=" << (corner_id.value() / 3) 
+                << " offset=" << (corner_id.value() % 3) << std::endl;
+      // Show corner table structure
+      std::cout << "C++ corner_table opposites (first 12): [";
+      for (int i = 0; i < 12 && i < this->corner_table()->num_corners(); i++) {
+        if (i > 0) std::cout << ", ";
+        std::cout << this->corner_table()->Opposite(CornerIndex(i)).value();
+      }
+      std::cout << "]" << std::endl;
+      std::cout << "C++ corner_table vertices (first 12): [";
+      for (int i = 0; i < 12 && i < this->corner_table()->num_corners(); i++) {
+        if (i > 0) std::cout << ", ";
+        std::cout << this->corner_table()->Vertex(CornerIndex(i)).value();
+      }
+      std::cout << "]" << std::endl;
+      std::cout.flush();
+      dfs_start_count++;
+    }
+
     corner_traversal_stack_.clear();
     corner_traversal_stack_.push_back(corner_id);
     // For the first face, check the remaining corners as they may not be

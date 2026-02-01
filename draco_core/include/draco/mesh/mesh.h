@@ -104,6 +104,15 @@ class Mesh : public PointCloud {
     MeshAttributeElementType element_type;
   };
 
+  // Override SetAttribute to also resize attribute_data_ when a new attribute
+  // is added. This ensures the Mesh metadata is properly initialized.
+  void SetAttribute(int att_id, std::unique_ptr<PointAttribute> pa) override {
+    PointCloud::SetAttribute(att_id, std::move(pa));
+    if (static_cast<int>(attribute_data_.size()) <= att_id) {
+      attribute_data_.resize(att_id + 1);
+    }
+  }
+
   // Returns the element type of the attribute (per-vertex or per-corner).
   MeshAttributeElementType GetAttributeElementType(int att_id) const {
     return attribute_data_[att_id].element_type;
@@ -121,7 +130,14 @@ class Mesh : public PointCloud {
     }
   }
 
- protected:
+  #ifdef DRACO_ATTRIBUTE_INDICES_DEDUPLICATION_SUPPORTED
+   protected:
+    void ApplyPointIdDeduplication(
+      const IndexTypeVector<PointIndex, PointIndex> &id_map,
+      const std::vector<PointIndex> &unique_point_ids) override;
+  #endif
+
+   protected:
   // Container for faces.
   IndexTypeVector<FaceIndex, Face> faces_;
 
@@ -246,21 +262,6 @@ class Mesh : public PointCloud {
   std::vector<std::vector<int>> mesh_features_material_masks_;
   std::vector<std::vector<int>> property_attributes_material_masks_;
 
-  // Struct that defines mapping between face value indices and corner ids.
-  // TODO(ostava): This struct may not be necessary and we may be able to use
-  // existing corner table.
-  struct FaceValueMapping {
-    // Value indices of the attribute stored at the three corners of the face.
-    AttributeValueIndex value_index[3];
-    // Corner indices of the three face corners.
-    CornerIndex corner_index[3];
-  };
-
-  // Face to face-value-index mapping for a specific attribute id. This mapping
-  // is used by encoders that have different values for different corners
-  // of the same face (e.g. seam edges in UV coordinates).
-  // TODO(ostava): Consider using std::unordered_map for faster lookup.
-  std::vector<FaceValueMapping> attribute_value_to_index_map_;
 };
 
 }  // namespace draco

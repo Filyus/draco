@@ -10,10 +10,14 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tinygltf
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ghc
+    # Prefer original src/draco include paths if available (kept alongside refactored draco_core)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/draco
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/draco/third_party
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/draco/third_party/eigen
     ${CMAKE_CURRENT_SOURCE_DIR}/../draco_core/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../draco_core/third_party
     ${CMAKE_CURRENT_SOURCE_DIR}/../draco_core/third_party/eigen
-)
+) 
 
 add_definitions(-DDRACO_TRANSCODER_SUPPORTED -D_CRT_SECURE_NO_WARNINGS)
 
@@ -65,30 +69,45 @@ add_library(draco_io ${DRACO_IO_SOURCES})
 target_compile_definitions(draco_io PRIVATE DRACO_TRANSCODER_SUPPORTED=1)
 
 
-# Find and link draco_core
-if(TARGET draco_core)
-    # If draco_core is being built in the same project, link directly to the target
-    target_link_libraries(draco_io draco_core)
+# Link to draco (original src) or draco_core (refactored) depending on the chosen configuration
+if(USE_SRC_DRACO)
+  # Expect an externally built 'draco' library; do not build 'draco_core' in this mode.
+  if(TARGET draco)
+    target_link_libraries(draco_io draco)
+  else()
+    find_library(DRACO_LIB NAMES draco
+        HINTS
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/draco/build/Release
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/draco/build/Debug
+    )
+    if (NOT DRACO_LIB)
+      message(FATAL_ERROR "USE_SRC_DRACO=ON but could not find a 'draco' library in ../src/draco/build. Build the original draco and re-run CMake or set USE_SRC_DRACO=OFF to use draco_core.")
+    endif()
+    target_link_libraries(draco_io ${DRACO_LIB})
+  endif()
 else()
-    # Otherwise, look for the pre-built library
+  # Default behavior: link against the in-tree refactored draco_core target.
+  if(TARGET draco_core)
+    target_link_libraries(draco_io draco_core)
+  else()
     find_library(DRACO_CORE_LIB NAMES draco_core
         HINTS
         ${CMAKE_CURRENT_SOURCE_DIR}/../draco_core/build/Release
         ${CMAKE_CURRENT_SOURCE_DIR}/../draco_core/build/Debug
         ${CMAKE_CURRENT_SOURCE_DIR}/../draco_core/build
     )
-
     if (NOT DRACO_CORE_LIB)
-        message(WARNING "draco_core library not found in ../draco_core/build. Please ensure draco_core is built.")
-        set(DRACO_CORE_LIB ${CMAKE_CURRENT_SOURCE_DIR}/../draco_core/build/Release/draco_core.lib)
+      message(WARNING "draco_core library not found in ../draco_core/build. Please ensure draco_core is built.")
     endif()
-
     target_link_libraries(draco_io ${DRACO_CORE_LIB})
+  endif()
 endif()
 
 # Set include directories for both build and install
 target_include_directories(draco_io PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    # Prefer src/draco when available but keep draco_core include for compatibility
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../src/draco>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../draco_core/include>
     $<INSTALL_INTERFACE:include>
 )
@@ -139,6 +158,11 @@ add_executable(modern_io_example examples/modern_io_example.cpp)
 target_link_libraries(modern_io_example draco_io)
 target_compile_features(modern_io_example PRIVATE cxx_std_11)
 
+# Annulus test for comparing with Rust implementation
+add_executable(annulus_test examples/annulus_test.cpp)
+target_link_libraries(annulus_test draco_io draco_core)
+target_compile_features(annulus_test PRIVATE cxx_std_11)
+
 # Enhanced real I/O test with actual file operations
 # Temporarily disabled due to complex transcoder integration issues
 # add_executable(enhanced_io_test examples/enhanced_io_test.cpp)
@@ -168,3 +192,8 @@ target_compile_features(simple_test PRIVATE cxx_std_11)
 add_executable(separation_test examples/separation_test.cpp)
 target_link_libraries(separation_test draco_io)
 target_compile_features(separation_test PRIVATE cxx_std_11)
+
+# Grid debug test for parallelogram prediction
+add_executable(grid_debug_test examples/grid_debug_test.cpp)
+target_link_libraries(grid_debug_test draco_io)
+target_compile_features(grid_debug_test PRIVATE cxx_std_11)

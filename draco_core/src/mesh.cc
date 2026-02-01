@@ -25,4 +25,17 @@ void Mesh::Copy(const Mesh &src) {
   attribute_data_ = src.attribute_data_;
 }
 
+#ifdef DRACO_ATTRIBUTE_INDICES_DEDUPLICATION_SUPPORTED
+void Mesh::ApplyPointIdDeduplication(
+    const IndexTypeVector<PointIndex, PointIndex> &id_map,
+    const std::vector<PointIndex> &unique_point_ids) {
+  PointCloud::ApplyPointIdDeduplication(id_map, unique_point_ids);
+  for (FaceIndex f(0); f < num_faces(); ++f) {
+    for (int32_t c = 0; c < 3; ++c) {
+      faces_[f][c] = id_map[faces_[f][c]];
+    }
+  }
+}
+#endif
+
 }  // namespace draco

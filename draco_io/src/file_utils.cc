@@ -7,6 +7,8 @@
 #include "draco/io/file_reader_interface.h"
 #include "draco/io/file_writer_factory.h"
 #include "draco/io/file_writer_interface.h"
+#include "draco/io/stdio_file_reader.h"
+#include "draco/io/stdio_file_writer.h"
 
 namespace draco {
 
@@ -75,6 +77,25 @@ size_t GetFileSize(const std::string &file_name) {
     return 0;
   }
   return file_reader->GetFileSize();
+}
+
+// Note: GetFullPath is implemented in draco_core/path_utils.cc
+
+void InitFileIO() {
+  // Force registration of standard file reader and writer by referencing
+  // symbols from their translation units. The static registration pattern
+  // used by StdioFileReader and StdioFileWriter may not work reliably when
+  // linking as a static library, because the linker may not include object
+  // files that have no referenced symbols.
+  static bool initialized = false;
+  if (!initialized) {
+    // These calls force the linker to include the object files containing
+    // StdioFileReader and StdioFileWriter, which triggers their static
+    // registration with the factory classes.
+    FileReaderFactory::RegisterReader(StdioFileReader::Open);
+    FileWriterFactory::RegisterWriter(StdioFileWriter::Open);
+    initialized = true;
+  }
 }
 
 }  // namespace draco

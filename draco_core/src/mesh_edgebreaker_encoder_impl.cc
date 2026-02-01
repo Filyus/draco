@@ -16,6 +16,7 @@
 
 #include <algorithm>
 
+
 #include "draco/compression/attributes/sequential_attribute_encoders_controller.h"
 #include "draco/compression/mesh/mesh_edgebreaker_encoder.h"
 #include "draco/compression/mesh/mesh_edgebreaker_traversal_predictive_encoder.h"
@@ -45,6 +46,7 @@ MeshEdgebreakerEncoderImpl<TraversalEncoder>::MeshEdgebreakerEncoderImpl()
 template <class TraversalEncoder>
 bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::Init(
     MeshEdgebreakerEncoder *encoder) {
+
   encoder_ = encoder;
   mesh_ = encoder->mesh();
   attribute_encoder_to_data_id_map_.clear();
@@ -255,10 +257,12 @@ bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::
       (element_type == Mesh::MESH_CORNER_ATTRIBUTE &&
        attribute_data_[att_data_id].connectivity_data.no_interior_seams())) {
     // Per-vertex encoder.
-    encoder_->buffer()->Encode(static_cast<uint8_t>(Mesh::MESH_VERTEX_ATTRIBUTE));
+    encoder_->buffer()->Encode(
+        static_cast<uint8_t>(Mesh::MESH_VERTEX_ATTRIBUTE));
   } else {
     // Per-corner encoder.
-    encoder_->buffer()->Encode(static_cast<uint8_t>(Mesh::MESH_CORNER_ATTRIBUTE));
+    encoder_->buffer()->Encode(
+        static_cast<uint8_t>(Mesh::MESH_CORNER_ATTRIBUTE));
   }
   // Encode the mesh traversal method.
   encoder_->buffer()->Encode(static_cast<uint8_t>(traversal_method));
@@ -267,6 +271,7 @@ bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::
 
 template <class TraversalEncoder>
 Status MeshEdgebreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
+
   // To encode the mesh, we need face connectivity data stored in a corner
   // table. To compute the connectivity we must use indices associated with
   // POSITION attribute, because they define which edges can be connected
@@ -278,6 +283,7 @@ Status MeshEdgebreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
   } else {
     corner_table_ = CreateCornerTableFromPositionAttribute(mesh_);
   }
+
   if (corner_table_ == nullptr ||
       corner_table_->num_faces() == corner_table_->NumDegeneratedFaces()) {
     // Failed to construct the corner table.
@@ -301,7 +307,7 @@ Status MeshEdgebreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
   EncodeVarint(num_faces, encoder_->buffer());
 
   // Reset encoder data that may have been initialized in previous runs.
-  visited_faces_.assign(mesh_->num_faces().value(), false);
+  visited_faces_.assign(mesh_->NumFaces(), false);
   pos_encoding_data_.vertex_to_encoded_attribute_value_index_map.assign(
       corner_table_->num_vertices(), -1);
   pos_encoding_data_.encoded_attribute_value_index_to_corner_map.clear();
@@ -402,15 +408,17 @@ Status MeshEdgebreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
   // they are going to be decoded.
   std::reverse(processed_connectivity_corners_.begin(),
                processed_connectivity_corners_.end());
+
   // Append the init face connectivity corners (which are processed in order by
   // the decoder after the regular corners.
   processed_connectivity_corners_.insert(processed_connectivity_corners_.end(),
                                          init_face_connectivity_corners.begin(),
                                          init_face_connectivity_corners.end());
+  
   // Encode connectivity for all non-position attributes.
   if (!attribute_data_.empty()) {
     // Use the same order of corner that will be used by the decoder.
-    visited_faces_.assign(mesh_->num_faces().value(), false);
+    visited_faces_.assign(mesh_->NumFaces(), false);
     for (CornerIndex ci : processed_connectivity_corners_) {
       EncodeAttributeConnectivitiesOnFace(ci);
     }
@@ -507,7 +515,7 @@ bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::EncodeConnectivityFromCorner(
     CornerIndex corner_id) {
   corner_traversal_stack_.clear();
   corner_traversal_stack_.push_back(corner_id);
-  const int num_faces = mesh_->num_faces().value();
+  const int num_faces = static_cast<int>(mesh_->NumFaces());
   while (!corner_traversal_stack_.empty()) {
     // Currently processed corner.
     corner_id = corner_traversal_stack_.back();

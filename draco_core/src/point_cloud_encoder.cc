@@ -14,6 +14,7 @@
 //
 #include "draco/compression/point_cloud/point_cloud_encoder.h"
 
+#include <iostream>
 #include "draco/metadata/metadata_encoder.h"
 
 namespace draco {
@@ -47,9 +48,13 @@ Status PointCloudEncoder::Encode(const EncoderOptions &options,
     return Status(Status::DRACO_ERROR, "Failed to encode internal data.");
   }
   DRACO_RETURN_IF_ERROR(EncodeGeometryData());
+  std::cout << "C++ EncodeGeometryData completed, calling EncodePointAttributes" << std::endl;
+  std::cout.flush();
   if (!EncodePointAttributes()) {
     return Status(Status::DRACO_ERROR, "Failed to encode point attributes.");
   }
+  std::cout << "C++ EncodePointAttributes completed" << std::endl;
+  std::cout.flush();
   if (options.GetGlobalBool("store_number_of_encoded_points", false)) {
     ComputeNumberOfEncodedPoints();
   }
@@ -99,15 +104,21 @@ Status PointCloudEncoder::EncodeMetadata() {
 }
 
 bool PointCloudEncoder::EncodePointAttributes() {
+  std::cout << "C++ EncodePointAttributes: calling GenerateAttributesEncoders" << std::endl;
+  std::cout.flush();
   if (!GenerateAttributesEncoders()) {
     return false;
   }
 
+  std::cout << "C++ EncodePointAttributes: encoding num encoders=" << attributes_encoders_.size() << std::endl;
+  std::cout.flush();
   // Encode the number of attribute encoders.
   buffer_->Encode(static_cast<uint8_t>(attributes_encoders_.size()));
 
   // Initialize all the encoders (this is used for example to init attribute
   // dependencies, no data is encoded in this step).
+  std::cout << "C++ EncodePointAttributes: initializing encoders" << std::endl;
+  std::cout.flush();
   for (auto &att_enc : attributes_encoders_) {
     if (!att_enc->Init(this, point_cloud_)) {
       return false;
@@ -115,12 +126,16 @@ bool PointCloudEncoder::EncodePointAttributes() {
   }
 
   // Rearrange attributes to respect dependencies between individual attributes.
+  std::cout << "C++ EncodePointAttributes: rearranging attributes" << std::endl;
+  std::cout.flush();
   if (!RearrangeAttributesEncoders()) {
     return false;
   }
 
   // Encode any data that is necessary to create the corresponding attribute
   // decoder.
+  std::cout << "C++ EncodePointAttributes: encoding attribute encoder identifiers" << std::endl;
+  std::cout.flush();
   for (int att_encoder_id : attributes_encoder_ids_order_) {
     if (!EncodeAttributesEncoderIdentifier(att_encoder_id)) {
       return false;
@@ -129,6 +144,8 @@ bool PointCloudEncoder::EncodePointAttributes() {
 
   // Also encode any attribute encoder data (such as the info about encoded
   // attributes).
+  std::cout << "C++ EncodePointAttributes: encoding attribute encoder data" << std::endl;
+  std::cout.flush();
   for (int att_encoder_id : attributes_encoder_ids_order_) {
     if (!attributes_encoders_[att_encoder_id]->EncodeAttributesEncoderData(
             buffer_)) {
@@ -137,24 +154,36 @@ bool PointCloudEncoder::EncodePointAttributes() {
   }
 
   // Lastly encode all the attributes using the provided attribute encoders.
+  std::cout << "C++ EncodePointAttributes: encoding all attributes" << std::endl;
+  std::cout.flush();
   if (!EncodeAllAttributes()) {
     return false;
   }
+  std::cout << "C++ EncodePointAttributes: completed" << std::endl;
+  std::cout.flush();
   return true;
 }
 
 bool PointCloudEncoder::GenerateAttributesEncoders() {
+  std::cout << "C++ GenerateAttributesEncoders: num_attributes=" << point_cloud_->num_attributes() << std::endl;
+  std::cout.flush();
   for (int i = 0; i < point_cloud_->num_attributes(); ++i) {
+    std::cout << "C++ GenerateAttributesEncoders: generating encoder for attribute " << i << std::endl;
+    std::cout.flush();
     if (!GenerateAttributesEncoder(i)) {
       return false;
     }
   }
+  std::cout << "C++ GenerateAttributesEncoders: created " << attributes_encoders_.size() << " encoders" << std::endl;
+  std::cout.flush();
   attribute_to_encoder_map_.resize(point_cloud_->num_attributes());
   for (uint32_t i = 0; i < attributes_encoders_.size(); ++i) {
     for (uint32_t j = 0; j < attributes_encoders_[i]->num_attributes(); ++j) {
       attribute_to_encoder_map_[attributes_encoders_[i]->GetAttributeId(j)] = i;
     }
   }
+  std::cout << "C++ GenerateAttributesEncoders: completed" << std::endl;
+  std::cout.flush();
   return true;
 }
 

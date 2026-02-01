@@ -1172,6 +1172,14 @@ bool MeshEdgebreakerDecoderImpl<TraversalDecoder>::AssignPointsToCorners(
   if (attribute_data_.empty()) {
     // We have connectivity for position only. In this case all vertex indices
     // are equal to point indices.
+    if (std::getenv("DRACO_VERBOSE") != nullptr) {
+      std::cout << "C++ DECODER: Corner table after connectivity:" << std::endl;
+      size_t max_corners = corner_table_->num_corners();
+      if (max_corners > 12) max_corners = 12;
+      for (size_t c = 0; c < max_corners; ++c) {
+        std::cout << "  corner " << c << " -> vertex " << corner_table_->Vertex(CornerIndex(c)).value() << std::endl;
+      }
+    }
     for (FaceIndex f(0); f < decoder_->mesh()->num_faces(); ++f) {
       Mesh::Face face;
       const CornerIndex start_corner(3 * f.value());
@@ -1179,6 +1187,9 @@ bool MeshEdgebreakerDecoderImpl<TraversalDecoder>::AssignPointsToCorners(
         // Get the vertex index on the corner and use it as a point index.
         const int32_t vert_id = corner_table_->Vertex(start_corner + c).value();
         face[c] = vert_id;
+      }
+      if (std::getenv("DRACO_VERBOSE") != nullptr) {
+        std::cout << "C++ DECODER: Face " << f.value() << " = [" << face[0] << ", " << face[1] << ", " << face[2] << "]" << std::endl;
       }
       decoder_->mesh()->SetFace(f, face);
     }

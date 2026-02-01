@@ -16,6 +16,7 @@
 
 #include <algorithm>
 
+
 #include "draco/compression/attributes/sequential_attribute_encoders_controller.h"
 #include "draco/compression/mesh/mesh_edgebreaker_encoder.h"
 #include "draco/compression/mesh/mesh_edgebreaker_traversal_predictive_encoder.h"
@@ -45,6 +46,7 @@ MeshEdgebreakerEncoderImpl<TraversalEncoder>::MeshEdgebreakerEncoderImpl()
 template <class TraversalEncoder>
 bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::Init(
     MeshEdgebreakerEncoder *encoder) {
+
   encoder_ = encoder;
   mesh_ = encoder->mesh();
   attribute_encoder_to_data_id_map_.clear();
@@ -267,6 +269,7 @@ bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::
 
 template <class TraversalEncoder>
 Status MeshEdgebreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
+
   // To encode the mesh, we need face connectivity data stored in a corner
   // table. To compute the connectivity we must use indices associated with
   // POSITION attribute, because they define which edges can be connected
@@ -278,6 +281,7 @@ Status MeshEdgebreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
   } else {
     corner_table_ = CreateCornerTableFromPositionAttribute(mesh_);
   }
+
   if (corner_table_ == nullptr ||
       corner_table_->num_faces() == corner_table_->NumDegeneratedFaces()) {
     // Failed to construct the corner table.
@@ -402,11 +406,13 @@ Status MeshEdgebreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
   // they are going to be decoded.
   std::reverse(processed_connectivity_corners_.begin(),
                processed_connectivity_corners_.end());
+
   // Append the init face connectivity corners (which are processed in order by
   // the decoder after the regular corners.
   processed_connectivity_corners_.insert(processed_connectivity_corners_.end(),
                                          init_face_connectivity_corners.begin(),
                                          init_face_connectivity_corners.end());
+
   // Encode connectivity for all non-position attributes.
   if (!attribute_data_.empty()) {
     // Use the same order of corner that will be used by the decoder.

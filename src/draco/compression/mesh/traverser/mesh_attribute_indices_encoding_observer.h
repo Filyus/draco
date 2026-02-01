@@ -15,6 +15,7 @@
 #ifndef DRACO_COMPRESSION_MESH_TRAVERSER_MESH_ATTRIBUTE_INDICES_ENCODING_OBSERVER_H_
 #define DRACO_COMPRESSION_MESH_TRAVERSER_MESH_ATTRIBUTE_INDICES_ENCODING_OBSERVER_H_
 
+#include <iostream>
 #include "draco/compression/attributes/mesh_attribute_indices_encoding_data.h"
 #include "draco/compression/attributes/points_sequencer.h"
 #include "draco/mesh/mesh.h"
@@ -50,6 +51,16 @@ class MeshAttributeIndicesEncodingObserver {
   inline void OnNewVertexVisited(VertexIndex vertex, CornerIndex corner) {
     const PointIndex point_id =
         mesh_->face(FaceIndex(corner.value() / 3))[corner.value() % 3];
+    
+    // DEBUG: Print all visits when DRACO_VERBOSE is set
+    if (encoding_data_ != nullptr && std::getenv("DRACO_VERBOSE") != nullptr) {
+      std::cout << "C++ OnNewVertexVisited: data_id=" << encoding_data_->num_values 
+                << " vertex=" << vertex.value() 
+                << " corner=" << corner.value() 
+                << " point_id=" << point_id.value() << std::endl;
+      std::cout.flush();
+    }
+    
     // Append the visited attribute to the encoding order.
     sequencer_->AddPointId(point_id);
 

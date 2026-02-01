@@ -15,6 +15,7 @@
 #ifndef DRACO_COMPRESSION_MESH_TRAVERSER_MESH_TRAVERSAL_SEQUENCER_H_
 #define DRACO_COMPRESSION_MESH_TRAVERSER_MESH_TRAVERSAL_SEQUENCER_H_
 
+#include <iostream>
 #include "draco/attributes/geometry_indices.h"
 #include "draco/compression/attributes/mesh_attribute_indices_encoding_data.h"
 #include "draco/compression/attributes/points_sequencer.h"
@@ -48,14 +49,15 @@ class MeshTraversalSequencer : public PointsSequencer {
   bool UpdatePointToAttributeIndexMapping(PointAttribute *attribute) override {
     const auto *corner_table = traverser_.corner_table();
     attribute->SetExplicitMapping(mesh_->num_points());
-    const size_t num_faces = mesh_->num_faces().value();
+    const uint32_t num_faces = mesh_->NumFaces();
     const size_t num_points = mesh_->num_points();
-    for (FaceIndex f(0); f < static_cast<uint32_t>(num_faces); ++f) {
+    for (uint32_t fi = 0; fi < num_faces; ++fi) {
+      const FaceIndex f(fi);
       const auto &face = mesh_->face(f);
       for (int p = 0; p < 3; ++p) {
         const PointIndex point_id = face[p];
         const VertexIndex vert_id =
-            corner_table->Vertex(CornerIndex(3 * f.value() + p));
+            corner_table->Vertex(CornerIndex(3 * fi + p));
         if (vert_id == kInvalidVertexIndex) {
           return false;
         }
@@ -77,6 +79,13 @@ class MeshTraversalSequencer : public PointsSequencer {
     // Preallocate memory for storing point indices. We expect the number of
     // points to be the same as the number of corner table vertices.
     out_point_ids()->reserve(traverser_.corner_table()->num_vertices());
+
+    // DEBUG
+    if (corner_order_) {
+      std::cout << "ORIG GenerateSequenceInternal: using corner_order with " << corner_order_->size() << " corners" << std::endl;
+    } else {
+      std::cout << "ORIG GenerateSequenceInternal: NO corner_order, using sequential faces, num_faces=" << traverser_.corner_table()->num_faces() << std::endl;
+    }
 
     traverser_.OnTraversalStart();
     if (corner_order_) {

@@ -93,6 +93,16 @@ bool MeshPredictionSchemeParallelogramEncoder<DataTypeT, TransformT,
       this->transform().ComputeCorrection(
           in_data + dst_offset, in_data + src_offset, out_corr + dst_offset);
     } else {
+      // DEBUG: Print the actual entry ids referenced by the prediction.
+      if (p >= 10 && p <= 14) {
+        const CornerIndex oci = table->Opposite(corner_id);
+        int vert_opp, vert_next, vert_prev;
+        GetParallelogramEntries<CornerTable>(oci, table, *vertex_to_data_map,
+                                             &vert_opp, &vert_next, &vert_prev);
+        std::cout << "C++ Encoder Pred p=" << p << " c=" << corner_id.value()
+                  << " (o=" << oci.value() << "): entries(" << vert_opp
+                  << ", " << vert_next << ", " << vert_prev << ")" << std::endl;
+      }
       // Apply the parallelogram prediction.
       this->transform().ComputeCorrection(in_data + dst_offset, pred_vals.get(),
                                           out_corr + dst_offset);
