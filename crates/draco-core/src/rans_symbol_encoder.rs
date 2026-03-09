@@ -144,7 +144,13 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
     }
 
     fn encode_table(&self, buffer: &mut EncoderBuffer) -> bool {
-        buffer.encode_varint(self.num_symbols as u64);
+        // C++ v1.x writes num_symbols as u32; v2.0+ uses varint.
+        let bitstream_version = ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
+        if bitstream_version < 0x0200 {
+            buffer.encode_u32(self.num_symbols as u32);
+        } else {
+            buffer.encode_varint(self.num_symbols as u64);
+        }
         
         let mut i = 0;
         while i < self.num_symbols {
@@ -200,8 +206,13 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
         let data = self.ans.data();
         let bytes_written = data.len() as u64;
         
-        // Size is always encoded as varint (even in pre-v2.0)
-        buffer.encode_varint(bytes_written);
+        // C++ v1.x writes the byte count as a fixed u64; v2.0+ uses varint.
+        let bitstream_version = ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
+        if bitstream_version < 0x0200 {
+            buffer.encode_u64(bytes_written);
+        } else {
+            buffer.encode_varint(bytes_written);
+        }
         buffer.encode_data(data);
     }
 

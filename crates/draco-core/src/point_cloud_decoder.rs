@@ -241,9 +241,10 @@ impl PointCloudDecoder {
                                 num_points,
                             );
                             let mut transform = AttributeQuantizationTransform::new();
-                            // For v < 2.0, quantization params are stored BEFORE
-                            // integer values in the stream.
-                            let quant_skip_bytes = if bitstream_version < 0x0200 {
+                            // For v <= 1.1 (C++ legacy), quantization params are stored BEFORE
+                            // integer values in the stream. v1.2+ (including Rust-generated v1.3)
+                            // store them after, same as v2.0+.
+                            let quant_skip_bytes = if bitstream_version < 0x0102 {
                                 let saved_pos = buffer.position();
                                 let method_byte = buffer.decode_u8().map_err(|_| DracoError::DracoError("read pred method".to_string()))?;
                                 if method_byte != 0xFF {
@@ -281,10 +282,10 @@ impl PointCloudDecoder {
                         3 => {
                             let mut portable = PointAttribute::default();
                             portable.init(GeometryAttributeType::Generic, 2, DataType::Uint32, false, num_points);
-                            // For v < 2.0, octahedron quantization_bits is stored
-                            // AFTER prediction header but BEFORE integer values.
+                            // For v <= 1.1 (C++ legacy), octahedron quantization_bits is stored
+                            // AFTER prediction header but BEFORE integer values. v1.2+ store after.
                             let mut quant_bits: u8 = 0;
-                            let normal_skip_bytes = if bitstream_version < 0x0200 {
+                            let normal_skip_bytes = if bitstream_version < 0x0102 {
                                 let saved_pos = buffer.position();
                                 let method_byte = buffer.decode_u8().map_err(|_| DracoError::DracoError("read pred method".to_string()))?;
                                 if method_byte != 0xFF {
@@ -348,7 +349,7 @@ impl PointCloudDecoder {
                 for (local_i, &att_id) in att_ids.iter().enumerate() {
                     match decoder_types[local_i] {
                         2 => {
-                            if bitstream_version >= 0x0200 {
+                            if bitstream_version >= 0x0102 {
                                 let idx = pending_quant.iter().position(|p| p.att_id == att_id).unwrap();
                                 let original = pc.attribute(att_id);
                                 if !pending_quant[idx].transform.decode_parameters(original, buffer) {
@@ -357,7 +358,7 @@ impl PointCloudDecoder {
                             }
                         }
                         3 => {
-                            if bitstream_version >= 0x0200 {
+                            if bitstream_version >= 0x0102 {
                                 let idx = pending_normals.iter().position(|p| p.att_id == att_id).unwrap();
                                 pending_normals[idx].quantization_bits = buffer.decode_u8()?;
                             }
