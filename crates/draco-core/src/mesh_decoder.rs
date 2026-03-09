@@ -16,7 +16,7 @@ use crate::corner_table::CornerTable;
 use crate::geometry_indices::{PointIndex, FaceIndex, VertexIndex, CornerIndex, INVALID_CORNER_INDEX, INVALID_VERTEX_INDEX};
 
 use crate::mesh_edgebreaker_decoder::MeshEdgebreakerDecoder;
-use crate::version::{has_header_flags, uses_varint_encoding, version_less_than, VERSION_FLAGS_INTRODUCED};
+use crate::version::{version_at_least, version_less_than, VERSION_FLAGS_INTRODUCED};
 
 pub struct MeshDecoder {
     geometry_type: EncodedGeometryType,
@@ -62,6 +62,20 @@ impl MeshDecoder {
         // 2. Decode Metadata
         if (self.flags & 0x8000) != 0 {
             self.decode_metadata(in_buffer)?;
+        }
+
+        // Point cloud files (geometry_type == 0) have no connectivity.
+        // Delegate to PointCloudDecoder which reads num_points + attributes
+        // directly into the Mesh's underlying PointCloud.
+        if self.geometry_type == EncodedGeometryType::PointCloud {
+            let mut pc_decoder = crate::point_cloud_decoder::PointCloudDecoder::new();
+            return pc_decoder.decode_after_header(
+                self.version_major,
+                self.version_minor,
+                self.method,
+                in_buffer,
+                &mut *out_mesh,
+            );
         }
 
         // 3. Decode Connectivity
@@ -174,9 +188,10 @@ impl MeshDecoder {
         
         self.method = buffer.decode_u8()?;
         
-        if has_header_flags(self.version_major, self.version_minor) {
-            self.flags = buffer.decode_u16().map_err(|_| DracoError::DracoError("Failed to decode flags".to_string()))?;
-        }
+        // Flags field is always present in the binary header (C++ reads unconditionally).
+        // The VERSION_FLAGS_INTRODUCED constant refers to when flag bits gained meaning,
+        // not when the bytes were added to the format.
+        self.flags = buffer.decode_u16().map_err(|_| DracoError::DracoError("Failed to decode flags".to_string()))?;
         
         Ok(())
     }
@@ -202,7 +217,9 @@ impl MeshDecoder {
             }
         } else {
             // Sequential connectivity encoding
-            let (num_faces, num_points) = if !uses_varint_encoding(self.version_major, self.version_minor) {
+            // C++ MeshSequentialDecoder uses raw u32 for v < 2.2, varint for v >= 2.2
+            let seq_uses_varint = version_at_least(self.version_major, self.version_minor, (2, 2));
+            let (num_faces, num_points) = if !seq_uses_varint {
                 let nf = buffer.decode_u32()? as usize;
                 let np = buffer.decode_u32()? as usize;
                 (nf, np)
@@ -314,7 +331,11 @@ impl MeshDecoder {
             for i in 0..num_attributes_decoders {
                 att_data_id_by_decoder[i] = buffer.decode_u8()?;
                 let _decoder_type = buffer.decode_u8()?;
-                traversal_method_by_decoder[i] = buffer.decode_u8()?;
+                // traversal_method was added in v1.2. For older streams, default to
+                // DEPTH_FIRST (0).
+                if bitstream_version >= 0x0102 {
+                    traversal_method_by_decoder[i] = buffer.decode_u8()?;
+                }
             }
         }
 
@@ -561,29 +582,6 @@ impl MeshDecoder {
                             v_map[v.0 as usize] = i as i32;
                         }
                     }
-                    if std::env::var("DRACO_VERBOSE").is_ok() {
-                        println!(
-                            "Decoder: sequenced_vertex_to_data_map (first 10) = {:?}",
-                            &v_map[..v_map.len().min(10)]
-                        );
-                        // Print decoder corner table structure for comparison
-                        let num_corners = ct.num_faces() * 3;
-                        let print_limit = num_corners.min(36);
-                        let opposites: Vec<u32> = (0..print_limit)
-                            .map(|c| ct.opposite(CornerIndex(c as u32)).0)
-                            .collect();
-                        let vertices: Vec<u32> = (0..print_limit)
-                            .map(|c| ct.vertex(CornerIndex(c as u32)).0)
-                            .collect();
-                        println!(
-                            "Decoder: corner_table opposites (first {}) = {:?}",
-                            print_limit, opposites
-                        );
-                        println!(
-                            "Decoder: corner_table vertices (first {}) = {:?}",
-                            print_limit, vertices
-                        );
-                    }
                     sequenced_vertex_to_data_map = Some(v_map);
                 }
             }
@@ -605,7 +603,13 @@ impl MeshDecoder {
             } else {
                 data_to_corner_map.as_deref()
             };
-            let vertex_to_data_map_override_for_values: Option<&[i32]> = sequenced_vertex_to_data_map.as_deref();
+            let vertex_to_data_map_override_for_values: Option<&[i32]> = if point_ids_for_decoder.is_some() {
+                // Seam-expanded corner table: don't reuse the main vertex_to_data_map
+                // (wrong size). decode_values will build one from data_to_corner_map.
+                None
+            } else {
+                sequenced_vertex_to_data_map.as_deref()
+            };
 
             let mut pending_quant: Vec<PendingQuant> = Vec::new();
             let mut pending_normals: Vec<PendingNormal> = Vec::new();
@@ -629,6 +633,7 @@ impl MeshDecoder {
                             data_to_corner_map_override_for_values,
                             vertex_to_data_map_override_for_values,
                             None,
+                            None,
                         ) {
                             return Err(DracoError::DracoError("Failed to decode integer attribute values".to_string()));
                         }
@@ -646,8 +651,43 @@ impl MeshDecoder {
                             false,
                             point_ids_for_values.len(),
                         );
+                        let mut transform = AttributeQuantizationTransform::new();
+                        // For v < 2.0, quantization params are stored BEFORE the
+                        // integer values in the stream. We peek ahead past the
+                        // prediction header to read them, then reset the buffer
+                        // so decode_values can re-read the prediction header.
+                        // decode_values then gets a skip hook to jump past the
+                        // quant params bytes (already consumed above).
+                        let quant_skip_bytes = if bitstream_version < 0x0200 {
+                            let saved_pos = buffer.position();
+                            let method_byte = buffer.decode_u8().map_err(|_| DracoError::DracoError("Failed to read prediction method".to_string()))?;
+                            if method_byte != 0xFF {
+                                let _transform_byte = buffer.decode_u8().map_err(|_| DracoError::DracoError("Failed to read transform type".to_string()))?;
+                            }
+                            let original = mesh.attribute(att_id);
+                            if !transform.decode_parameters(original, buffer) {
+                                return Err(DracoError::DracoError(
+                                    "Failed to decode quantization parameters (v<2.0)".to_string(),
+                                ));
+                            }
+                            let bytes_consumed = buffer.position() - saved_pos;
+                            let pred_header_bytes = if method_byte != 0xFF { 2 } else { 1 };
+                            let skip = bytes_consumed - pred_header_bytes;
+                            buffer.set_position(saved_pos).map_err(|_| DracoError::DracoError("Failed to reset buffer position".to_string()))?;
+                            skip
+                        } else {
+                            0
+                        };
                         let mut att_decoder = SequentialIntegerAttributeDecoder::new();
                         att_decoder.init(&pc_decoder, att_id);
+                        let mut skip_hook_fn = move |buf: &mut DecoderBuffer<'_>| -> bool {
+                            if quant_skip_bytes > 0 {
+                                buf.advance(quant_skip_bytes);
+                            }
+                            true
+                        };
+                        let pre_hook_opt: Option<&mut dyn FnMut(&mut DecoderBuffer<'_>) -> bool> = 
+                            if quant_skip_bytes > 0 { Some(&mut skip_hook_fn) } else { None };
                         if !att_decoder.decode_values(
                             mesh,
                             point_ids_for_values,
@@ -656,13 +696,14 @@ impl MeshDecoder {
                             data_to_corner_map_override_for_values,
                             vertex_to_data_map_override_for_values,
                             Some(&mut portable),
+                            pre_hook_opt,
                         ) {
                             return Err(DracoError::DracoError("Failed to decode quantized portable values".to_string()));
                         }
                         pending_quant.push(PendingQuant {
                             att_id,
                             portable,
-                            transform: AttributeQuantizationTransform::new(),
+                            transform,
                         });
                     }
                     3 => {
@@ -674,8 +715,39 @@ impl MeshDecoder {
                             false,
                             point_ids_for_values.len(),
                         );
+                        // For v < 2.0, octahedron quantization_bits is stored
+                        // AFTER prediction header but BEFORE compressed integer
+                        // values (C++ DecodeIntegerValues override calls
+                        // DecodeParameters before base::DecodeIntegerValues).
+                        // Use save/restore/skip like the quantization case.
+                        let mut quant_bits: u8 = 0;
+                        let normal_skip_bytes = if bitstream_version < 0x0200 {
+                            let saved_pos = buffer.position();
+                            // Skip prediction_method + transform_type
+                            let method_byte = buffer.decode_u8().map_err(|_| DracoError::DracoError("Failed to read prediction method".to_string()))?;
+                            if method_byte != 0xFF {
+                                let _transform_byte = buffer.decode_u8().map_err(|_| DracoError::DracoError("Failed to read transform type".to_string()))?;
+                            }
+                            // Read quant_bits at the correct position
+                            quant_bits = buffer.decode_u8().map_err(|_| DracoError::DracoError("Failed to read normal quant_bits".to_string()))?;
+                            let bytes_consumed = buffer.position() - saved_pos;
+                            let pred_header_bytes = if method_byte != 0xFF { 2 } else { 1 };
+                            let skip = bytes_consumed - pred_header_bytes;
+                            buffer.set_position(saved_pos).map_err(|_| DracoError::DracoError("Failed to reset buffer position".to_string()))?;
+                            skip
+                        } else {
+                            0
+                        };
                         let mut att_decoder = SequentialIntegerAttributeDecoder::new();
                         att_decoder.init(&pc_decoder, att_id);
+                        let mut normal_skip_fn = move |buf: &mut DecoderBuffer<'_>| -> bool {
+                            if normal_skip_bytes > 0 {
+                                buf.advance(normal_skip_bytes);
+                            }
+                            true
+                        };
+                        let normal_hook: Option<&mut dyn FnMut(&mut DecoderBuffer<'_>) -> bool> =
+                            if normal_skip_bytes > 0 { Some(&mut normal_skip_fn) } else { None };
                         if !att_decoder.decode_values(
                             mesh,
                             point_ids_for_values,
@@ -684,13 +756,14 @@ impl MeshDecoder {
                             data_to_corner_map_override_for_values,
                             vertex_to_data_map_override_for_values,
                             Some(&mut portable),
+                            normal_hook,
                         ) {
                             return Err(DracoError::DracoError("Failed to decode normal portable values".to_string()));
                         }
                         pending_normals.push(PendingNormal {
                             att_id,
                             portable,
-                            quantization_bits: 0,
+                            quantization_bits: quant_bits,
                         });
                     }
                     _ => {
@@ -700,31 +773,33 @@ impl MeshDecoder {
             }
 
             // Decode transform data for all attributes.
+            // For v < 2.0, quantization params were already decoded before integer
+            // values. For v >= 2.0, they are decoded here (after all values).
             for (local_i, &att_id) in att_ids.iter().enumerate() {
                 match decoder_types[local_i] {
                     2 => {
-                        let idx = pending_quant
-                            .iter()
-                            .position(|p| p.att_id == att_id)
-                            .ok_or_else(|| DracoError::DracoError("Missing pending quant entry".to_string()))?;
-                        let original = mesh.attribute(att_id);
-                        if cfg!(feature = "debug_logs") {
-                            println!("DEBUG: MeshDecoder decoding quantization params. Pos: {}, Remaining: {}", buffer.position(), buffer.remaining_size());
-                            println!("DEBUG: Buffer peek: {:?}", buffer.peek_bytes(32));
-                        }
-                        if !pending_quant[idx].transform.decode_parameters(original, buffer) {
-                            return Err(DracoError::DracoError(
-                                "Failed to decode quantization parameters".to_string(),
-                            ));
+                        if bitstream_version >= 0x0200 {
+                            let idx = pending_quant
+                                .iter()
+                                .position(|p| p.att_id == att_id)
+                                .ok_or_else(|| DracoError::DracoError("Missing pending quant entry".to_string()))?;
+                            let original = mesh.attribute(att_id);
+                            if !pending_quant[idx].transform.decode_parameters(original, buffer) {
+                                return Err(DracoError::DracoError(
+                                    "Failed to decode quantization parameters".to_string(),
+                                ));
+                            }
                         }
                     }
                     3 => {
-                        let idx = pending_normals
-                            .iter()
-                            .position(|p| p.att_id == att_id)
-                            .ok_or_else(|| DracoError::DracoError("Missing pending normal entry".to_string()))?;
-                        let bits = buffer.decode_u8()?;
-                        pending_normals[idx].quantization_bits = bits;
+                        if bitstream_version >= 0x0200 {
+                            let idx = pending_normals
+                                .iter()
+                                .position(|p| p.att_id == att_id)
+                                .ok_or_else(|| DracoError::DracoError("Missing pending normal entry".to_string()))?;
+                            let bits = buffer.decode_u8()?;
+                            pending_normals[idx].quantization_bits = bits;
+                        }
                     }
                     _ => {}
                 }
@@ -799,7 +874,7 @@ impl MeshDecoder {
 
         let mut point_ids = Vec::with_capacity(num_vertices);
         let mut data_to_corner_map = Vec::with_capacity(num_vertices);
-        let mut vertex_to_data_map = vec![-1i32; num_vertices];  // NEW: Build vertex_to_data_map during traversal
+        let mut vertex_to_data_map = vec![-1i32; num_vertices];
         let mut visited_vertices = vec![false; num_vertices];
         let mut visited_faces = vec![false; num_faces];
 
@@ -816,14 +891,11 @@ impl MeshDecoder {
         // Visit a corner table vertex and record it as a point ID.
         // This matches C++ MeshAttributeIndicesEncodingObserver::OnNewVertexVisited
         // which gets point_id from mesh_->face(corner / 3)[corner % 3]
-        
-        // DEBUG: Counter for DFS starts
-        static DFS_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        
+
         // DFS traversal matching C++ DepthFirstTraverser::TraverseFromCorner exactly
         let mut traverse_from_corner = |start_corner: CornerIndex,
                         point_ids: &mut Vec<PointIndex>,
-                        vertex_to_data_map: &mut Vec<i32>,  // NEW: Also update vertex_to_data_map
+                        vertex_to_data_map: &mut Vec<i32>,
                         visited_vertices: &mut Vec<bool>,
                         visited_faces: &mut Vec<bool>| {
             let start_face = corner_table.face(start_corner);
@@ -832,24 +904,6 @@ impl MeshDecoder {
             }
             if visited_faces[start_face.0 as usize] {
                 return; // Already traversed
-            }
-
-            // DEBUG: First DFS call
-            let count = DFS_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if count < 3 && cfg!(feature = "debug_logs") {
-                eprintln!(
-                    "Rust Decoder TraverseFromCorner STARTED: seed_corner={} face={} offset={}",
-                    start_corner.0, start_corner.0 / 3, start_corner.0 % 3
-                );
-                // Show corner table structure
-                let opposites: Vec<u32> = (0..12.min(corner_table.num_faces() * 3))
-                    .map(|c| corner_table.opposite(CornerIndex(c as u32)).0)
-                    .collect();
-                let vertices: Vec<u32> = (0..12.min(corner_table.num_faces() * 3))
-                    .map(|c| corner_table.vertex(CornerIndex(c as u32)).0)
-                    .collect();
-                eprintln!("Rust Decoder corner_table opposites (first 12): {:?}", opposites);
-                eprintln!("Rust Decoder corner_table vertices (first 12): {:?}", vertices);
             }
 
             let mut corner_stack: Vec<CornerIndex> = Vec::new();
@@ -864,23 +918,14 @@ impl MeshDecoder {
                prev_vert == crate::geometry_indices::INVALID_VERTEX_INDEX {
                 return;
             }
-            
-            // DEBUG: Counter for visits
-            static VISIT_COUNT: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
-            
+
             // Visit Next vertex
             if !visited_vertices[next_vert.0 as usize] {
                 visited_vertices[next_vert.0 as usize] = true;
                 let next_corner = corner_table.next(start_corner);
                 let point_id = corner_to_point_id(next_corner);
-                let data_id = point_ids.len() as i32;  // data_id = current length (matches C++ num_values)
-                vertex_to_data_map[next_vert.0 as usize] = data_id;  // NEW: Record vertex -> data_id
-                if data_id < 10 && cfg!(feature = "debug_logs") {
-                    eprintln!(
-                        "Rust Decoder OnNewVertexVisited: data_id={} vertex={} corner={} point_id={}",
-                        data_id, next_vert.0, next_corner.0, point_id.0
-                    );
-                }
+                let data_id = point_ids.len() as i32;
+                vertex_to_data_map[next_vert.0 as usize] = data_id;
                 point_ids.push(point_id);
                 data_to_corner_map.push(next_corner.0);
             }
@@ -889,14 +934,8 @@ impl MeshDecoder {
                 visited_vertices[prev_vert.0 as usize] = true;
                 let prev_corner = corner_table.previous(start_corner);
                 let point_id = corner_to_point_id(prev_corner);
-                let data_id = point_ids.len() as i32;  // data_id = current length (matches C++ num_values)
-                vertex_to_data_map[prev_vert.0 as usize] = data_id;  // NEW: Record vertex -> data_id
-                if data_id < 10 && cfg!(feature = "debug_logs") {
-                    eprintln!(
-                        "Rust Decoder OnNewVertexVisited: data_id={} vertex={} corner={} point_id={}",
-                        data_id, prev_vert.0, prev_corner.0, point_id.0
-                    );
-                }
+                let data_id = point_ids.len() as i32;
+                vertex_to_data_map[prev_vert.0 as usize] = data_id;
                 point_ids.push(point_id);
                 data_to_corner_map.push(prev_corner.0);
             }
@@ -921,16 +960,9 @@ impl MeshDecoder {
                     if !visited_vertices[vert_id.0 as usize] {
                         let on_boundary = Self::is_vertex_on_boundary_impl(corner_table, vert_id);
                         visited_vertices[vert_id.0 as usize] = true;
-                        // OnNewVertexVisited
                         let point_id = corner_to_point_id(corner_id);
-                        let data_id = point_ids.len() as i32;  // data_id = current length (matches C++ num_values)
-                        vertex_to_data_map[vert_id.0 as usize] = data_id;  // NEW: Record vertex -> data_id
-                        if data_id < 10 && cfg!(feature = "debug_logs") {
-                            eprintln!(
-                                "Rust Decoder OnNewVertexVisited: data_id={} vertex={} corner={} point_id={}",
-                                data_id, vert_id.0, corner_id.0, point_id.0
-                            );
-                        }
+                        let data_id = point_ids.len() as i32;
+                        vertex_to_data_map[vert_id.0 as usize] = data_id;
                         point_ids.push(point_id);
                         data_to_corner_map.push(corner_id.0);
                         
@@ -1022,29 +1054,12 @@ impl MeshDecoder {
             }
         }
 
-        if std::env::var("DRACO_VERBOSE").is_ok() {
-            eprintln!(
-                "Decoder: sequenced_point_ids (first 10) = {:?}",
-                point_ids.iter().take(10).map(|p| p.0).collect::<Vec<_>>()
-            );
-            eprintln!(
-                "Decoder: sequenced_data_to_corner_map (first 10) = {:?}",
-                data_to_corner_map.iter().take(10).collect::<Vec<_>>()
-            );
-            // Debug: Show vertex_to_data_map for vertices near the problematic data_ids
-            let v_map_samples: Vec<(usize, i32)> = vertex_to_data_map.iter()
-                .enumerate()
-                .filter(|(_, &d)| d >= 9410 && d <= 9415)
-                .map(|(v, &d)| (v, d))
-                .collect();
-            eprintln!("Decoder DFS: vertices mapping to data_ids 9410-9415: {:?}", v_map_samples);
-        }
         // Add any remaining isolated vertices or padding to match expected count
         let total_points_expected = mesh.num_points();
         for i in 0..num_vertices {
             if !visited_vertices[i] && point_ids.len() < total_points_expected {
                 let data_id = point_ids.len() as i32;
-                vertex_to_data_map[i] = data_id;  // Also record isolated vertices
+                vertex_to_data_map[i] = data_id;
                 point_ids.push(PointIndex(i as u32));
                 let c = corner_table.left_most_corner(VertexIndex(i as u32));
                 data_to_corner_map.push(if c != INVALID_CORNER_INDEX { c.0 } else { 0 });

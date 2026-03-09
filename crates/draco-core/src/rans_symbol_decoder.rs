@@ -44,7 +44,7 @@ impl<'a> RAnsSymbolDecoder<'a> {
         let _start_pos = buffer.position();
         let bitstream_version = ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
         let num_symbols = if bitstream_version < 0x0200 {
-            match buffer.decode_u8() {
+            match buffer.decode_u32() {
                 Ok(v) => v as usize,
                 Err(_) => return false,
             }
@@ -125,12 +125,18 @@ impl<'a> RAnsSymbolDecoder<'a> {
     pub fn start_decoding(&mut self, buffer: &mut DecoderBuffer<'a>) -> bool {
         // Draco advances the buffer past the encoded rANS data regardless of the
         // number of symbols (the encoded size prefix is always present).
-        // 
-        // Note: The size is always encoded as varint, even in pre-v2.0 bitstreams.
-        // Only the num_symbols count uses version-specific encoding (u8 vs varint).
-        let bytes_to_read = match buffer.decode_varint() {
-            Ok(v) => v as usize,
-            Err(_) => return false,
+        // C++: v < 2.0 uses fixed u64, v >= 2.0 uses varint u64.
+        let bitstream_version = ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
+        let bytes_to_read = if bitstream_version < 0x0200 {
+            match buffer.decode::<u64>() {
+                Ok(v) => v as usize,
+                Err(_) => return false,
+            }
+        } else {
+            match buffer.decode_varint() {
+                Ok(v) => v as usize,
+                Err(_) => return false,
+            }
         };
         if self.num_symbols <= 1 {
             // Still need to advance the buffer past the encoded bytes.

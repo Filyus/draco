@@ -722,13 +722,13 @@ files:
     functions:
       - name: "decode"
         progress: "fully implemented"
-        note: "Decodes mesh connectivity and attributes. Supports Sequential and Edgebreaker methods."
+        note: "Decodes mesh connectivity and attributes. Supports Sequential and Edgebreaker methods. Detects PointCloud geometry type and delegates to PointCloudDecoder."
       - name: "decode_connectivity"
         progress: "fully implemented"
-        note: "Decodes mesh connectivity using Sequential or Edgebreaker methods. Version-aware num_faces/num_points decoding (u32 for v1.x, varint for v2.x)."
+        note: "Decodes mesh connectivity using Sequential or Edgebreaker methods. Version-aware num_faces/num_points decoding (raw u32 for v<2.2, varint for v>=2.2)."
       - name: "decode_attributes"
         progress: "fully implemented"
-        note: "Decodes attributes using SequentialIntegerAttributeDecoder. Sequential mesh parsing matches MeshEncoder stream (no per-decoder header; num decoders stored as u8). Edgebreaker parses attribute decoder identifiers and wires per-decoder traversal ordering (depth-first or prediction-degree) into explicit mappings and data_to_corner_map overrides. Version-aware num_attributes_in_decoder and unique_id decoding."
+        note: "Decodes attributes using SequentialIntegerAttributeDecoder. Sequential mesh parsing matches MeshEncoder stream (no per-decoder header; num decoders stored as u8). Edgebreaker parses attribute decoder identifiers and wires per-decoder traversal ordering (depth-first or prediction-degree) into explicit mappings and data_to_corner_map overrides. Version-aware num_attributes_in_decoder and unique_id decoding. Backward-compatible v<2.0 support: traversal_method not present for v<1.2; quantization and normal transform params decoded before integer values using save/restore/skip pattern; seam-expanded corner tables get separate vertex_to_data_map."
       - name: "generate_point_ids_dfs"
         progress: "fully implemented"
         note: "Implements Draco C++ DepthFirstTraverser traversal order over the decoded CornerTable for Edgebreaker attribute decoding. Uses sequential face iteration as seeds matching C++ decoder (not encoder's processed_connectivity_corners). Fixed DFS visit order (Next, Prev before loop; Tip in loop) matching C++ depth_first_traverser.h."
@@ -743,7 +743,7 @@ files:
       - name: "MeshEdgebreakerDecoder"
         type: "struct"
         progress: "fully implemented"
-        note: "Traversal symbol decoding follows Draco traversal-buffer format (size-prefixed bit-coded topology patterns) and maps to internal CLERS IDs for reverse topology reconstruction. Topology split events decode source_edge via direct bit decoding. Start face configuration bits are decoded and applied to stitch interior start faces (enables closed/non-zero-genus meshes like torus). Attribute seam information is decoded and stored for attribute connectivity reconstruction. Corner table vertex_corners truncated to actual vertex count matching decoder vertex assignments."
+        note: "Traversal symbol decoding follows Draco traversal-buffer format (size-prefixed bit-coded topology patterns) and maps to internal CLERS IDs for reverse topology reconstruction. Topology split events decode source_edge via direct bit decoding. Start face configuration bits are decoded and applied to stitch interior start faces (enables closed/non-zero-genus meshes like torus). Attribute seam information is decoded and stored for attribute connectivity reconstruction. Corner table vertex_corners truncated to actual vertex count matching decoder vertex assignments. Hole events in legacy bitstreams (<2.1) are parsed and skipped (legacy dead data, never used by C++ decoder)."
     functions:
       - name: "decode_connectivity"
         progress: "fully implemented"
@@ -955,7 +955,7 @@ files:
       - name: "PointCloudDecoder"
         type: "struct"
         progress: "fully implemented"
-        note: "Supports Sequential (method=0) and KD-Tree (method=1) decoding; decodes fixed-width int32 num_points and supports sequential raw attribute decoding (no-quantization, decoder_type=0)."
+        note: "Supports Sequential (method=0) and KD-Tree (method=1) decoding. Provides decode_after_header() for delegation from MeshDecoder when geometry_type is PointCloud. Handles v<2.0 save/restore/skip pattern for quantization (decoder_type=2) and normal (decoder_type=3) transform parameters."
     functions:
       - name: "decode"
         progress: "fully implemented"
@@ -1325,7 +1325,7 @@ files:
     functions:
       - name: "create"
         progress: "fully implemented"
-        note: "Matches C++ logic. Version-aware num_symbols decoding (u8 for pre-v2.0, varint for v2.0+)."
+        note: "Matches C++ logic. Version-aware num_symbols decoding (u32 for pre-v2.0, varint for v2.0+)."
       - name: "decode_symbol"
         progress: "fully implemented"
         note: "Matches C++ logic. Handles single-symbol edge case."

@@ -75,12 +75,11 @@ impl MeshEdgebreakerDecoder {
         let version_minor = in_buffer.version_minor();
         let bitstream_version = ((version_major as u16) << 8) | (version_minor as u16);
         
-        if bitstream_version >= 0x0102 {
-            self.traversal_decoder_type = in_buffer.decode_u8().map_err(|_| DracoError::DracoError("Failed to read traversal decoder type".to_string()))?;
-            // Type 0 = Standard, Type 1 = Predictive, Type 2 = Valence
-            if self.traversal_decoder_type > 2 {
-                return Err(DracoError::DracoError(format!("Unsupported Edgebreaker traversal decoder type: {}", self.traversal_decoder_type)));
-            }
+        // Traversal decoder type is always present (C++ reads unconditionally in InitializeDecoder).
+        self.traversal_decoder_type = in_buffer.decode_u8().map_err(|_| DracoError::DracoError("Failed to read traversal decoder type".to_string()))?;
+        // Type 0 = Standard, Type 1 = Predictive, Type 2 = Valence
+        if self.traversal_decoder_type > 2 {
+            return Err(DracoError::DracoError(format!("Unsupported Edgebreaker traversal decoder type: {}", self.traversal_decoder_type)));
         }
 
         let mut _num_new_vertices = 0;
@@ -310,9 +309,9 @@ impl MeshEdgebreakerDecoder {
     }
 
     fn skip_hole_events(in_buffer: &mut DecoderBuffer, bitstream_version: u16) -> Result<(), DracoError> {
-        // Hole events are present only for older streams (<2.1). We currently
-        // decode them to advance the buffer, but full HOLE-symbol topology support
-        // is not implemented.
+        // Hole events are present only for older streams (<2.1). The C++ decoder
+        // parses them but never uses them (dead/legacy data), so we just need to
+        // advance the buffer past the hole event data.
         let mut num_hole_events: u32 = 0;
         if bitstream_version < 0x0200 {
             num_hole_events = in_buffer
@@ -346,9 +345,6 @@ impl MeshEdgebreakerDecoder {
                 }
             }
 
-            return Err(DracoError::DracoError(
-                "Unsupported Edgebreaker hole events in legacy bitstream".to_string(),
-            ));
         }
 
         Ok(())
@@ -462,8 +458,34 @@ impl MeshEdgebreakerDecoder {
             return Ok(0);
         }
 
+        let bitstream_version = ((in_buffer.version_major() as u16) << 8) | (in_buffer.version_minor() as u16);
+
+        // For v < 2.2, start face configuration bits are stored as a raw bit buffer
+        // (u64 size prefix + raw bits), NOT as rANS-encoded data.
+        // For v >= 2.2, they use RAnsBitDecoder.
         let mut start_face_decoder = RAnsBitDecoder::new();
-        let has_start_face_bits = start_face_decoder.start_decoding(in_buffer);
+        let mut has_start_face_bits = false;
+        let mut start_face_bits_legacy: Option<Vec<bool>> = None;
+
+        if bitstream_version < 0x0202 {
+            // Read raw bit buffer for start faces
+            in_buffer.start_bit_decoding(true)
+                .map_err(|_| DracoError::DracoError("Failed to start start-face bit decoding".to_string()))?;
+            // Pre-read a generous number of bits (one per component, max = num_symbols)
+            // We read up to actual_num_symbols bits; unused ones are harmless
+            let num_bits_to_read = actual_num_symbols.min(in_buffer.remaining_size() * 8);
+            let mut bits = Vec::with_capacity(num_bits_to_read);
+            for _ in 0..num_bits_to_read {
+                match in_buffer.decode_least_significant_bits32(1) {
+                    Ok(v) => bits.push(v != 0),
+                    Err(_) => break,
+                }
+            }
+            in_buffer.end_bit_decoding();
+            start_face_bits_legacy = Some(bits);
+        } else {
+            has_start_face_bits = start_face_decoder.start_decoding(in_buffer);
+        }
 
         let mut connectivity_decoder = EdgebreakerConnectivityDecoder::new(
             mesh.num_faces() as i32,
@@ -500,6 +522,8 @@ impl MeshEdgebreakerDecoder {
             let mut valence_decoder = crate::mesh_edgebreaker_traversal_valence_decoder::MeshEdgebreakerTraversalValenceDecoder::new(
                 start_face_decoder,
                 has_start_face_bits,
+                topology_split_data.to_vec(),
+                start_face_bits_legacy.take(),
             );
             // Initialize contexts by reading counts/symbol arrays from the buffer
             if !valence_decoder.init_from_buffer(in_buffer, max_num_vertices) {
@@ -523,6 +547,7 @@ impl MeshEdgebreakerDecoder {
                 topology_split_data,
                 start_face_decoder,
                 has_start_face_bits,
+                start_face_bits_legacy.take(),
                 max_num_vertices,
             );
 
@@ -882,6 +907,10 @@ struct InternalTraversalDecoder<'a> {
     split_event_remaining: usize,
     start_face_decoder: RAnsBitDecoder<'a>,
     has_start_face_bits: bool,
+    /// For v < 2.2: pre-read start face configuration bits (raw bit buffer).
+    /// When present, these are used instead of the RAnsBitDecoder.
+    start_face_bits_legacy: Option<Vec<bool>>,
+    start_face_bits_legacy_index: usize,
     processed_connectivity_corners: Vec<u32>,
 }
 
@@ -891,6 +920,7 @@ impl<'a> InternalTraversalDecoder<'a> {
         topology_split_data: &'a [TopologySplitEventData],
         start_face_decoder: RAnsBitDecoder<'a>,
         has_start_face_bits: bool,
+        start_face_bits_legacy: Option<Vec<bool>>,
         _max_num_vertices: usize,
     ) -> Self {
         Self {
@@ -900,6 +930,8 @@ impl<'a> InternalTraversalDecoder<'a> {
             split_event_remaining: topology_split_data.len(),
             start_face_decoder,
             has_start_face_bits,
+            start_face_bits_legacy,
+            start_face_bits_legacy_index: 0,
             processed_connectivity_corners: Vec::new(),
         }
     }
@@ -913,6 +945,13 @@ impl<'a> EdgebreakerTraversalDecoder for InternalTraversalDecoder<'a> {
     }
 
     fn decode_start_face_configuration(&mut self) -> bool {
+        // For v < 2.2: use pre-read raw bit buffer
+        if let Some(ref bits) = self.start_face_bits_legacy {
+            let idx = self.start_face_bits_legacy_index;
+            self.start_face_bits_legacy_index += 1;
+            return bits.get(idx).copied().unwrap_or(true);
+        }
+        // For v >= 2.2: use RAnsBitDecoder
         if self.has_start_face_bits {
             self.start_face_decoder.decode_next_bit()
         } else {

@@ -27,9 +27,18 @@ impl<'a> RAnsBitDecoder<'a> {
         }
 
         // Read size_in_bytes.
-        let size: u32 = match source_buffer.decode_varint() {
-            Ok(v) => v as u32,
-            Err(_) => return false,
+        // C++: v < 2.2 uses fixed u32, v >= 2.2 uses varint.
+        let bitstream_version = ((source_buffer.version_major() as u16) << 8) | (source_buffer.version_minor() as u16);
+        let size: u32 = if bitstream_version < 0x0202 {
+            match source_buffer.decode::<u32>() {
+                Ok(v) => v,
+                Err(_) => return false,
+            }
+        } else {
+            match source_buffer.decode_varint() {
+                Ok(v) => v as u32,
+                Err(_) => return false,
+            }
         };
         if cfg!(feature = "debug_logs") {
             println!("DEBUG: RAnsBitDecoder size: {}", size);

@@ -63,6 +63,7 @@ impl SequentialIntegerAttributeDecoder {
         data_to_corner_map_override: Option<&[u32]>,
         vertex_to_data_map_override: Option<&[i32]>,
         portable_attribute: Option<&mut PointAttribute>,
+        pre_integer_decode: Option<&mut dyn FnMut(&mut DecoderBuffer<'_>) -> bool>,
     ) -> bool {
         let att_id = self.attribute;
         if att_id < 0 {
@@ -91,6 +92,8 @@ impl SequentialIntegerAttributeDecoder {
                 return false;
             }
         };
+
+
 
         // Draco stores prediction method as int8 (0xFF == -1 == None).
         let selected_method = if method_byte == 0xFF {
@@ -477,6 +480,13 @@ impl SequentialIntegerAttributeDecoder {
         }
         
         // 1. Decode correction symbols.
+        // For v < 2.0, transform-specific parameters (quantization, octahedron)
+        // are stored BEFORE the integer values. The caller provides a hook.
+        if let Some(hook) = pre_integer_decode {
+            if !hook(in_buffer) {
+                return false;
+            }
+        }
         // Draco supports both entropy-coded symbols (compressed=1) and raw symbols (compressed=0).
         let compressed = match in_buffer.decode_u8() {
             Ok(v) => v,
@@ -518,11 +528,13 @@ impl SequentialIntegerAttributeDecoder {
                 Ok(v) => v as usize,
                 Err(_) => return false,
             };
-            if num_bytes == 0 || num_bytes > 4 {
+            if num_bytes > 4 {
                 return false;
             }
 
-            if num_bytes == 4 {
+            if num_bytes == 0 {
+                // All values are zero — nothing to read from the buffer.
+            } else if num_bytes == 4 {
                 for s in &mut symbols {
                     *s = match in_buffer.decode_u32() {
                         Ok(v) => v,
@@ -771,6 +783,12 @@ fn store_i32_values_to_attribute(
     let data_type = attr.data_type();
     let component_size = data_type.byte_length();
     let packed_row = num_components * component_size;
+
+    // Ensure buffer is large enough for num_points entries.
+    let required = num_points * byte_stride;
+    if attr.buffer().data_size() < required {
+        attr.buffer_mut().resize(required);
+    }
 
     // Fast path: i32/u32 tightly packed — bulk memcpy the entire values array.
     if (data_type == DataType::Int32 || data_type == DataType::Uint32)

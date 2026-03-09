@@ -13,7 +13,6 @@ use crate::corner_table::CornerTable;
 use crate::attribute_octahedron_transform::AttributeOctahedronTransform;
 use crate::attribute_quantization_transform::AttributeQuantizationTransform;
 use crate::attribute_transform::AttributeTransform;
-use crate::version::has_header_flags;
 
 pub trait GeometryDecoder {
     fn point_cloud(&self) -> Option<&PointCloud>;
@@ -76,6 +75,23 @@ impl PointCloudDecoder {
         self.decode_geometry_data(in_buffer, out_pc)
     }
 
+    /// Decode point cloud data when header + metadata have already been parsed.
+    /// Used by MeshDecoder to delegate point cloud streams.
+    pub fn decode_after_header(
+        &mut self,
+        version_major: u8,
+        version_minor: u8,
+        method: u8,
+        buffer: &mut DecoderBuffer,
+        out_pc: &mut PointCloud,
+    ) -> Status {
+        self.version_major = version_major;
+        self.version_minor = version_minor;
+        self.method = method;
+        self.geometry_type = EncodedGeometryType::PointCloud;
+        self.decode_geometry_data(buffer, out_pc)
+    }
+
     fn decode_header(&mut self, buffer: &mut DecoderBuffer) -> Status {
         let mut magic = [0u8; 5];
         buffer.decode_bytes(&mut magic)?;
@@ -96,13 +112,10 @@ impl PointCloudDecoder {
         
         self.method = buffer.decode_u8()?;
 
-        // Flags are present starting with bitstream v1.3.
-        if has_header_flags(self.version_major, self.version_minor) {
-            let _flags = buffer
-                .decode_u16()
-                .map_err(|_| DracoError::DracoError("Failed to decode flags".to_string()))?;
-            let _ = _flags;
-        }
+        // Flags field is always present in the binary header (C++ reads unconditionally).
+        let _flags = buffer
+            .decode_u16()
+            .map_err(|_| DracoError::DracoError("Failed to decode flags".to_string()))?;
         
         Ok(())
     }
@@ -212,40 +225,92 @@ impl PointCloudDecoder {
                         1 => {
                             let mut att_decoder = SequentialIntegerAttributeDecoder::new();
                             att_decoder.init(self, att_id);
-                            if !att_decoder.decode_values(pc, &point_ids, buffer, None, None, None, None) {
+                            if !att_decoder.decode_values(pc, &point_ids, buffer, None, None, None, None, None) {
                                 return Err(DracoError::DracoError("Failed to decode integer attribute".to_string()));
                             }
                         }
                         2 => {
                             let original = pc.attribute(att_id);
+                            let (original_type, original_num_components) = (original.attribute_type(), original.num_components());
                             let mut portable = PointAttribute::default();
                             portable.init(
-                                original.attribute_type(),
-                                original.num_components(),
+                                original_type,
+                                original_num_components,
                                 DataType::Uint32,
                                 false,
                                 num_points,
                             );
+                            let mut transform = AttributeQuantizationTransform::new();
+                            // For v < 2.0, quantization params are stored BEFORE
+                            // integer values in the stream.
+                            let quant_skip_bytes = if bitstream_version < 0x0200 {
+                                let saved_pos = buffer.position();
+                                let method_byte = buffer.decode_u8().map_err(|_| DracoError::DracoError("read pred method".to_string()))?;
+                                if method_byte != 0xFF {
+                                    let _transform_byte = buffer.decode_u8().map_err(|_| DracoError::DracoError("read transform".to_string()))?;
+                                }
+                                let original = pc.attribute(att_id);
+                                if !transform.decode_parameters(original, buffer) {
+                                    return Err(DracoError::DracoError("Failed to decode quantization parameters (v<2.0)".to_string()));
+                                }
+                                let bytes_consumed = buffer.position() - saved_pos;
+                                let pred_header_bytes = if method_byte != 0xFF { 2 } else { 1 };
+                                let skip = bytes_consumed - pred_header_bytes;
+                                buffer.set_position(saved_pos).map_err(|_| DracoError::DracoError("buf reset".to_string()))?;
+                                skip
+                            } else {
+                                0
+                            };
                             let mut att_decoder = SequentialIntegerAttributeDecoder::new();
                             att_decoder.init(self, att_id);
-                            if !att_decoder.decode_values(pc, &point_ids, buffer, None, None, None, Some(&mut portable)) {
+                            let mut skip_fn = move |buf: &mut crate::decoder_buffer::DecoderBuffer<'_>| -> bool {
+                                if quant_skip_bytes > 0 { buf.advance(quant_skip_bytes); }
+                                true
+                            };
+                            let hook: Option<&mut dyn FnMut(&mut crate::decoder_buffer::DecoderBuffer<'_>) -> bool> =
+                                if quant_skip_bytes > 0 { Some(&mut skip_fn) } else { None };
+                            if !att_decoder.decode_values(pc, &point_ids, buffer, None, None, None, Some(&mut portable), hook) {
                                 return Err(DracoError::DracoError("Failed to decode quantized portable values".to_string()));
                             }
                             pending_quant.push(PendingQuant {
                                 att_id,
                                 portable,
-                                transform: AttributeQuantizationTransform::new(),
+                                transform,
                             });
                         }
                         3 => {
                             let mut portable = PointAttribute::default();
                             portable.init(GeometryAttributeType::Generic, 2, DataType::Uint32, false, num_points);
+                            // For v < 2.0, octahedron quantization_bits is stored
+                            // AFTER prediction header but BEFORE integer values.
+                            let mut quant_bits: u8 = 0;
+                            let normal_skip_bytes = if bitstream_version < 0x0200 {
+                                let saved_pos = buffer.position();
+                                let method_byte = buffer.decode_u8().map_err(|_| DracoError::DracoError("read pred method".to_string()))?;
+                                if method_byte != 0xFF {
+                                    let _transform_byte = buffer.decode_u8().map_err(|_| DracoError::DracoError("read transform".to_string()))?;
+                                }
+                                quant_bits = buffer.decode_u8().map_err(|_| DracoError::DracoError("read normal quant_bits".to_string()))?;
+                                let bytes_consumed = buffer.position() - saved_pos;
+                                let pred_header_bytes = if method_byte != 0xFF { 2 } else { 1 };
+                                let skip = bytes_consumed - pred_header_bytes;
+                                buffer.set_position(saved_pos).map_err(|_| DracoError::DracoError("buf reset".to_string()))?;
+                                skip
+                            } else {
+                                0
+                            };
                             let mut att_decoder = SequentialIntegerAttributeDecoder::new();
                             att_decoder.init(self, att_id);
-                            if !att_decoder.decode_values(pc, &point_ids, buffer, None, None, None, Some(&mut portable)) {
+                            let mut skip_fn = move |buf: &mut crate::decoder_buffer::DecoderBuffer<'_>| -> bool {
+                                if normal_skip_bytes > 0 { buf.advance(normal_skip_bytes); }
+                                true
+                            };
+                            let hook: Option<&mut dyn FnMut(&mut crate::decoder_buffer::DecoderBuffer<'_>) -> bool> =
+                                if normal_skip_bytes > 0 { Some(&mut skip_fn) } else { None };
+                            if !att_decoder.decode_values(pc, &point_ids, buffer, None, None, None, Some(&mut portable), hook) {
                                 return Err(DracoError::DracoError("Failed to decode normal portable values".to_string()));
                             }
-                            pending_normals.push(PendingNormal { att_id, portable, quantization_bits: 0 });
+                            pending_normals.push(PendingNormal { att_id, portable, quantization_bits: quant_bits });
                         }
                         0 => {
                             // Generic sequential values (raw), matching C++
@@ -283,15 +348,19 @@ impl PointCloudDecoder {
                 for (local_i, &att_id) in att_ids.iter().enumerate() {
                     match decoder_types[local_i] {
                         2 => {
-                            let idx = pending_quant.iter().position(|p| p.att_id == att_id).unwrap();
-                            let original = pc.attribute(att_id);
-                            if !pending_quant[idx].transform.decode_parameters(original, buffer) {
-                                return Err(DracoError::DracoError("Failed to decode quantization parameters".to_string()));
+                            if bitstream_version >= 0x0200 {
+                                let idx = pending_quant.iter().position(|p| p.att_id == att_id).unwrap();
+                                let original = pc.attribute(att_id);
+                                if !pending_quant[idx].transform.decode_parameters(original, buffer) {
+                                    return Err(DracoError::DracoError("Failed to decode quantization parameters".to_string()));
+                                }
                             }
                         }
                         3 => {
-                            let idx = pending_normals.iter().position(|p| p.att_id == att_id).unwrap();
-                            pending_normals[idx].quantization_bits = buffer.decode_u8()?;
+                            if bitstream_version >= 0x0200 {
+                                let idx = pending_normals.iter().position(|p| p.att_id == att_id).unwrap();
+                                pending_normals[idx].quantization_bits = buffer.decode_u8()?;
+                            }
                         }
                         _ => {}
                     }

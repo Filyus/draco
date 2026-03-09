@@ -2,7 +2,7 @@ use crate::decoder_buffer::DecoderBuffer;
 use crate::edgebreaker_connectivity_decoder::{EdgebreakerTraversalDecoder};
 use crate::corner_table::CornerTable;
 use crate::geometry_indices::{CornerIndex, VertexIndex};
-use crate::mesh_edgebreaker_shared::{EdgeFaceName};
+use crate::mesh_edgebreaker_shared::{EdgeFaceName, TopologySplitEventData};
 use crate::symbol_encoding::decode_symbols;
 use crate::symbol_encoding::SymbolEncodingOptions;
 use crate::rans_bit_decoder::RAnsBitDecoder;
@@ -18,13 +18,23 @@ pub struct MeshEdgebreakerTraversalValenceDecoder<'a> {
     max_valence: i32,
     context_symbols: Vec<Vec<u32>>,
     context_counters: Vec<i32>,
+    topology_split_data: Vec<TopologySplitEventData>,
+    split_event_remaining: usize,
     pub(crate) start_face_decoder: RAnsBitDecoder<'a>,
     pub(crate) has_start_face_bits: bool,
+    pub(crate) start_face_bits_legacy: Option<Vec<bool>>,
+    start_face_bits_legacy_index: usize,
     pub(crate) processed_connectivity_corners: Vec<u32>,
 }
 
 impl<'a> MeshEdgebreakerTraversalValenceDecoder<'a> {
-    pub fn new(start_face_decoder: RAnsBitDecoder<'a>, has_start_face_bits: bool) -> Self {
+    pub fn new(
+        start_face_decoder: RAnsBitDecoder<'a>,
+        has_start_face_bits: bool,
+        topology_split_data: Vec<TopologySplitEventData>,
+        start_face_bits_legacy: Option<Vec<bool>>,
+    ) -> Self {
+        let split_event_remaining = topology_split_data.len();
         Self {
             corner_table: None,
             num_vertices: 0,
@@ -35,8 +45,12 @@ impl<'a> MeshEdgebreakerTraversalValenceDecoder<'a> {
             max_valence: 7,
             context_symbols: Vec::new(),
             context_counters: Vec::new(),
+            topology_split_data,
+            split_event_remaining,
             start_face_decoder,
             has_start_face_bits,
+            start_face_bits_legacy,
+            start_face_bits_legacy_index: 0,
             processed_connectivity_corners: Vec::new(),
         }
     }
@@ -97,6 +111,11 @@ impl<'a> EdgebreakerTraversalDecoder for MeshEdgebreakerTraversalValenceDecoder<
     }
 
     fn decode_start_face_configuration(&mut self) -> bool {
+        if let Some(ref bits) = self.start_face_bits_legacy {
+            let idx = self.start_face_bits_legacy_index;
+            self.start_face_bits_legacy_index += 1;
+            return bits.get(idx).copied().unwrap_or(true);
+        }
         if self.has_start_face_bits {
             self.start_face_decoder.decode_next_bit()
         } else {
@@ -110,7 +129,18 @@ impl<'a> EdgebreakerTraversalDecoder for MeshEdgebreakerTraversalValenceDecoder<
         }
     }
 
-    fn is_topology_split(&mut self, _encoder_symbol_id: i32) -> Option<(EdgeFaceName, i32)> { None }
+    fn is_topology_split(&mut self, encoder_symbol_id: i32) -> Option<(EdgeFaceName, i32)> {
+        if self.split_event_remaining > 0 {
+            let event = &self.topology_split_data[self.split_event_remaining - 1];
+            if event.source_symbol_id == encoder_symbol_id as u32 {
+                self.split_event_remaining -= 1;
+                return Some((event.source_edge, event.split_symbol_id as i32));
+            } else if event.source_symbol_id > encoder_symbol_id as u32 {
+                return Some((EdgeFaceName::LeftFaceEdge, -1));
+            }
+        }
+        None
+    }
 
     fn on_vertex_created(&mut self, vertex: VertexIndex, symbol_id: i32, _corner_index: i32) {
         // When vertex is created, set its initial valence to 0

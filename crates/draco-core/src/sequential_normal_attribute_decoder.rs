@@ -88,7 +88,7 @@ impl SequentialNormalAttributeDecoder {
         
         self.base.set_prediction_scheme(prediction_scheme);
         
-        if !self.base.decode_values(point_cloud, point_ids, buffer, corner_table, data_to_corner_map, None, Some(&mut portable_attribute)) {
+        if !self.base.decode_values(point_cloud, point_ids, buffer, corner_table, data_to_corner_map, None, Some(&mut portable_attribute), None) {
             return Err(DracoError::DracoError("Failed to decode values".to_string()));
         }
         
