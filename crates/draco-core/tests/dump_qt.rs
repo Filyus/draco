@@ -30,7 +30,7 @@ fn dump_rust_qt() {
     std::env::set_var("DRACO_DEBUG_CMP_CPP", "1");
     std::env::set_var("DRACO_DEBUG_CMP_CPP_FILE", "artifacts/rust_qt_dump.txt");
 
-    let mut pos_attr = create_complex_mesh_pos_attr();
+    let pos_attr = create_complex_mesh_pos_attr();
     let mut transform = AttributeQuantizationTransform::new();
     let ok = transform.compute_parameters(&pos_attr, 10);
     assert!(ok, "compute_parameters failed");

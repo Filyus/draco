@@ -652,12 +652,12 @@ impl MeshDecoder {
                             point_ids_for_values.len(),
                         );
                         let mut transform = AttributeQuantizationTransform::new();
-                        // For v < 2.0, quantization params are stored BEFORE the
-                        // integer values in the stream. We peek ahead past the
-                        // prediction header to read them, then reset the buffer
-                        // so decode_values can re-read the prediction header.
-                        // decode_values then gets a skip hook to jump past the
-                        // quant params bytes (already consumed above).
+                        // For C++ files with bitstream version < 2.0, quantization params are
+                        // stored BEFORE the integer values in the stream (legacy format from
+                        // old Draco versions). v2.0+ store quant params after values.
+                        // NOTE: The Rust encoder never writes v < 2.0 format, so Rust-generated
+                        // files at version 1.x use the v2.0+ layout regardless of version header.
+                        // This peek-ahead is only for reading actual old C++ files.
                         let quant_skip_bytes = if bitstream_version < 0x0200 {
                             let saved_pos = buffer.position();
                             let method_byte = buffer.decode_u8().map_err(|_| DracoError::DracoError("Failed to read prediction method".to_string()))?;
@@ -715,11 +715,10 @@ impl MeshDecoder {
                             false,
                             point_ids_for_values.len(),
                         );
-                        // For v < 2.0, octahedron quantization_bits is stored
-                        // AFTER prediction header but BEFORE compressed integer
-                        // values (C++ DecodeIntegerValues override calls
-                        // DecodeParameters before base::DecodeIntegerValues).
-                        // Use save/restore/skip like the quantization case.
+                        // For C++ files with bitstream version < 2.0, octahedron quantization_bits
+                        // is stored AFTER prediction header but BEFORE integer values (legacy
+                        // format from old Draco versions). v2.0+ store it after all values.
+                        // NOTE: The Rust encoder never writes v < 2.0 format.
                         let mut quant_bits: u8 = 0;
                         let normal_skip_bytes = if bitstream_version < 0x0200 {
                             let saved_pos = buffer.position();
@@ -773,8 +772,9 @@ impl MeshDecoder {
             }
 
             // Decode transform data for all attributes.
-            // For v < 2.0, quantization params were already decoded before integer
-            // values. For v >= 2.0, they are decoded here (after all values).
+            // For C++ files with bitstream version < 2.0, quantization params were already
+            // decoded before integer values (legacy peek-ahead above). For v >= 2.0
+            // (including all Rust-generated files), they are decoded here after all values.
             for (local_i, &att_id) in att_ids.iter().enumerate() {
                 match decoder_types[local_i] {
                     2 => {

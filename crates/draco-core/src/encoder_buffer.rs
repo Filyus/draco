@@ -1,4 +1,5 @@
-#[derive(Default)]
+use crate::version::DEFAULT_MESH_VERSION;
+
 pub struct EncoderBuffer {
     buffer: Vec<u8>,
     bit_encoder_active: bool,
@@ -9,6 +10,21 @@ pub struct EncoderBuffer {
     encode_bit_sequence_size: bool,
 }
 
+impl Default for EncoderBuffer {
+    fn default() -> Self {
+        Self {
+            buffer: Vec::new(),
+            bit_encoder_active: false,
+            bit_start_pos: 0,
+            current_bit_offset: 0,
+            // Default to the latest mesh version so standalone encode/decode
+            // (e.g. encode_symbols/decode_symbols) agrees with DecoderBuffer::new().
+            version_major: DEFAULT_MESH_VERSION.0,
+            version_minor: DEFAULT_MESH_VERSION.1,
+            encode_bit_sequence_size: false,
+        }
+    }
+}
 
 impl EncoderBuffer {
     pub fn new() -> Self {

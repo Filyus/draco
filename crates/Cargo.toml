@@ -28,6 +28,6 @@ opt-level = 2
 [profile.test.package.draco-cpp-ffi]
 opt-level = 2
 
-# Enable thin LTO for cross-crate inlining in test builds.
-[profile.test]
-lto = "thin"
+# Note: LTO is intentionally NOT enabled for tests. `lto = "thin"` disables
+# Rust incremental compilation, causing full rebuilds on every run (~3 minutes).
+# Without LTO, incremental builds complete in ~15 seconds after the first build.

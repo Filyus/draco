@@ -138,36 +138,38 @@ fn test_rans_symbol_malformed_probability_table_rejected() {
 /// Test backward compatibility with pre-v2.0 size prefix encoding (u32 instead of varint).
 #[test]
 fn test_rans_symbol_pre_v2_backward_compat() {
-    // Test pre-v2.0 compatibility: num_symbols is encoded as u8 (not varint)
-    // but rANS size is still varint
+    // Pre-v2.0 (C++ Draco) format:
+    //   - num_symbols is a fixed u32 (little-endian)
+    //   - rANS byte-count is a fixed u64 (little-endian)
     let mut enc_buffer = EncoderBuffer::new();
-    
-    // For pre-v2.0, num_symbols is encoded as u8
-    enc_buffer.encode_u8(1); // 1 symbol
+    enc_buffer.set_version(1, 9); // Pre-v2.0
+
+    // num_symbols = 1 as u32 LE
+    enc_buffer.encode_u32(1);
     // Probability for single symbol = 4096 (full precision for 12-bit)
     // 4096 >= 64 and < 16384, so mode=1
     // byte0 = ((4096 & 0x3F) << 2) | 1 = (0 << 2) | 1 = 1
     // byte1 = 4096 >> 6 = 64
     enc_buffer.encode_u8(1);  // prob=4096 low 6 bits = 0, mode=1
     enc_buffer.encode_u8(64); // prob >> 6 = 64
-    
-    // Size prefix as varint (size is always varint, even in pre-v2.0)
-    enc_buffer.encode_varint(0u64); // 0 bytes of rANS data for single symbol
-    
+
+    // Size prefix as u64 (pre-v2.0 uses fixed 8-byte size)
+    enc_buffer.encode_u64(0u64); // 0 bytes of rANS data for single symbol
+
     // Sentinel
     enc_buffer.encode_u8(0xEF);
-    
+
     let data = enc_buffer.data();
     let mut dec_buffer = DecoderBuffer::new(data);
     dec_buffer.set_version(1, 9); // Pre-v2.0
-    
+
     let mut decoder = RAnsSymbolDecoder::new(12);
     assert!(decoder.create(&mut dec_buffer), "Failed to create decoder for pre-v2.0");
     assert!(decoder.start_decoding(&mut dec_buffer), "Failed to start decoding for pre-v2.0");
-    
+
     // Single symbol always returns 0
     assert_eq!(decoder.decode_symbol(), 0);
-    
+
     // Verify sentinel
     let sentinel = dec_buffer.decode_u8().expect("Failed to read sentinel");
     assert_eq!(sentinel, 0xEF, "Pre-v2.0 backward compat failed - buffer position wrong");

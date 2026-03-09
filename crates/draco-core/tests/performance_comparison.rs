@@ -21,6 +21,7 @@ fn get_cpp_encoder_path() -> Option<PathBuf> {
     }
 }
 
+#[allow(dead_code)]
 fn get_cpp_decoder_path() -> Option<PathBuf> {
     let path = Path::new("../../build-original/src/draco/Release/draco_decoder.exe");
     if path.exists() {
@@ -30,6 +31,7 @@ fn get_cpp_decoder_path() -> Option<PathBuf> {
     }
 }
 
+#[allow(dead_code)]
 fn create_grid_mesh(grid_size: usize) -> Mesh {
     let mut mesh = Mesh::new();
     let num_points = grid_size * grid_size;
@@ -119,6 +121,7 @@ fn benchmark_rust_encoding(mesh: &Mesh, speed: i32, iterations: u32) -> (f64, us
     (total_time / iterations as f64, output_size)
 }
 
+#[allow(dead_code)]
 fn benchmark_rust_decoding(encoded_data: &[u8], iterations: u32) -> f64 {
     let mut total_time = 0.0;
     
@@ -136,6 +139,7 @@ fn benchmark_rust_decoding(encoded_data: &[u8], iterations: u32) -> f64 {
     total_time / iterations as f64
 }
 
+#[allow(dead_code)]
 fn benchmark_cpp_decoding(decoder_path: &Path, drc_path: &Path, iterations: u32) -> f64 {
     let obj_out = drc_path.with_extension("decoded.obj");
     let mut total_time = 0.0;
@@ -223,7 +227,6 @@ fn test_performance_comparison() {
     println!("{}", "-".repeat(70));
     
     for &grid_size in &grid_sizes {
-        let mesh = create_grid_mesh(grid_size);
         let num_faces = (grid_size - 1) * (grid_size - 1) * 2;
         let num_points = grid_size * grid_size;
         
