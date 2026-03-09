@@ -86,7 +86,22 @@ crates/**/*.pdb
 crates/**/*.ply
 
 # Test-generated input/output files
+test_output.txt
+test_out.txt
+test_out2.txt
+**/test_out*.txt
+**/test_output.txt
+test_decode_speed*.html
 
+# Generated testdata from C++ interop / speed tests
+testdata/cpp_encoded_*.drc
+testdata/speed/
+
+# Temporary debug/development source files (not for production)
+crates/**/examples/debug_*.rs
+crates/**/tests/cross_impl_test.rs
+crates/**/tests/prediction_debug_test.rs
+crates/**/tests/symbol_parity_test.rs
 
 # Python bytecode (keep .py source files tracked)
 __pycache__/

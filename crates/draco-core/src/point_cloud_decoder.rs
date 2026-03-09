@@ -241,6 +241,7 @@ impl PointCloudDecoder {
                                 num_points,
                             );
                             let mut transform = AttributeQuantizationTransform::new();
+
                             // For v <= 1.1 (C++ legacy), quantization params are stored BEFORE
                             // integer values in the stream. v1.2+ (including Rust-generated v1.3)
                             // store them after, same as v2.0+.
