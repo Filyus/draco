@@ -207,7 +207,7 @@ impl SequentialIntegerAttributeEncoder {
         // Maps need to live long enough
         let mut vertex_to_data_map = Vec::new();
         let mut data_to_corner_map = Vec::new();
-
+        
         if let Some(ref mut scheme) = self.prediction_scheme {
              selected_method = scheme.get_prediction_method();
              selected_transform_type = scheme.get_transform_type();
@@ -654,6 +654,10 @@ impl SequentialIntegerAttributeEncoder {
         }
 
         // 4. Encode Prediction Method and Transform Type
+        if std::env::var("DRACO_DEBUG_CMP_CPP").is_ok() {
+            eprintln!("RUST: Encoding prediction method {} (0x{:x}), transform type {:?}", 
+                     selected_method as i8, selected_method as u8, selected_transform_type);
+        }
         out_buffer.encode_u8(selected_method as u8);
         
         if selected_method != PredictionSchemeMethod::None {
@@ -683,9 +687,11 @@ impl SequentialIntegerAttributeEncoder {
         // Write compression level/type (1 = compressed with symbols)
         out_buffer.encode_u8(1);
         
-        let options = SymbolEncodingOptions::default();
+        let mut symbol_options = SymbolEncodingOptions::default();
+        symbol_options.compression_level = 10 - options.get_encoding_speed();
+        
         let _start_len = out_buffer.size();
-        let ok = encode_symbols(&symbols, num_components, &options, out_buffer);
+        let ok = encode_symbols(&symbols, num_components, &symbol_options, out_buffer);
         if !ok {
             return false;
         }

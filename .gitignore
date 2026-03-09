@@ -5,6 +5,14 @@ build/
 build-original/
 build-cmake/
 build_transcoder/
+**/build_compare/
+
+# Debug/development output directories
+**/artifacts/
+output/
+
+# Debug/development scripts and utilities (not for production)
+crates/**/debug/
 
 # Visual Studio
 .vs/
@@ -64,9 +72,18 @@ web/www/pkg/
 /*.drc
 crates/**/*.drc
 
+# Temporary hex dump files
+**/*.hex
+
 # Generated decoded mesh files
 *.drc.ply
 *.drc.obj
+
+# Temporary object/executable files in crates
+crates/**/*.obj
+crates/**/*.exe
+crates/**/*.pdb
+crates/**/*.ply
 
 # Test-generated input/output files
 

@@ -200,6 +200,16 @@ target_link_libraries(basic_test draco_core)
 add_executable(comprehensive_test examples/comprehensive_test.cpp)
 target_link_libraries(comprehensive_test draco_core)
 
+# Speed comparison test
+add_executable(speed_compare_test examples/speed_compare_test.cpp)
+target_link_libraries(speed_compare_test draco_core)
+target_compile_features(speed_compare_test PRIVATE cxx_std_11)
+
+# Decode and print test (for cross-implementation comparison)
+add_executable(decode_and_print examples/decode_and_print.cpp)
+target_link_libraries(decode_and_print draco_core)
+target_compile_features(decode_and_print PRIVATE cxx_std_11)
+
 # Set C++ standard requirement for examples
 target_compile_features(basic_test PRIVATE cxx_std_11)
 target_compile_features(comprehensive_test PRIVATE cxx_std_11)

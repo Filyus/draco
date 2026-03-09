@@ -15,7 +15,7 @@ pub trait EdgebreakerTraversalDecoder {
 
     // Matches C++ traversal_decoder_.NewActiveCornerReached(active_corner_stack.back()).
     // Called after each decoded symbol/face to record the traversal order.
-    fn new_active_corner_reached(&mut self, _corner: CornerIndex) {}
+    fn new_active_corner_reached(&mut self, _corner: CornerIndex, _corner_table: &CornerTable) {}
 }
 
 pub struct EdgebreakerConnectivityDecoder {
@@ -240,7 +240,7 @@ impl EdgebreakerConnectivityDecoder {
             // This is the decoder-side equivalent of the encoder's corner visitation order
             // and is used for attribute sequencing.
             if let Some(&active_corner) = self.active_corner_stack.last() {
-                traversal_decoder.new_active_corner_reached(active_corner);
+                traversal_decoder.new_active_corner_reached(active_corner, &self.corner_table);
             } else {
                 return Err("active_corner_stack empty after decoding symbol".to_string());
             }
@@ -344,6 +344,16 @@ impl EdgebreakerConnectivityDecoder {
             }
 
             num_vertices -= 1;
+        }
+
+        // Debug output: show corner table after connectivity decoding
+        if std::env::var("DRACO_VERBOSE").is_ok() {
+            eprintln!("Rust CONN: Corner table after connectivity:");
+            let max_corners = 12.min(self.corner_table.num_faces() * 3);
+            for c in 0..max_corners {
+                eprintln!("  corner {} -> vertex {}", c, self.corner_table.vertex(CornerIndex(c as u32)).0);
+            }
+            eprintln!("Rust CONN: num_vertices after compaction = {}", num_vertices);
         }
 
         Ok(num_vertices)

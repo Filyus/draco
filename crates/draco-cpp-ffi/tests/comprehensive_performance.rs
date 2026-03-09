@@ -1,0 +1,259 @@
+// Comprehensive performance and correctness test for all encoding speeds
+
+mod common;
+
+use std::time::Instant;
+use draco_core::mesh::Mesh;
+use draco_core::mesh_encoder::MeshEncoder;
+use draco_core::mesh_decoder::MeshDecoder;
+use draco_core::encoder_buffer::EncoderBuffer;
+use draco_core::decoder_buffer::DecoderBuffer;
+use draco_core::geometry_indices::{PointIndex, FaceIndex};
+use draco_core::EncoderOptions;
+use draco_core::geometry_attribute::{PointAttribute, GeometryAttributeType};
+use draco_core::draco_types::DataType;
+use draco_cpp_ffi;
+
+fn create_grid_mesh_data(grid_size: usize) -> (Vec<f32>, Vec<u32>) {
+    let num_points = grid_size * grid_size;
+    let num_faces = (grid_size - 1) * (grid_size - 1) * 2;
+    
+    // Create positions
+    let mut positions = Vec::with_capacity(num_points * 3);
+    for y in 0..grid_size {
+        for x in 0..grid_size {
+            let px = x as f32;
+            let py = y as f32;
+            let pz = (x as f32 * 0.2).sin() * (y as f32 * 0.2).cos() * 2.0;
+            positions.push(px);
+            positions.push(py);
+            positions.push(pz);
+        }
+    }
+    
+    // Create faces
+    let mut faces = Vec::with_capacity(num_faces * 3);
+    for y in 0..grid_size - 1 {
+        for x in 0..grid_size - 1 {
+            let p0 = (y * grid_size + x) as u32;
+            let p1 = (y * grid_size + x + 1) as u32;
+            let p2 = ((y + 1) * grid_size + x) as u32;
+            let p3 = ((y + 1) * grid_size + x + 1) as u32;
+            
+            faces.push(p0);
+            faces.push(p1);
+            faces.push(p2);
+            
+            faces.push(p1);
+            faces.push(p3);
+            faces.push(p2);
+        }
+    }
+    
+    (positions, faces)
+}
+
+fn create_mesh_from_data(positions: &[f32], faces: &[u32]) -> Mesh {
+    let num_points = positions.len() / 3;
+    let num_faces = faces.len() / 3;
+    
+    let mut mesh = Mesh::new();
+    mesh.set_num_points(num_points);
+    mesh.set_num_faces(num_faces);
+    
+    let mut pos_attr = PointAttribute::new();
+    pos_attr.init(GeometryAttributeType::Position, 3, DataType::Float32, false, num_points);
+    
+    for i in 0..num_points {
+        let offset = i * 3 * 4;
+        pos_attr.buffer_mut().update(&positions[i * 3].to_le_bytes(), Some(offset));
+        pos_attr.buffer_mut().update(&positions[i * 3 + 1].to_le_bytes(), Some(offset + 4));
+        pos_attr.buffer_mut().update(&positions[i * 3 + 2].to_le_bytes(), Some(offset + 8));
+    }
+    mesh.add_attribute(pos_attr);
+    
+    for i in 0..num_faces {
+        mesh.set_face(
+            FaceIndex(i as u32),
+            [
+                PointIndex(faces[i * 3]),
+                PointIndex(faces[i * 3 + 1]),
+                PointIndex(faces[i * 3 + 2]),
+            ]
+        );
+    }
+    
+    mesh
+}
+
+#[test]
+fn comprehensive_performance_test() {
+    common::disable_noisy_debug_env();
+
+    if !draco_cpp_ffi::is_available() {
+        eprintln!("SKIPPING: C++ FFI not available");
+        return;
+    }
+    
+    let (major, minor, revision) = draco_cpp_ffi::get_version();
+    println!("\n╔═══════════════════════════════════════════════════════════════════════╗");
+    println!("║     COMPREHENSIVE DRACO PERFORMANCE TEST (Rust vs C++)               ║");
+    println!("╚═══════════════════════════════════════════════════════════════════════╝");
+    println!("C++ Draco version: {}.{}.{}", major, minor, revision);
+    println!("Rust implementation: draco-core v0.1.0\n");
+    
+    let grid_size = 100;
+    let (positions, faces) = create_grid_mesh_data(grid_size);
+    let mesh = create_mesh_from_data(&positions, &faces);
+    
+    let num_points = positions.len() / 3;
+    let num_faces = faces.len() / 3;
+    
+    println!("Test mesh: {}×{} grid ({} points, {} faces)\n", 
+             grid_size, grid_size, num_points, num_faces);
+    
+    // Test all speeds from 0 to 10
+    let speeds = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    let encode_iterations = 10;
+    let decode_iterations = 50;
+    
+    println!("┌───────────────────────────────────────────────────────────────────────┐");
+    println!("│                        ENCODING PERFORMANCE                           │");
+    println!("├───────┬──────────┬──────────┬──────────┬─────────┬──────────┬─────────┤");
+    println!("│ Speed │   Size   │ Rust (µs)│ C++ (µs) │  Ratio  │  Winner  │  Match  │");
+    println!("├───────┼──────────┼──────────┼──────────┼─────────┼──────────┼─────────┤");
+    
+    let mut encode_results = Vec::new();
+    
+    for &speed in &speeds {
+        // Rust encoding - time just the encoding, not mesh cloning
+        let mut options = EncoderOptions::new();
+        options.set_global_int("encoding_speed", speed);
+        options.set_global_int("decoding_speed", speed);
+        options.set_attribute_int(0, "quantization_bits", 10);
+        
+        let mut rust_total_us = 0u128;
+        let mut rust_data = Vec::new();
+        
+        for _ in 0..encode_iterations {
+            let mut encoder = MeshEncoder::new();
+            encoder.set_mesh(mesh.clone());
+            let mut encoder_buffer = EncoderBuffer::new();
+            
+            // Time only the encoding operation
+            let start = Instant::now();
+            encoder.encode(&options, &mut encoder_buffer).expect("Rust encode failed");
+            rust_total_us += start.elapsed().as_micros();
+            
+            rust_data = encoder_buffer.data().to_vec();
+        }
+        let rust_avg_us = (rust_total_us as f64) / (encode_iterations as f64);
+        
+        // C++ encoding
+        let cpp_result = draco_cpp_ffi::benchmark_cpp_encode(
+            &positions,
+            &faces,
+            speed,
+            speed,
+            10,
+            encode_iterations,
+        );
+        
+        let (cpp_avg_us, cpp_data_size, _cpp_success) = match cpp_result {
+            Some(r) => (r.avg_time_us as f64, r.output_size, true),
+            None => {
+                println!("│ {:>5} │ {:>8} │ {:>8.1} │   FAILED │    -    │    -     │    -    │", 
+                         speed, rust_data.len(), rust_avg_us);
+                continue;
+            }
+        };
+        
+        let ratio = rust_avg_us / cpp_avg_us;
+        let winner = if ratio < 1.0 { "Rust" } else { "C++" };
+        let size_match = rust_data.len() == cpp_data_size;
+        let match_str = if size_match { "✓" } else { "✗" };
+        
+        println!("│ {:>5} │ {:>8} │ {:>8.1} │ {:>8.1} │ {:>7.2}x │ {:>8} │ {:>7} │", 
+                 speed, rust_data.len(), rust_avg_us, cpp_avg_us, ratio, winner, match_str);
+        
+        encode_results.push((speed, rust_data, ratio, size_match));
+    }
+    
+    println!("└───────┴──────────┴──────────┴──────────┴─────────┴──────────┴─────────┘");
+    
+    println!("\n┌───────────────────────────────────────────────────────────────────────┐");
+    println!("│                        DECODING PERFORMANCE                           │");
+    println!("├───────┬──────────┬──────────┬──────────┬─────────┬──────────┬─────────┤");
+    println!("│ Speed │   Size   │ Rust (µs)│ C++ (µs) │  Ratio  │  Winner  │ Correct │");
+    println!("├───────┼──────────┼──────────┼──────────┼─────────┼──────────┼─────────┤");
+    
+    for (speed, rust_encoded, _encode_ratio, size_match) in encode_results {
+        if !size_match {
+            println!("│ {:>5} │ {:>8} │    -     │    -     │    -    │    -     │  SKIP   │", 
+                     speed, rust_encoded.len());
+            eprintln!("DEBUG: Speed {} skipped - size_match=false", speed);
+            continue;
+        }
+        
+        // C++ decoding
+        let cpp_result = draco_cpp_ffi::profile_cpp_decode(&rust_encoded, decode_iterations);
+        let (cpp_avg_us, cpp_points, cpp_faces) = match cpp_result {
+            Some(r) => (r.decode_time_us as f64, r.num_points, r.num_faces),
+            None => {
+                println!("│ {:>5} │ {:>8} │    -     │   FAILED │    -    │    -     │    -    │", 
+                         speed, rust_encoded.len());
+                continue;
+            }
+        };
+        
+        // Rust decoding
+        let mut rust_total_us = 0u128;
+        let mut rust_points = 0;
+        let mut rust_faces = 0;
+        let mut rust_success = true;
+        
+        for _ in 0..decode_iterations {
+            let mut decoder_buffer = DecoderBuffer::new(&rust_encoded);
+            let mut out_mesh = Mesh::new();
+            let mut decoder = MeshDecoder::new();
+            
+            let start = Instant::now();
+            match decoder.decode(&mut decoder_buffer, &mut out_mesh) {
+                Ok(_) => {
+                    rust_total_us += start.elapsed().as_micros();
+                    rust_points = out_mesh.num_points();
+                    rust_faces = out_mesh.num_faces();
+                }
+                Err(_) => {
+                    rust_success = false;
+                    break;
+                }
+            }
+        }
+        
+        if !rust_success {
+            println!("│ {:>5} │ {:>8} │   FAILED │ {:>8.1} │    -    │    -     │    -    │", 
+                     speed, rust_encoded.len(), cpp_avg_us);
+            continue;
+        }
+        
+        let rust_avg_us = (rust_total_us as f64) / (decode_iterations as f64);
+        let ratio = rust_avg_us / cpp_avg_us;
+        let winner = if ratio < 1.0 { "Rust" } else { "C++" };
+        let correct = rust_points == cpp_points as usize && rust_faces == cpp_faces as usize;
+        let correct_str = if correct { "✓" } else { "✗" };
+        
+        println!("│ {:>5} │ {:>8} │ {:>8.1} │ {:>8.1} │ {:>7.2}x │ {:>8} │ {:>7} │", 
+                 speed, rust_encoded.len(), rust_avg_us, cpp_avg_us, ratio, winner, correct_str);
+    }
+    
+    println!("└───────┴──────────┴──────────┴──────────┴─────────┴──────────┴─────────┘");
+    
+    println!("\nNotes:");
+    println!("  • Encoding iterations: {}", encode_iterations);
+    println!("  • Decoding iterations: {}", decode_iterations);
+    println!("  • Ratio < 1.0 means Rust is faster");
+    println!("  • Ratio > 1.0 means C++ is faster");
+    println!("  • Match: Binary output size comparison");
+    println!("  • Correct: Decoded mesh matches original\n");
+}

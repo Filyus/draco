@@ -633,6 +633,10 @@ impl<R: Read + Seek> FbxReader<R> {
             );
         }
 
+        // Match C++ Draco behavior: deduplicate point IDs in face-traversal order.
+        // This ensures binary compatibility when encoding.
+        mesh.deduplicate_point_ids();
+
         Ok(Some(mesh))
     }
 }

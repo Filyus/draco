@@ -285,7 +285,6 @@ impl PointCloudDecoder {
                         2 => {
                             let idx = pending_quant.iter().position(|p| p.att_id == att_id).unwrap();
                             let original = pc.attribute(att_id);
-                            println!("DEBUG: Decoding quantization params. Pos: {}, Remaining: {}", buffer.position(), buffer.remaining_size());
                             if !pending_quant[idx].transform.decode_parameters(original, buffer) {
                                 return Err(DracoError::DracoError("Failed to decode quantization parameters".to_string()));
                             }

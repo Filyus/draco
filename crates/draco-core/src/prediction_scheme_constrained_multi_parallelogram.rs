@@ -163,7 +163,10 @@ where
         let mut total_parallelograms: [i64; MAX_NUM_PARALLELOGRAMS] = [0; MAX_NUM_PARALLELOGRAMS];
         let mut total_used_parallelograms: [i64; MAX_NUM_PARALLELOGRAMS] = [0; MAX_NUM_PARALLELOGRAMS];
 
-        for data_id in 0..num_entries {
+        // C++ encoder processes vertices from the end because this prediction uses
+        // data from previous entries that could be overwritten when an entry is processed.
+        // We iterate BACKWARD from (num_entries - 1) down to 1, matching C++.
+        for data_id in (1..num_entries).rev() {
             let data_offset = data_id * num_components;
             
             let corner_id = if let Some(map) = self.mesh_data.data_to_corner_map() {
@@ -296,9 +299,10 @@ where
                 );
                 for c in 0..num_components {
                     out_corr[data_offset + c] = corr_val[c];
+                    // For entropy tracking, C++ uses predicted - actual
                     let val = in_data[data_offset + c].into();
                     let pred = predicted_val[c].into();
-                    let dif = val - pred;
+                    let dif = pred - val;  // predicted - actual, like C++
                     entropy_symbols[c] = Self::convert_signed_int_to_symbol(dif);
                 }
                 self.entropy_tracker.push(&entropy_symbols);
@@ -309,8 +313,10 @@ where
                 let ci = corners[i];
                 let oci = corner_table.opposite(ci);
                 let vert_opp = vertex_to_data_map[corner_table.vertex(oci).0 as usize];
-                let vert_next = vertex_to_data_map[corner_table.vertex(corner_table.next(ci)).0 as usize];
-                let vert_prev = vertex_to_data_map[corner_table.vertex(corner_table.previous(ci)).0 as usize];
+                // BUG FIX: Must use oci (opposite corner), not ci, to get next/prev vertices
+                // This matches C++ ComputeParallelogramPrediction() behavior
+                let vert_next = vertex_to_data_map[corner_table.vertex(corner_table.next(oci)).0 as usize];
+                let vert_prev = vertex_to_data_map[corner_table.vertex(corner_table.previous(oci)).0 as usize];
                 
                 let v_opp_off = (vert_opp as usize) * num_components;
                 let v_next_off = (vert_next as usize) * num_components;
@@ -327,9 +333,15 @@ where
 
             let mut best_error = Error { num_bits: i64::MAX, residual_error: i64::MAX };
             let mut best_config = 0u8;
+            let mut best_num_used = 0;
+            
+            // C++ increments total_parallelograms BEFORE evaluating any configurations.
+            // This is critical for matching the overhead calculation exactly.
+            let context = num_parallelograms - 1;
+            total_parallelograms[context] += num_parallelograms as i64;
             
             let num_configs = 1 << num_parallelograms;
-            // Config 0 is valid (all creases)
+            // Config 0 is valid (all creases = delta prediction)
             for config in 0..num_configs {
                 let mut num_used = 0;
                 for k in 0..num_components {
@@ -343,7 +355,7 @@ where
                 }
 
                 if num_used == 0 {
-                    // Delta prediction
+                    // Delta prediction (config 0: all parallelograms marked as creases)
                     let mut predicted_val = vec![DataType::default(); num_components];
                     if data_id > 0 {
                         let prev_offset = (data_id - 1) * num_components;
@@ -354,9 +366,10 @@ where
                     
                     let mut error = Error::new();
                     for c in 0..num_components {
+                        // For entropy tracking, C++ uses predicted - actual
                         let val = in_data[data_offset + c].into();
                         let pred = predicted_val[c].into();
-                        let dif = val - pred;
+                        let dif = pred - val;  // predicted - actual, like C++
                         error.residual_error += dif.abs();
                         entropy_symbols[c] = Self::convert_signed_int_to_symbol(dif);
                     }
@@ -365,53 +378,44 @@ where
                     error.num_bits = ShannonEntropyTracker::get_number_of_data_bits_static(&entropy_data) +
                                      ShannonEntropyTracker::get_number_of_r_ans_table_bits_static(&entropy_data);
                     
-                    // Add overhead bits
-                    // Overhead for config 0 (all creases)
-                    // We need to encode '0' for each parallelogram in the context.
-                    // The context is `num_parallelograms - 1`.
-                    let context = num_parallelograms - 1;
+                    // Add overhead bits - C++ uses total cumulative overhead
+                    // For config 0: no parallelograms used, so total_used stays the same
                     let overhead_bits = Self::compute_overhead_bits(
                         total_used_parallelograms[context],
                         total_parallelograms[context],
-                        num_parallelograms as i64,
-                        0,
                     );
                     error.num_bits += overhead_bits;
 
                     if error < best_error {
                         best_error = error;
                         best_config = config as u8;
+                        best_num_used = 0;
                     }
                     continue;
                 }
                 
                 // Multi-parallelogram prediction
+                // Encoder must use same accumulation as decoder: AddAsUnsigned (wrapping add)
                 for k in 0..num_components {
-                    let mut sum: i64 = 0;
+                    let mut sum: i32 = 0;
                     for i in 0..num_parallelograms {
                         if (config & (1 << i)) != 0 {
-                            sum += pred_vals[i][k].into();
+                            let pred_val: i64 = pred_vals[i][k].into();
+                            // AddAsUnsigned: convert to unsigned, add, convert back
+                            sum = (sum as u32).wrapping_add(pred_val as u32) as i32;
                         }
                     }
-                    let val = (sum + (num_used as i64 / 2)) / num_used as i64;
-                    // We need to convert i64 back to DataType.
-                    // Since we don't have From<i64> for DataType in the trait bounds (except via generic),
-                    // and we know DataType is likely i32, we can try to cast.
-                    // But we can't cast generic.
-                    // However, we have `DataType: Into<i64>`.
-                    // We can use `DataType::from_i64` if we add it to `ParallelogramDataType`.
-                    // Or we can assume `DataType` is `i32` or `u32` etc.
-                    // Let's assume we can just use a hack or add the trait.
-                    // For now, let's assume `DataType` implements `From<i32>` (which it does in bounds)
-                    // and the value fits in `i32`.
-                    multi_pred_vals[k] = DataType::from(val as i32);
+                    // C++ uses truncating integer division (not rounding)
+                    let val = sum / num_used as i32;
+                    multi_pred_vals[k] = DataType::from(val);
                 }
 
                 let mut error = Error::new();
                 for c in 0..num_components {
+                    // For entropy tracking, C++ uses predicted - actual
                     let val = in_data[data_offset + c].into();
                     let pred = multi_pred_vals[c].into();
-                    let dif = val - pred;
+                    let dif = pred - val;  // predicted - actual, like C++
                     error.residual_error += dif.abs();
                     entropy_symbols[c] = Self::convert_signed_int_to_symbol(dif);
                 }
@@ -420,13 +424,11 @@ where
                 error.num_bits = ShannonEntropyTracker::get_number_of_data_bits_static(&entropy_data) +
                                  ShannonEntropyTracker::get_number_of_r_ans_table_bits_static(&entropy_data);
                 
-                // Add overhead bits
-                let context = num_parallelograms - 1;
+                // Add overhead bits - C++ computes overhead assuming this config is chosen
+                // If num_used parallelograms are used, total_used increases by num_used
                 let overhead_bits = Self::compute_overhead_bits(
-                    total_used_parallelograms[context],
+                    total_used_parallelograms[context] + num_used as i64,
                     total_parallelograms[context],
-                    num_parallelograms as i64,
-                    num_used as i64,
                 );
                 
                 error.num_bits += overhead_bits;
@@ -434,25 +436,87 @@ where
                 if error < best_error {
                     best_error = error;
                     best_config = config as u8;
+                    best_num_used = num_used;
                 }
             }
             
-            // Apply best config
-            let context = num_parallelograms - 1;
-            let mut num_used = 0;
+            // Diagnostic logging: compare cumulative vs marginal cost choices if requested
+            if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+                use std::sync::atomic::AtomicUsize;
+                static _CMP_DIV_COUNT: AtomicUsize = AtomicUsize::new(0);
+                const _MAX_CMP_DIV_PRINT: usize = 200;
+
+                // Compute marginal-choice simulation (old bug style): per-vertex overhead as local cost
+                let mut marginal_best_error = Error::new();
+                marginal_best_error.num_bits = i64::MAX;
+                let mut _marginal_best_config: u8 = 0;
+                for config in 0..(1 << num_parallelograms) {
+                    let mut num_used = 0;
+                    for i in 0..num_parallelograms {
+                        if (config & (1 << i)) != 0 { num_used += 1; }
+                    }
+                    // compute residual/rans bits same as above
+                    let mut tmp_entropy_symbols = vec![0u32; num_components];
+                    let mut tmp_pred_vals = vec![DataType::default(); num_components];
+                    if num_used == 0 {
+                        if data_id > 0 {
+                            let prev_offset = (data_id - 1) * num_components;
+                            for c in 0..num_components {
+                                tmp_pred_vals[c] = in_data[prev_offset + c];
+                            }
+                        }
+                    } else {
+                        for k in 0..num_components {
+                            let mut sum: i32 = 0;
+                            for i in 0..num_parallelograms {
+                                if (config & (1 << i)) != 0 {
+                                    let pred_val: i64 = pred_vals[i][k].into();
+                                    sum = (sum as u32).wrapping_add(pred_val as u32) as i32;
+                                }
+                            }
+                            let val = sum / num_used as i32;
+                            tmp_pred_vals[k] = DataType::from(val);
+                        }
+                    }
+                    let mut tmp_err = Error::new();
+                    for c in 0..num_components {
+                        let val = in_data[data_offset + c].into();
+                        let pred = tmp_pred_vals[c].into();
+                        let dif = val - pred;
+                        tmp_err.residual_error += dif.abs();
+                        tmp_entropy_symbols[c] = Self::convert_signed_int_to_symbol(dif);
+                    }
+                    let entropy_data = self.entropy_tracker.peek(&tmp_entropy_symbols);
+                    tmp_err.num_bits = ShannonEntropyTracker::get_number_of_data_bits_static(&entropy_data) +
+                        ShannonEntropyTracker::get_number_of_r_ans_table_bits_static(&entropy_data);
+                    // marginal overhead bits (local) as previously implemented: compute binary entropy with historical p
+                    let p = if total_parallelograms[context] == 0 { 0.0 } else { total_used_parallelograms[context] as f64 / total_parallelograms[context] as f64 };
+                    let p = p.clamp(0.001, 0.999);
+                    let num_bits_local = num_parallelograms as i64;
+                    let num_ones = num_used as i64;
+                    let num_zeros = num_bits_local - num_ones;
+                    let local_cost = - (num_ones as f64) * p.log2() - (num_zeros as f64) * (1.0 - p).log2();
+                    let local_cost_bits = local_cost.ceil() as i64;
+                    tmp_err.num_bits += local_cost_bits;
+                    if tmp_err < marginal_best_error {
+                        marginal_best_error = tmp_err;
+                        _marginal_best_config = config as u8;
+                    }
+                }
+            }
+
+            // Apply best config - update total_used_parallelograms (total_parallelograms already updated above)
+            // C++ updates total_used_parallelograms AFTER choosing the best config
+            total_used_parallelograms[context] += best_num_used as i64;
+            
             for i in 0..num_parallelograms {
                 let is_used = (best_config & (1 << i)) != 0;
                 // is_crease_edge stores true if NOT used (crease).
                 self.is_crease_edge[context].push(!is_used);
-                total_parallelograms[context] += 1;
-                if is_used {
-                    num_used += 1;
-                    total_used_parallelograms[context] += 1;
-                }
             }
             
             // Recompute prediction for best config and update output/tracker
-            if num_used == 0 {
+            if best_num_used == 0 {
                  let mut predicted_val = vec![DataType::default(); num_components];
                 if data_id > 0 {
                     let prev_offset = (data_id - 1) * num_components;
@@ -469,21 +533,27 @@ where
                 );
                 for c in 0..num_components {
                     out_corr[data_offset + c] = corr_val[c];
+                    // For entropy tracking, C++ uses predicted - actual
+                    // (opposite of what the transform uses for correction)
                     let val = in_data[data_offset + c].into();
                     let pred = predicted_val[c].into();
-                    let dif = val - pred;
+                    let dif = pred - val;  // predicted - actual, like C++
                     entropy_symbols[c] = Self::convert_signed_int_to_symbol(dif);
                 }
             } else {
+                // Encoder must use same accumulation as decoder: AddAsUnsigned (wrapping add)
                 for k in 0..num_components {
-                    let mut sum: i64 = 0;
+                    let mut sum: i32 = 0;
                     for i in 0..num_parallelograms {
                         if (best_config & (1 << i)) != 0 {
-                            sum += pred_vals[i][k].into();
+                            let pred_val: i64 = pred_vals[i][k].into();
+                            // AddAsUnsigned: convert to unsigned, add, convert back
+                            sum = (sum as u32).wrapping_add(pred_val as u32) as i32;
                         }
                     }
-                    let val = (sum + (num_used as i64 / 2)) / num_used as i64;
-                    multi_pred_vals[k] = DataType::from(val as i32);
+                    // C++ uses truncating integer division (not rounding)
+                    let val = sum / best_num_used as i32;
+                    multi_pred_vals[k] = DataType::from(val);
                 }
                 
                 let mut corr_val = vec![CorrType::default(); num_components];
@@ -494,13 +564,28 @@ where
                 );
                 for c in 0..num_components {
                     out_corr[data_offset + c] = corr_val[c];
+                    // For entropy tracking, C++ uses predicted - actual
+                    // (opposite of what the transform uses for correction)
                     let val = in_data[data_offset + c].into();
                     let pred = multi_pred_vals[c].into();
-                    let dif = val - pred;
+                    let dif = pred - val;  // predicted - actual, like C++
                     entropy_symbols[c] = Self::convert_signed_int_to_symbol(dif);
                 }
             }
             self.entropy_tracker.push(&entropy_symbols);
+        }
+        
+        // First element is always fixed because it cannot be predicted.
+        // Use zero prediction like C++ does.
+        let predicted_val = vec![DataType::default(); num_components];
+        let mut corr_val = vec![CorrType::default(); num_components];
+        self.transform.compute_correction(
+            &in_data[0..num_components],
+            &predicted_val,
+            &mut corr_val,
+        );
+        for c in 0..num_components {
+            out_corr[c] = corr_val[c];
         }
         
         true
@@ -518,9 +603,28 @@ where
             if num_flags > 0 {
                 let mut ans_encoder = RAnsBitEncoder::new();
                 ans_encoder.start_encoding();
-                for &is_crease in &self.is_crease_edge[i] {
-                    ans_encoder.encode_bit(is_crease);
+                
+                // C++ encoder processes vertices BACKWARD (high to low) and writes flags
+                // in REVERSE order (from last group to first). Since ANS is LIFO, this 
+                // results in flags decoding in the order they were collected (backward),
+                // which is the same order the decoder expects.
+                //
+                // Rust encoder now also iterates backward, so is_crease_edge is in same order as C++.
+                // We must write in reverse order like C++ to match the bitstream exactly.
+                //
+                // |i| is the context = num_parallelograms - 1, so num_used = i + 1
+                let num_used_parallelograms = i + 1;
+                let flags = &self.is_crease_edge[i];
+                
+                // Write flags in reverse order: start from last group, step backward
+                let mut j = flags.len() as i32 - num_used_parallelograms as i32;
+                while j >= 0 {
+                    for k in 0..num_used_parallelograms {
+                        ans_encoder.encode_bit(flags[(j as usize) + k]);
+                    }
+                    j -= num_used_parallelograms as i32;
                 }
+                
                 ans_encoder.end_encoding(&mut enc);
             }
         }
@@ -541,21 +645,23 @@ where
 impl<'a, DataType, CorrType, Transform>
     PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
 {
+    /// Computes the total cumulative overhead bits for the entire overhead stream.
+    /// This matches C++ ComputeOverheadBits() which returns:
+    ///   ceil(total_parallelograms * binary_shannon_entropy(total_used / total))
+    /// 
+    /// The key insight is that C++ computes the TOTAL bits needed to encode ALL
+    /// overhead flags seen so far, not just the marginal cost of the current vertex.
     fn compute_overhead_bits(
-        total_used: i64,
-        total: i64,
-        num_bits: i64,
-        num_ones: i64,
+        total_used_parallelograms: i64,
+        total_parallelograms: i64,
     ) -> i64 {
-        if total == 0 {
-            return num_bits;
-        }
-        let p = total_used as f64 / total as f64;
-        let p = p.clamp(0.001, 0.999);
-        
-        let num_zeros = num_bits - num_ones;
-        let cost = - (num_ones as f64) * p.log2() - (num_zeros as f64) * (1.0 - p).log2();
-        cost.ceil() as i64
+        // C++ uses ComputeBinaryShannonEntropy and then multiplies by total_parallelograms
+        let entropy = crate::shannon_entropy::compute_binary_shannon_entropy(
+            total_parallelograms as u32,
+            total_used_parallelograms as u32,
+        );
+        // Round up to the nearest full bit.
+        ((total_parallelograms as f64) * entropy).ceil() as i64
     }
 }
 
@@ -632,14 +738,17 @@ where
         // Decode crease edges.
         let corner_table = match self.mesh_data.corner_table() {
             Some(ct) => ct,
-            None => return false,
+            None => {
+                return false;
+            }
         };
+        
         for i in 0..MAX_NUM_PARALLELOGRAMS {
             let num_flags = match buffer.decode_varint() {
                 Ok(v) => v as u32,
                 Err(_) => return false,
             };
-
+            
             if num_flags > corner_table.num_corners() as u32 {
                 return false;
             }
@@ -789,13 +898,13 @@ where
                 for i in 0..num_parallelograms {
                     let context = num_parallelograms - 1;
                     let pos = is_crease_edge_pos[context];
-                    is_crease_edge_pos[context] += 1; // Interior mutability needed?
-                    // `compute_original_values` takes `&self`.
-                    // We need `RefCell` or `Mutex` for `is_crease_edge_pos` if we want to modify it.
-                    // Or we can just use a local variable since we iterate sequentially.
-                    // Yes, `is_crease_edge_pos` is local to this function.
+                    is_crease_edge_pos[context] += 1;
                     
+                    // Check bounds - if we've exhausted the flags, this is an error
                     if pos >= self.is_crease_edge[context].len() {
+                        // This should never happen if encoder/decoder are in sync
+                        eprintln!("ERROR: is_crease_edge bounds exceeded: pos={} >= len={}, context={}, data_id={}", 
+                            pos, self.is_crease_edge[context].len(), context, data_id);
                         return false;
                     }
                     let is_crease = self.is_crease_edge[context][pos];
@@ -820,8 +929,8 @@ where
                                 out_data[v_prev_off + k],
                                 out_data[v_opp_off + k],
                             );
-                            let sum = multi_pred_vals[k].into() + p.into();
-                            multi_pred_vals[k] = DataType::from(sum as i32);
+                            // Use add_as_unsigned for C++ compatible accumulation
+                            multi_pred_vals[k] = DataType::add_as_unsigned(multi_pred_vals[k], p);
                         }
                         num_used_parallelograms += 1;
                     }
@@ -840,10 +949,11 @@ where
                     &mut out_data[data_offset..data_offset + num_components],
                 );
             } else {
+                // C++ decoder uses truncating integer division (not rounding)
                 for c in 0..num_components {
-                    let val = (multi_pred_vals[c].into() + (num_used_parallelograms as i64 / 2))
-                        / num_used_parallelograms as i64;
-                    multi_pred_vals[c] = DataType::from(val as i32);
+                    let val: i64 = multi_pred_vals[c].into();
+                    let averaged = (val / num_used_parallelograms as i64) as i32;
+                    multi_pred_vals[c] = DataType::from(averaged);
                 }
                 self.transform.compute_original_value(
                     &multi_pred_vals,

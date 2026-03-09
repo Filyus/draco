@@ -70,32 +70,49 @@ fn test_rust_encoded_cpp_decoded() {
     let encoded_data = encoder_buffer.data();
     println!("Rust encoded size: {} bytes", encoded_data.len());
     
-    // Save to file
-    let output_path = "C:/Users/filyus/Downloads/rust_encoded_test.drc";
-    fs::write(output_path, encoded_data).expect("Failed to write file");
-    println!("Saved to: {}", output_path);
+    // Save to temp file
+    let output_path = std::env::temp_dir().join("rust_encoded_test.drc");
+    fs::write(&output_path, encoded_data).expect("Failed to write file");
+    println!("Saved to: {:?}", output_path);
     
-    // Try to decode with C++ decoder
-    let cpp_decoder_path = "D:/Projects/Draco/build-orig-debug/src/draco/Debug/draco_decoder.exe";
-    if Path::new(cpp_decoder_path).exists() {
-        let output = Command::new(cpp_decoder_path)
-            .args(["-i", output_path])
-            .output()
-            .expect("Failed to run C++ decoder");
-        
-        println!("C++ decoder stdout: {}", String::from_utf8_lossy(&output.stdout));
-        println!("C++ decoder stderr: {}", String::from_utf8_lossy(&output.stderr));
-        
-        // If decoding succeeds, the output should contain some info
-        // If it fails, it will contain "Failed to decode"
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if stdout.contains("Failed") || !output.stderr.is_empty() {
-            println!("C++ decoder failed - checking error...");
-            if stdout.contains("Failed to decode point attributes") {
-                panic!("CRITICAL: PredictionScheme encoding error - check enum values match C++");
+    // Try to decode with C++ decoder (if available via env var or default paths)
+    let cpp_decoder_path = std::env::var("DRACO_CPP_DECODER")
+        .ok()
+        .or_else(|| {
+            // Try common build paths
+            let candidates = [
+                "../../build-original/src/draco/Release/draco_decoder.exe",
+                "../../build/src/draco/Release/draco_decoder.exe",
+                "../../build/src/draco/Debug/draco_decoder.exe",
+            ];
+            candidates.iter()
+                .find(|p| Path::new(p).exists())
+                .map(|s| s.to_string())
+        });
+    
+    if let Some(decoder_path) = cpp_decoder_path {
+        if Path::new(&decoder_path).exists() {
+            let output = Command::new(&decoder_path)
+                .args(["-i", output_path.to_string_lossy().as_ref()])
+                .output()
+                .expect("Failed to run C++ decoder");
+            
+            println!("C++ decoder stdout: {}", String::from_utf8_lossy(&output.stdout));
+            println!("C++ decoder stderr: {}", String::from_utf8_lossy(&output.stderr));
+            
+            // If decoding succeeds, the output should contain some info
+            // If it fails, it will contain "Failed to decode"
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stdout.contains("Failed") || !output.stderr.is_empty() {
+                println!("C++ decoder failed - checking error...");
+                if stdout.contains("Failed to decode point attributes") {
+                    panic!("CRITICAL: PredictionScheme encoding error - check enum values match C++");
+                }
+            } else {
+                println!("C++ decoder succeeded!");
             }
         } else {
-            println!("C++ decoder succeeded!");
+            println!("C++ decoder not found at {:?}, skipping interop test", decoder_path);
         }
     } else {
         println!("C++ decoder not found, skipping interop test");

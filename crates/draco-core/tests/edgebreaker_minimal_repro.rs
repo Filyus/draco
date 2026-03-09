@@ -479,11 +479,16 @@ fn test_all_minimal_repros() {
 /// Test decoding a C++-encoded annulus file
 #[test]
 fn test_decode_cpp_annulus() {
-    let path = "C:\\Projects\\Draco\\testdata\\annulus_eb.drc";
-    let annulus_drc = match std::fs::read(path) {
+    // Use testdata path relative to the crate
+    let testdata = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap()
+        .parent().unwrap()
+        .join("testdata");
+    let path = testdata.join("annulus_eb.drc");
+    let annulus_drc = match std::fs::read(&path) {
         Ok(data) => data,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!("Skipping test_decode_cpp_annulus: file not found at {}", path);
+            eprintln!("Skipping test_decode_cpp_annulus: file not found at {:?}", path);
             return; // Skip test if file doesn't exist
         }
         Err(e) => panic!("Failed to read annulus_eb.drc: {:?}", e),

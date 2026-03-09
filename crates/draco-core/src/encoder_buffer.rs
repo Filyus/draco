@@ -115,26 +115,29 @@ impl EncoderBuffer {
         if !self.bit_encoder_active {
             return false;
         }
-        for i in 0..nbits {
-            let bit = (value >> i) & 1;
-            self.put_bit(bit);
+        if nbits == 0 {
+            return true;
+        }
+
+        // Pack bits efficiently into the underlying byte buffer.
+        // Bits are written LSB-first, matching Draco's EncoderBuffer.
+        let mut remaining_bits = nbits;
+        let mut v = value;
+        while remaining_bits > 0 {
+            let total_bit_offset = self.current_bit_offset;
+            let byte_offset = self.bit_start_pos + (total_bit_offset / 8);
+            let bit_shift = (total_bit_offset % 8) as u32;
+            let available = 8u32 - bit_shift;
+            let take = remaining_bits.min(available);
+            let mask = (1u32 << take) - 1;
+            let bits = v & mask;
+            self.buffer[byte_offset] |= (bits as u8) << bit_shift;
+
+            v >>= take;
+            remaining_bits -= take;
+            self.current_bit_offset += take as usize;
         }
         true
-    }
-
-    fn put_bit(&mut self, bit: u32) {
-        let total_bit_offset = self.current_bit_offset;
-        let byte_offset = self.bit_start_pos + total_bit_offset / 8;
-        let bit_shift = total_bit_offset % 8;
-        
-        if byte_offset < self.buffer.len() {
-            if bit != 0 {
-                self.buffer[byte_offset] |= 1 << bit_shift;
-            } else {
-                self.buffer[byte_offset] &= !(1 << bit_shift);
-            }
-        }
-        self.current_bit_offset += 1;
     }
 
     pub fn encode<T: bytemuck::NoUninit>(&mut self, data: T) -> bool {

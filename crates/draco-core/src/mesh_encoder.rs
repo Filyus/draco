@@ -169,48 +169,8 @@ impl MeshEncoder {
     fn encode_connectivity(&mut self, out_buffer: &mut EncoderBuffer) -> Status {
         let mesh = self.mesh.as_ref().expect("mesh must be set before encoding");
 
-        // C++ behavior: use_single_connectivity_ when speed >= 6
-        // When false (speed < 6), use position attribute to deduplicate vertices
-        let speed = self.options.get_speed();
-        // Check if split_mesh_on_seams is explicitly set, otherwise use speed-based default
-        let split_on_seams_explicit = self.options.get_global_int("split_mesh_on_seams", -1);
-        let use_single_connectivity = if split_on_seams_explicit >= 0 {
-            split_on_seams_explicit != 0
-        } else {
-            speed >= 6
-        };
-
-        let (faces, point_to_vertex_map) = if use_single_connectivity {
-            // CreateCornerTableFromAllAttributes: use point indices directly
-            let faces: Vec<[crate::geometry_indices::VertexIndex; 3]> = (0..mesh.num_faces())
-                .map(|i| {
-                    let face = mesh.face(FaceIndex(i as u32));
-                    [
-                        crate::geometry_indices::VertexIndex(face[0].0),
-                        crate::geometry_indices::VertexIndex(face[1].0),
-                        crate::geometry_indices::VertexIndex(face[2].0),
-                    ]
-                })
-                .collect();
-            // Identity mapping
-            let point_to_vertex: Vec<u32> = (0..mesh.num_points() as u32).collect();
-            (faces, point_to_vertex)
-        } else {
-            // CreateCornerTableFromPositionAttribute: use position attribute to deduplicate
-            self.create_corner_table_from_position_attribute(mesh)
-        };
-
-        // Initialize corner table for the mesh
-        let mut corner_table = CornerTable::new(0);
-        corner_table.init(&faces);
-
-        self.corner_table = Some(corner_table);
-        self.point_to_vertex_map = Some(point_to_vertex_map);
-        self.use_single_connectivity = use_single_connectivity;
-
+        // Determine encoding method FIRST (before building corner table)
         let method_int = self.options.get_global_int("encoding_method", -1);
-        // Match C++ behavior: if encoding_method is not set (-1),
-        // use Edgebreaker for all options except speed == 10
         let method = if method_int == -1 {
             if self.options.get_speed() == 10 {
                 MeshEncodingMethod::MeshSequentialEncoding
@@ -224,6 +184,52 @@ impl MeshEncoder {
         };
         self.method = if method == MeshEncodingMethod::MeshEdgebreakerEncoding { 1 } else { 0 };
 
+        // C++ behavior: use_single_connectivity_ when speed >= 6
+        // When false (speed < 6), use position attribute to deduplicate vertices
+        let speed = self.options.get_speed();
+        // Check if split_mesh_on_seams is explicitly set, otherwise use speed-based default
+        let split_on_seams_explicit = self.options.get_global_int("split_mesh_on_seams", -1);
+        let use_single_connectivity = if split_on_seams_explicit >= 0 {
+            split_on_seams_explicit != 0
+        } else {
+            speed >= 6
+        };
+
+        // Only build corner table if needed (not for sequential encoding)
+        if method == MeshEncodingMethod::MeshEdgebreakerEncoding {
+            let (faces, point_to_vertex_map) = if use_single_connectivity {
+                // CreateCornerTableFromAllAttributes: use point indices directly
+                let faces: Vec<[crate::geometry_indices::VertexIndex; 3]> = (0..mesh.num_faces())
+                    .map(|i| {
+                        let face = mesh.face(FaceIndex(i as u32));
+                        [
+                            crate::geometry_indices::VertexIndex(face[0].0),
+                            crate::geometry_indices::VertexIndex(face[1].0),
+                            crate::geometry_indices::VertexIndex(face[2].0),
+                        ]
+                    })
+                    .collect();
+                // Identity mapping
+                let point_to_vertex: Vec<u32> = (0..mesh.num_points() as u32).collect();
+                (faces, point_to_vertex)
+            } else {
+                // CreateCornerTableFromPositionAttribute: use position attribute to deduplicate
+                self.create_corner_table_from_position_attribute(mesh)
+            };
+
+            // Initialize corner table for the mesh
+            let mut corner_table = CornerTable::new(0);
+            corner_table.init(&faces);
+
+            self.corner_table = Some(corner_table);
+            self.point_to_vertex_map = Some(point_to_vertex_map);
+        } else {
+            // Sequential encoding: no corner table needed, use identity mapping
+            let point_to_vertex: Vec<u32> = (0..mesh.num_points() as u32).collect();
+            self.point_to_vertex_map = Some(point_to_vertex);
+        }
+        self.use_single_connectivity = use_single_connectivity;
+
         match method {
             MeshEncodingMethod::MeshSequentialEncoding => self.encode_sequential_connectivity(out_buffer),
             MeshEncodingMethod::MeshEdgebreakerEncoding => self.encode_edgebreaker_connectivity(out_buffer),
@@ -236,7 +242,7 @@ impl MeshEncoder {
 
         let mut encoder = MeshEdgebreakerEncoder::new(mesh.num_faces(), mesh.num_points());
         let (point_ids, data_to_corner_map, vertex_to_data_map) =
-            encoder.encode_connectivity(mesh, corner_table, out_buffer)?;
+            encoder.encode_connectivity(mesh, corner_table, out_buffer, self.options.get_speed() as usize)?;
         if cfg!(feature = "debug_logs") {
             println!("DEBUG: encode_edgebreaker_connectivity: point_ids.len()={}, data_to_corner_map.len()={}, vertex_to_data_map.len()={}",
                  point_ids.len(), data_to_corner_map.len(), vertex_to_data_map.len());
@@ -389,7 +395,17 @@ impl MeshEncoder {
                         out_buffer.encode_u16(face[i].0 as u16);
                     }
                 }
+            } else if mesh.num_points() < (1 << 21) {
+                // Use varint encoding for indices when points fit in 21 bits
+                // This matches C++ behavior for better compression
+                for face_id in 0..mesh.num_faces() {
+                    let face = mesh.face(FaceIndex(face_id as u32));
+                    for i in 0..3 {
+                        out_buffer.encode_varint(face[i].0 as u64);
+                    }
+                }
             } else {
+                // Default: use u32 for very large meshes
                 for face_id in 0..mesh.num_faces() {
                     let face = mesh.face(FaceIndex(face_id as u32));
                     for i in 0..3 {
@@ -408,6 +424,12 @@ impl MeshEncoder {
     }
 
     fn encode_attributes(&mut self, out_buffer: &mut EncoderBuffer) -> Status {
+        // NOTE: Unlike the decoder, the encoder does NOT need to apply UpdatePointToAttributeIndexMapping
+        // because the attribute still has identity mapping. The encoder uses the point_ids array
+        // (from edgebreaker traversal) to determine the order in which to process points, and
+        // mapped_index with identity mapping just returns the point index directly.
+        
+
         let mesh = self.mesh.as_ref().expect("mesh must be set before encoding");
         
         let method_int = self.options.get_global_int("encoding_method", -1);
@@ -435,7 +457,12 @@ impl MeshEncoder {
             // -1 means use position connectivity (single connectivity mode)
             out_buffer.encode_u8((-1i8) as u8);  // att_data_id = -1
             out_buffer.encode_u8(0);              // element_type = MESH_VERTEX_ATTRIBUTE
-            out_buffer.encode_u8(0);              // traversal_method = DEPTH_FIRST
+            
+            // Traversal method: PREDICTION_DEGREE (1) for speed 0, DEPTH_FIRST (0) otherwise
+            // This must match the traversal used in MeshEdgebreakerEncoder
+            let encoding_speed = self.options.get_speed();
+            let traversal_method: u8 = if encoding_speed == 0 { 1 } else { 0 };
+            out_buffer.encode_u8(traversal_method);
         }
         // For sequential, nothing is written in phase 1 (EncodeAttributesEncoderIdentifier does nothing)
 
@@ -527,7 +554,7 @@ impl MeshEncoder {
                     portable_attributes.push(None);
                 }
                 2 => {
-                    // Quantized attribute
+                    // Quantized attribute (mapping already applied at start of encode_attributes)
                     let mut q_transform = AttributeQuantizationTransform::new();
                     if !q_transform.compute_parameters(att, quantization_bits) {
                         return Err(DracoError::DracoError("Failed to compute quantization parameters".to_string()));

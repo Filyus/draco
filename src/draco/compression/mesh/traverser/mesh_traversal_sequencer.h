@@ -15,7 +15,6 @@
 #ifndef DRACO_COMPRESSION_MESH_TRAVERSER_MESH_TRAVERSAL_SEQUENCER_H_
 #define DRACO_COMPRESSION_MESH_TRAVERSER_MESH_TRAVERSAL_SEQUENCER_H_
 
-#include <iostream>
 #include "draco/attributes/geometry_indices.h"
 #include "draco/compression/attributes/mesh_attribute_indices_encoding_data.h"
 #include "draco/compression/attributes/points_sequencer.h"
@@ -78,13 +77,6 @@ class MeshTraversalSequencer : public PointsSequencer {
     // Preallocate memory for storing point indices. We expect the number of
     // points to be the same as the number of corner table vertices.
     out_point_ids()->reserve(traverser_.corner_table()->num_vertices());
-
-    // DEBUG
-    if (corner_order_) {
-      std::cout << "ORIG GenerateSequenceInternal: using corner_order with " << corner_order_->size() << " corners" << std::endl;
-    } else {
-      std::cout << "ORIG GenerateSequenceInternal: NO corner_order, using sequential faces, num_faces=" << traverser_.corner_table()->num_faces() << std::endl;
-    }
 
     traverser_.OnTraversalStart();
     if (corner_order_) {

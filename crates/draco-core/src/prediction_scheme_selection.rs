@@ -15,7 +15,9 @@ pub fn select_prediction_method(
     options: &EncoderOptions,
     encoder: &dyn GeometryEncoder,
 ) -> PredictionSchemeMethod {
-    if options.get_encoding_speed() >= 10 {
+    let speed = options.get_encoding_speed();
+    
+    if speed >= 10 {
         return PredictionSchemeMethod::Difference;
     }
 
@@ -49,7 +51,7 @@ pub fn select_prediction_method(
                 }
             }
             
-            if is_pos_att_valid && options.get_encoding_speed() < 4 {
+            if is_pos_att_valid && speed < 4 {
                 return PredictionSchemeMethod::MeshPredictionTexCoordsPortable;
             }
         }
@@ -63,11 +65,11 @@ pub fn select_prediction_method(
             return PredictionSchemeMethod::Difference;
         }
         
-        if options.get_encoding_speed() >= 8 {
+        if speed >= 8 {
             return PredictionSchemeMethod::Difference;
         }
         
-        if options.get_encoding_speed() >= 2 || pc.num_points() < 40 {
+        if speed >= 2 || pc.num_points() < 40 {
             return PredictionSchemeMethod::MeshPredictionParallelogram;
         }
         

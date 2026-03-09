@@ -66,6 +66,10 @@ impl PlyReader {
         mesh.add_attribute(pos_att);
 
         // TODO: Parse faces if needed (basic PLY reader doesn't parse faces yet)
+        
+        // Match C++ Draco behavior: deduplicate point IDs in face-traversal order.
+        // This ensures binary compatibility when encoding.
+        mesh.deduplicate_point_ids();
 
         Ok(mesh)
     }

@@ -57,18 +57,22 @@ impl ShannonEntropyTracker {
                 }
             }
 
-            let new_frequency = frequency + 1;
+            // C++ modifies frequency during loop, then reverts if peeking.
+            // We do the same for efficiency (avoids cloning the entire table).
+            self.frequencies[symbol] += 1;
+            let new_frequency = self.frequencies[symbol];
             let new_symbol_entropy_norm = (new_frequency as f64) * (new_frequency as f64).log2();
 
             ret_data.entropy_norm += new_symbol_entropy_norm - old_symbol_entropy_norm;
-            
-            if push_changes {
-                self.frequencies[symbol] = new_frequency;
-            }
         }
 
         if push_changes {
             self.entropy_data = ret_data;
+        } else {
+            // Revert frequency table changes (like C++)
+            for &symbol in symbols {
+                self.frequencies[symbol as usize] -= 1;
+            }
         }
 
         ret_data

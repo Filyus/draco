@@ -46,10 +46,11 @@ impl AttributeQuantizationTransform {
         }
         self.quantization_bits = quantization_bits;
         let num_components = attribute.num_components() as usize;
-        self.min_values = vec![f32::MAX; num_components];
-        let mut max_values = vec![f32::MIN; num_components];
-
+        
         let num_entries = attribute.size();
+        if num_entries == 0 {
+            return false;
+        }
         
         if attribute.data_type() != DataType::Float32 {
             return false;
@@ -58,23 +59,43 @@ impl AttributeQuantizationTransform {
         let buffer = attribute.buffer();
         let byte_stride = attribute.byte_stride() as usize;
         
-        for i in 0..num_entries {
+        // Initialize min/max from first entry (matching C++ behavior exactly)
+        self.min_values = vec![0.0f32; num_components];
+        let mut max_values = vec![0.0f32; num_components];
+        
+        // Read the first entry to initialize min/max
+        for c in 0..num_components {
+            let val = bytemuck::pod_read_unaligned::<f32>(&buffer.data()[c * 4..c * 4 + 4]);
+            self.min_values[c] = val;
+            max_values[c] = val;
+        }
+        
+        // Process remaining entries starting from index 1 (matching C++ loop)
+        for i in 1..num_entries {
             let offset = i * byte_stride;
             // Read num_components floats
             for c in 0..num_components {
                 let val = bytemuck::pod_read_unaligned::<f32>(&buffer.data()[offset + c * 4..offset + c * 4 + 4]);
                 
-                if val < self.min_values[c] {
+                if val.is_nan() {
+                    return false;
+                }
+                if self.min_values[c] > val {
                     self.min_values[c] = val;
                 }
-                if val > max_values[c] {
+                if max_values[c] < val {
                     max_values[c] = val;
                 }
             }
         }
-
+        
+        // Check for NaN/Inf and compute range (matching C++)
         self.range = 0.0;
         for c in 0..num_components {
+            if self.min_values[c].is_nan() || self.min_values[c].is_infinite() ||
+               max_values[c].is_nan() || max_values[c].is_infinite() {
+                return false;
+            }
             let diff = max_values[c] - self.min_values[c];
             if diff > self.range {
                 self.range = diff;
@@ -95,11 +116,11 @@ impl AttributeQuantizationTransform {
             return;
         }
         let num_points = if point_ids.is_empty() { attribute.size() } else { point_ids.len() };
-        let num_components = attribute.num_components();
+        let num_components = attribute.num_components() as usize;
         
         target_attribute.init(
             attribute.attribute_type(),
-            num_components,
+            num_components as u8,
             DataType::Uint32, // Quantized values are usually stored as integers
             false,
             num_points,
@@ -115,23 +136,74 @@ impl AttributeQuantizationTransform {
         let src_stride = attribute.byte_stride() as usize;
         let dst_stride = target_attribute.byte_stride() as usize;
         let dst_buffer = target_attribute.buffer_mut();
-
-        for i in 0..num_points {
-            // Use mapped_index to get the correct AttributeValueIndex, matching C++ behavior
-            let point_idx = if point_ids.is_empty() { PointIndex(i as u32) } else { point_ids[i] };
-            let att_val_idx = attribute.mapped_index(point_idx);
-            let src_offset = att_val_idx.0 as usize * src_stride;
-            let dst_offset = i * dst_stride;
-
-            for c in 0..num_components as usize {
-                let mut val = bytemuck::pod_read_unaligned::<f32>(&src_buffer.data()[src_offset + c * 4..src_offset + c * 4 + 4]);
-
-                val -= self.min_values[c];
-                let q_val = quantizer.quantize_float(val);
+        let src_data = src_buffer.data();
+        let dst_data = dst_buffer.data_mut();
+        
+        // Pre-allocate qvals outside the loop for debug printing
+        #[cfg(debug_assertions)]
+        let mut qvals = vec![0i32; num_components];
+        
+        // Fast path for common case: 3-component float -> 3-component uint32
+        // with identity mapping (sequential encoding)
+        if num_components == 3 && point_ids.is_empty() {
+            for i in 0..num_points {
+                let src_offset = i * src_stride;
+                let dst_offset = i * dst_stride;
                 
-                let q_val_u32 = q_val as u32;
-                let bytes = bytemuck::bytes_of(&q_val_u32);
-                dst_buffer.data_mut()[dst_offset + c * 4..dst_offset + c * 4 + 4].copy_from_slice(bytes);
+                // Read 3 floats
+                let raw_x = f32::from_le_bytes([src_data[src_offset], src_data[src_offset+1], src_data[src_offset+2], src_data[src_offset+3]]);
+                let raw_y = f32::from_le_bytes([src_data[src_offset+4], src_data[src_offset+5], src_data[src_offset+6], src_data[src_offset+7]]);
+                let raw_z = f32::from_le_bytes([src_data[src_offset+8], src_data[src_offset+9], src_data[src_offset+10], src_data[src_offset+11]]);
+                
+                // Quantize
+                let q_x = quantizer.quantize_float(raw_x - self.min_values[0]) as u32;
+                let q_y = quantizer.quantize_float(raw_y - self.min_values[1]) as u32;
+                let q_z = quantizer.quantize_float(raw_z - self.min_values[2]) as u32;
+                
+                // Write 3 uint32s
+                dst_data[dst_offset..dst_offset+4].copy_from_slice(&q_x.to_le_bytes());
+                dst_data[dst_offset+4..dst_offset+8].copy_from_slice(&q_y.to_le_bytes());
+                dst_data[dst_offset+8..dst_offset+12].copy_from_slice(&q_z.to_le_bytes());
+            }
+        } else {
+            // Generic path
+            for i in 0..num_points {
+                // Use mapped_index to get the correct AttributeValueIndex, matching C++ behavior
+                let point_idx = if point_ids.is_empty() { PointIndex(i as u32) } else { point_ids[i] };
+                let att_val_idx = attribute.mapped_index(point_idx);
+                let src_offset = att_val_idx.0 as usize * src_stride;
+                let dst_offset = i * dst_stride;
+
+                for c in 0..num_components {
+                    // Read raw component then subtract min to match C++ ordering
+                    let raw_val = bytemuck::pod_read_unaligned::<f32>(&src_data[src_offset + c * 4..src_offset + c * 4 + 4]);
+                    let val = raw_val - self.min_values[c];
+                    let q_val = quantizer.quantize_float(val);
+                    
+                    #[cfg(debug_assertions)]
+                    { qvals[c] = q_val; }
+
+                    let q_val_u32 = q_val as u32;
+                    let bytes = bytemuck::bytes_of(&q_val_u32);
+                    dst_data[dst_offset + c * 4..dst_offset + c * 4 + 4].copy_from_slice(bytes);
+                }
+
+                // Allow limiting how many points are printed via env var.
+                #[cfg(debug_assertions)]
+                {
+                    let default_max_print: usize = 20;
+                    let max_print = std::env::var("DRACO_DEBUG_CMP_MAX_PRINT").ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(default_max_print);
+                    if std::env::var("DRACO_DEBUG_CMP_CPP").is_ok() && i < max_print {
+                        let orig_pt = point_idx.0;
+                        eprintln!("RUST QT orig_pt={} P{}: {:?}", orig_pt, i, qvals);
+                        if let Ok(fname) = std::env::var("DRACO_DEBUG_CMP_CPP_FILE") {
+                            use std::io::Write;
+                            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&fname) {
+                                let _ = writeln!(f, "RUST QT orig_pt={} P{}: {:?}", orig_pt, i, qvals);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -215,24 +287,27 @@ impl AttributeTransform for AttributeQuantizationTransform {
         let num_components = target_attribute.num_components() as usize;
         let num_values = target_attribute.size();
         
-        let src_buffer = attribute.buffer();
+        let src_data = attribute.buffer().data();
         let dst_stride = target_attribute.byte_stride() as usize;
-        let dst_buffer = target_attribute.buffer_mut();
-        
         let src_stride = attribute.byte_stride() as usize;
+        let dst_data = target_attribute.buffer_mut().data_mut();
 
         for i in 0..num_values {
             let src_offset = i * src_stride;
             let dst_offset = i * dst_stride;
 
             for c in 0..num_components {
-                let q_val = bytemuck::pod_read_unaligned::<i32>(&src_buffer.data()[src_offset + c * 4..src_offset + c * 4 + 4]);
+                let src_pos = src_offset + c * 4;
+                let q_val = i32::from_le_bytes([
+                    src_data[src_pos],
+                    src_data[src_pos + 1],
+                    src_data[src_pos + 2],
+                    src_data[src_pos + 3],
+                ]);
 
-                let mut val = dequantizer.dequantize_float(q_val);
-                val += self.min_values[c];
-
-                let bytes = bytemuck::bytes_of(&val);
-                dst_buffer.data_mut()[dst_offset + c * 4..dst_offset + c * 4 + 4].copy_from_slice(bytes);
+                let val = dequantizer.dequantize_float(q_val) + self.min_values[c];
+                let dst_pos = dst_offset + c * 4;
+                dst_data[dst_pos..dst_pos + 4].copy_from_slice(&val.to_le_bytes());
             }
         }
 

@@ -34,6 +34,8 @@ const exportFormat = document.getElementById('export-format');
 const useDraco = document.getElementById('use-draco');
 const dracoOptions = document.getElementById('draco-options');
 const dracoSettings = document.getElementById('draco-settings');
+const encodingSpeed = document.getElementById('encoding-speed');
+const encodingMethod = document.getElementById('encoding-method');
 const positionBits = document.getElementById('position-bits');
 const normalBits = document.getElementById('normal-bits');
 const texcoordBits = document.getElementById('texcoord-bits');
@@ -162,6 +164,9 @@ function setupEventListeners() {
     });
     
     // Quantization sliders
+    encodingSpeed.addEventListener('input', (e) => {
+        document.getElementById('speed-value').textContent = e.target.value;
+    });
     positionBits.addEventListener('input', (e) => {
         document.getElementById('position-bits-value').textContent = e.target.value;
     });
@@ -365,6 +370,15 @@ async function exportFile() {
         
         if (result && result.success) {
             downloadResult(result, format);
+            
+            // Display compression stats if available
+            if (result.draco_stats) {
+                displayCompressionStats(result.draco_stats);
+            } else {
+                // Hide stats if not using Draco
+                document.getElementById('compression-stats').style.display = 'none';
+            }
+            
             log(`Export complete!`, 'success');
         } else {
             log(`Export failed: ${result?.error || 'Unknown error'}`, 'error');
@@ -454,6 +468,8 @@ async function exportToGltf(meshes, format) {
     
     const options = {
         use_draco: useDraco.checked,
+        encoding_speed: parseInt(encodingSpeed.value),
+        encoding_method: parseInt(encodingMethod.value),
         position_quantization: parseInt(positionBits.value),
         normal_quantization: parseInt(normalBits.value),
         texcoord_quantization: parseInt(texcoordBits.value),
@@ -570,6 +586,29 @@ function log(message, type = 'info') {
     consoleEl.appendChild(line);
     consoleEl.scrollTop = consoleEl.scrollHeight;
 }
-
+// Display compression statistics
+function displayCompressionStats(stats) {
+    const statsSection = document.getElementById('compression-stats');
+    // Use proper naming: EdgeBreaker (not Edgebreaker)
+    const methodDisplay = stats.method === 'edgebreaker' ? 'EdgeBreaker' : 
+                          stats.method === 'sequential' ? 'Sequential' : stats.method;
+    document.getElementById('stats-method').textContent = methodDisplay;
+    document.getElementById('stats-speed').textContent = `${stats.speed} (${stats.speed === 0 ? 'best compression' : stats.speed === 10 ? 'fastest' : 'balanced'})`;
+    
+    // Display prediction scheme with readable formatting
+    const predictionSchemeMap = {
+        'DIFFERENCE': 'Difference',
+        'PARALLELOGRAM': 'Parallelogram',
+        'CONSTRAINED_MULTI_PARALLELOGRAM': 'Constrained Multi-Parallelogram',
+        'TEXCOORDS_PORTABLE': 'TexCoords Portable'
+    };
+    const predictionDisplay = predictionSchemeMap[stats.prediction_scheme] || stats.prediction_scheme || 'Unknown';
+    document.getElementById('stats-prediction').textContent = predictionDisplay;
+    
+    document.getElementById('stats-size').textContent = formatFileSize(stats.compressed_size);
+    statsSection.style.display = 'block';
+    
+    log(`Compression: ${methodDisplay} method, speed ${stats.speed}, prediction ${predictionDisplay}, ${formatFileSize(stats.compressed_size)}`, 'success');
+}
 // Initialize on load
 init();

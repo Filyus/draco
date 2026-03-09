@@ -24,15 +24,6 @@ impl CornerTable {
     }
 
     pub fn map_corner_to_vertex(&mut self, corner: CornerIndex, vertex: VertexIndex) {
-        // Debug logging is intentionally gated because connectivity decode/encode
-        // touches many corners and can easily flood stdout.
-        if std::env::var("DRACO_CT_DEBUG").is_ok() && (corner.0 < 60 || vertex.0 < 60) {
-            let prev = self.corner_to_vertex_map[corner.0 as usize].0;
-            eprintln!(
-                "CT_MAP_CORNER_DEBUG: corner {} mapped to vertex {} (prev={})",
-                corner.0, vertex.0, prev
-            );
-        }
         self.corner_to_vertex_map[corner.0 as usize] = vertex;
     }
 
@@ -56,21 +47,7 @@ impl CornerTable {
     }
 
     pub fn set_opposite(&mut self, corner: CornerIndex, opposite: CornerIndex) {
-        if std::env::var("DRACO_CT_DEBUG").is_ok() {
-            // Debug: print small-corner changes to help correlate encoder/decoder operations.
-            if corner.0 < 60 || opposite.0 < 60 {
-                let a_next = self.vertex(self.next(corner)).0;
-                let a_prev = self.vertex(self.previous(corner)).0;
-                let b_next = self.vertex(self.next(opposite)).0;
-                let b_prev = self.vertex(self.previous(opposite)).0;
-                let prev_opp = self.opposite_corners[corner.0 as usize].0;
-                eprintln!(
-                    "CT_SET_OP_DEBUG: set_opposite {} <-> {}  a_next_prev=({},{}), b_next_prev=({},{}), prev_opp={}",
-                    corner.0, opposite.0, a_next, a_prev, b_next, b_prev, prev_opp
-                );
-            }
-        }
-
+        // Debug logging removed to avoid noisy output during tests.
         self.opposite_corners[corner.0 as usize] = opposite;
     }
 
@@ -436,11 +413,10 @@ impl CornerTable {
             let mut offset = vertex_offset[sink_v.0 as usize];
             
             let mut found_match = false;
+            let mut match_pos_found: Option<usize> = None;
             
-            // Search for matching half-edge on sink vertex. Prefer the candidate with
-            // the smallest corner index to ensure deterministic pairing independent
-            // of insertion order.
-            let mut chosen_match_pos: Option<usize> = None;
+            // Search for matching half-edge on sink vertex.
+            // Match C++ behavior: take the first match we find (early break).
             for i in 0..num_corners_on_vert {
                 let other_v = vertex_edges[offset].sink_vert;
                 if other_v == INVALID_VERTEX_INDEX {
@@ -452,19 +428,14 @@ impl CornerTable {
                         offset += 1;
                         continue;
                     }
-                    let match_pos = vertex_offset[sink_v.0 as usize] + i;
-                    if let Some(prev) = chosen_match_pos {
-                        if vertex_edges[match_pos].edge_corner.0 < vertex_edges[prev].edge_corner.0 {
-                            chosen_match_pos = Some(match_pos);
-                        }
-                    } else {
-                        chosen_match_pos = Some(match_pos);
-                    }
+                    // Take first match (matches C++ behavior)
+                    match_pos_found = Some(vertex_offset[sink_v.0 as usize] + i);
+                    break;
                 }
                 offset += 1;
             }
 
-            if let Some(match_pos) = chosen_match_pos {
+            if let Some(match_pos) = match_pos_found {
                 let start = vertex_offset[sink_v.0 as usize];
                 let count = num_corners_on_vertices[sink_v.0 as usize];
                 opposite_c = vertex_edges[match_pos].edge_corner;
@@ -480,9 +451,7 @@ impl CornerTable {
                 found_match = true;
             }
 
-            if c < 60 && cfg!(feature = "debug_logs") {
-                eprintln!("COMPUTE_OP_DEBUG: c={} tip_v={} source_v={} sink_v={} found_match={} opposite_c={} ", c, tip_v.0, source_v.0, sink_v.0, found_match, opposite_c.0);
-            }
+            // Debug logging removed to avoid noisy output during tests.
 
             if !found_match {
                 // No opposite found, add to source vertex list
@@ -630,5 +599,26 @@ impl CornerTable {
         }
 
         true
+    }
+    pub fn valence(&self, v: VertexIndex) -> i32 {
+        let mut valence = 0;
+        let start_corner = self.left_most_corner(v);
+        if start_corner == INVALID_CORNER_INDEX {
+            return 0;
+        }
+        let mut act_c = start_corner;
+        loop {
+            valence += 1;
+            act_c = self.swing_right(act_c);
+            if act_c == start_corner {
+                break;
+            }
+            if act_c == INVALID_CORNER_INDEX {
+                // If we are on a boundary we need to add 1 to the valence (one extra edge).
+                valence += 1;
+                break;
+            }
+        }
+        valence
     }
 }

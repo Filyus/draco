@@ -37,15 +37,73 @@ impl ObjReader {
     pub fn read_positions(&mut self) -> io::Result<Vec<[f32; 3]>> {
         read_obj_positions(&self.path)
     }
+    
+    /// Read positions and faces from the OBJ file.
+    fn read_positions_and_faces(&self) -> io::Result<(Vec<[f32; 3]>, Vec<[u32; 3]>)> {
+        let file = fs::File::open(&self.path)?;
+        let reader = BufReader::new(file);
+        let mut positions = Vec::new();
+        let mut faces = Vec::new();
+
+        for line in reader.lines() {
+            let line = line?;
+            let trimmed = line.trim();
+            
+            if trimmed.starts_with("vn ") || trimmed.starts_with("vt ") {
+                continue;
+            }
+            
+            if trimmed.starts_with("v ") {
+                let mut parts = trimmed.split_whitespace();
+                parts.next(); // skip 'v'
+                
+                let x = parts.next().and_then(|s| s.parse().ok());
+                let y = parts.next().and_then(|s| s.parse().ok());
+                let z = parts.next().and_then(|s| s.parse().ok());
+                
+                if let (Some(x), Some(y), Some(z)) = (x, y, z) {
+                    positions.push([x, y, z]);
+                }
+            } else if trimmed.starts_with("f ") {
+                let mut parts = trimmed.split_whitespace();
+                parts.next(); // skip 'f'
+                
+                // Parse face indices (format: v or v/vt or v/vt/vn or v//vn)
+                let parse_vertex = |s: &str| -> Option<u32> {
+                    // Take only the first number (vertex index), ignore texture/normal indices
+                    let idx_str = s.split('/').next()?;
+                    idx_str.parse::<u32>().ok()
+                };
+                
+                let v0 = parts.next().and_then(parse_vertex);
+                let v1 = parts.next().and_then(parse_vertex);
+                let v2 = parts.next().and_then(parse_vertex);
+                
+                // OBJ uses 1-based indices, convert to 0-based
+                if let (Some(v0), Some(v1), Some(v2)) = (v0, v1, v2) {
+                    faces.push([v0 - 1, v1 - 1, v2 - 1]);
+                }
+            }
+        }
+        
+        Ok((positions, faces))
+    }
 
     /// Read a mesh with positions and faces (if present).
+    /// 
+    /// The mesh is automatically processed to match C++ Draco OBJ loader behavior:
+    /// point IDs are deduplicated in face-traversal order, which ensures binary
+    /// compatibility when encoding with sequential encoding (speed 10).
     pub fn read_mesh(&mut self) -> io::Result<Mesh> {
-        let positions = self.read_positions()?;
+        let (positions, faces) = self.read_positions_and_faces()?;
         let mut mesh = Mesh::new();
 
         if positions.is_empty() {
             return Ok(mesh);
         }
+        
+        mesh.set_num_points(positions.len());
+        mesh.set_num_faces(faces.len());
 
         // Create position attribute
         let mut pos_att = PointAttribute::new();
@@ -64,8 +122,21 @@ impl ObjReader {
         }
 
         mesh.add_attribute(pos_att);
+        
+        // Set faces
+        use draco_core::geometry_indices::{FaceIndex, PointIndex};
+        for (i, face) in faces.iter().enumerate() {
+            mesh.set_face(FaceIndex(i as u32), [
+                PointIndex(face[0]),
+                PointIndex(face[1]),
+                PointIndex(face[2]),
+            ]);
+        }
 
-        // TODO: Parse faces if needed (basic OBJ reader doesn't parse faces yet)
+        // Match C++ OBJ loader behavior: deduplicate point IDs in face-traversal order.
+        // C++ creates separate points for each face corner then deduplicates them,
+        // assigning new IDs in the order points are first encountered in faces.
+        mesh.deduplicate_point_ids();
 
         Ok(mesh)
     }

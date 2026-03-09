@@ -38,7 +38,7 @@ impl Default for SymbolEncodingOptions {
 pub fn encode_symbols(
     symbols: &[u32],
     num_components: usize,
-    _options: &SymbolEncodingOptions,
+    options: &SymbolEncodingOptions,
     target_buffer: &mut EncoderBuffer,
 ) -> bool {
     if symbols.is_empty() {
@@ -72,24 +72,40 @@ pub fn encode_symbols(
         bit_lengths.push(bit_length);
     }
 
-    // Estimate bits for tagged scheme
+    // Estimate bits for tagged scheme.
     let tagged_bits = compute_tagged_scheme_bits(symbols, num_components, &bit_lengths, max_value);
-    
-    // Estimate bits for raw scheme
-    let raw_bits = compute_raw_scheme_bits(symbols, max_value);
-    
+
     let max_value_bit_length = if max_value == 0 { 0 } else { 32 - max_value.leading_zeros() };
     const K_MAX_RAW_ENCODING_BIT_LENGTH: u32 = 18;
 
-    if tagged_bits < raw_bits || max_value_bit_length > K_MAX_RAW_ENCODING_BIT_LENGTH {
+    // If max value can't be represented efficiently by RAW, always use TAGGED.
+    // (This matches Draco's decision rule, but avoids doing unnecessary RAW
+    // estimation work.)
+    if max_value_bit_length > K_MAX_RAW_ENCODING_BIT_LENGTH {
         // Draco bitstream scheme ids (see C++ SymbolCodingMethod):
         //   0 = TAGGED
         //   1 = RAW
         target_buffer.encode_u8(0); // TAGGED
         encode_tagged_symbols(symbols, num_components, &bit_lengths, target_buffer)
     } else {
-        target_buffer.encode_u8(1); // RAW
-        encode_raw_symbols(symbols, max_value, target_buffer)
+        // Estimate bits for raw scheme and compute symbol frequencies once.
+        let (raw_bits, raw_frequencies, raw_num_unique) =
+            compute_raw_scheme_bits_and_frequencies(symbols, max_value);
+
+        if tagged_bits < raw_bits {
+            target_buffer.encode_u8(0); // TAGGED
+            encode_tagged_symbols(symbols, num_components, &bit_lengths, target_buffer)
+        } else {
+            target_buffer.encode_u8(1); // RAW
+            encode_raw_symbols_with_frequencies(
+                symbols,
+                max_value,
+                &raw_frequencies,
+                raw_num_unique,
+                target_buffer,
+                options.compression_level,
+            )
+        }
     }
 }
 
@@ -133,39 +149,49 @@ pub fn estimate_bits(symbols: &[u32], num_components: usize) -> u64 {
 
 #[cfg(feature = "encoder")]
 fn compute_raw_scheme_bits(symbols: &[u32], max_value: u32) -> u64 {
-    // Count frequencies
-    let num_unique_symbols = (max_value + 1) as usize;
-    let mut frequencies = vec![0u64; num_unique_symbols];
+    // Match Draco C++ ApproximateRawSchemeBits():
+    //   data_bits = ComputeShannonEntropy(symbols, num_symbols, max_value)
+    //   table_bits = ApproximateRAnsFrequencyTableBits(max_value, num_unique_symbols)
+    // where ComputeShannonEntropy truncates to int64_t.
+
+    if symbols.is_empty() {
+        return 0;
+    }
+
+    let (data_bits, num_unique_symbols) = compute_shannon_entropy_bits_trunc(symbols, max_value);
+    let table_bits = approximate_rans_frequency_table_bits(max_value, num_unique_symbols);
+    (data_bits as u64) + table_bits
+}
+
+#[cfg(feature = "encoder")]
+fn compute_raw_scheme_bits_and_frequencies(
+    symbols: &[u32],
+    max_value: u32,
+) -> (u64, Vec<u64>, u32) {
+    if symbols.is_empty() {
+        return (0, Vec::new(), 0);
+    }
+
+    let mut frequencies = vec![0u64; (max_value + 1) as usize];
     for &sym in symbols {
         frequencies[sym as usize] += 1;
     }
-    
-    let mut total_freq = 0;
-    let mut num_present_symbols: u32 = 0;
+
+    let num_symbols_d = symbols.len() as f64;
+    let log2_num_symbols = num_symbols_d.log2();
+    let mut total_bits = 0.0f64;
+    let mut num_unique_symbols: u32 = 0;
     for &freq in &frequencies {
         if freq > 0 {
-            total_freq += freq;
-            num_present_symbols += 1;
+            num_unique_symbols += 1;
+            let f = freq as f64;
+            total_bits += f * (f.log2() - log2_num_symbols);
         }
     }
-    
-    if total_freq == 0 {
-        return 0;
-    }
-    
-    // Shannon entropy
-    let mut entropy_bits = 0.0;
-    let total_freq_f = total_freq as f64;
-    for &freq in &frequencies {
-        if freq > 0 {
-            let p = freq as f64 / total_freq_f;
-            entropy_bits += -p.log2() * freq as f64;
-        }
-    }
-    
-    let table_bits = approximate_rans_frequency_table_bits(max_value, num_present_symbols);
-    
-    (entropy_bits.ceil() as u64) + table_bits
+
+    let data_bits = (-total_bits) as i64;
+    let table_bits = approximate_rans_frequency_table_bits(max_value, num_unique_symbols);
+    ((data_bits as u64) + table_bits, frequencies, num_unique_symbols)
 }
 
 #[cfg(feature = "encoder")]
@@ -181,42 +207,46 @@ fn compute_tagged_scheme_bits(
         value_bits += len as u64 * num_components as u64;
     }
     
-    // 2. Bits for tags (RAns)
-    // Count tag frequencies
-    let mut tag_frequencies = vec![0u64; 33];
-    for &len in bit_lengths {
-        tag_frequencies[len as usize] += 1;
-    }
-    
-    let mut total_tags = 0;
-    let mut num_present_tags: u32 = 0;
-    for &freq in &tag_frequencies {
-        if freq > 0 {
-            total_tags += freq;
-            num_present_tags += 1;
-        }
-    }
-    
-    if total_tags == 0 {
-        return value_bits;
-    }
-    
-    let mut tag_entropy_bits = 0.0;
-    let total_tags_f = total_tags as f64;
-    for &freq in &tag_frequencies {
-        if freq > 0 {
-            let p = freq as f64 / total_tags_f;
-            tag_entropy_bits += -p.log2() * freq as f64;
-        }
-    }
-    
-    let table_bits = approximate_rans_frequency_table_bits(32, num_present_tags);
-    
-    value_bits + (tag_entropy_bits.ceil() as u64) + table_bits
+    // 2. Bits for tags (RAns) using C++ ComputeShannonEntropy on bit lengths.
+    // C++ calls ComputeShannonEntropy(bit_lengths, num_chunks, max_value=32).
+    let (tag_bits, num_unique_symbols) = compute_shannon_entropy_bits_trunc(bit_lengths, 32);
+
+    // C++ uses num_unique_symbols for BOTH params in the tagged scheme.
+    let table_bits = approximate_rans_frequency_table_bits(num_unique_symbols, num_unique_symbols);
+
+    value_bits + (tag_bits as u64) + table_bits
 }
 
 #[cfg(feature = "encoder")]
-pub fn encode_raw_symbols(symbols: &[u32], max_value: u32, target_buffer: &mut EncoderBuffer) -> bool {
+fn compute_shannon_entropy_bits_trunc(symbols: &[u32], max_value: u32) -> (i64, u32) {
+    // Draco C++ ComputeShannonEntropy():
+    //   total_bits += freq * log2(freq / num_symbols)
+    //   return static_cast<int64_t>(-total_bits);
+    // The cast truncates toward zero.
+
+    let mut frequencies = vec![0u32; (max_value + 1) as usize];
+    for &sym in symbols {
+        frequencies[sym as usize] += 1;
+    }
+
+    let num_symbols_d = symbols.len() as f64;
+    let log2_num_symbols = num_symbols_d.log2();
+    let mut total_bits = 0.0f64;
+    let mut num_unique_symbols: u32 = 0;
+
+    for &freq in &frequencies {
+        if freq > 0 {
+            num_unique_symbols += 1;
+            // freq * log2(freq / N) == freq * (log2(freq) - log2(N))
+            total_bits += (freq as f64) * ((freq as f64).log2() - log2_num_symbols);
+        }
+    }
+
+    ((-total_bits) as i64, num_unique_symbols)
+}
+
+#[cfg(feature = "encoder")]
+pub fn encode_raw_symbols(symbols: &[u32], max_value: u32, target_buffer: &mut EncoderBuffer, compression_level: i32) -> bool {
     // num_values is known by decoder
 
     // Count frequencies
@@ -231,15 +261,33 @@ pub fn encode_raw_symbols(symbols: &[u32], max_value: u32, target_buffer: &mut E
             num_unique_symbols += 1;
         }
     }
-    
+
+    encode_raw_symbols_with_frequencies(
+        symbols,
+        max_value,
+        &frequencies,
+        num_unique_symbols,
+        target_buffer,
+        compression_level,
+    )
+}
+
+#[cfg(feature = "encoder")]
+fn encode_raw_symbols_with_frequencies(
+    symbols: &[u32],
+    _max_value: u32,
+    frequencies: &[u64],
+    num_unique_symbols: u32,
+    target_buffer: &mut EncoderBuffer,
+    compression_level: i32,
+) -> bool {
     let mut unique_symbols_bit_length: u32 = if num_unique_symbols > 0 {
         32 - num_unique_symbols.leading_zeros()
     } else {
         0
     };
-    
-    // Compression level adjustment (default 7)
-    let compression_level = 7;
+
+    // Compression level adjustment.
     if compression_level < 4 {
         unique_symbols_bit_length = unique_symbols_bit_length.saturating_sub(2);
     } else if compression_level < 6 {
@@ -249,23 +297,24 @@ pub fn encode_raw_symbols(symbols: &[u32], max_value: u32, target_buffer: &mut E
     } else if compression_level > 7 {
         unique_symbols_bit_length += 1;
     }
-    
+
     unique_symbols_bit_length = unique_symbols_bit_length.clamp(1, 18);
-    
+
     target_buffer.encode_u8(unique_symbols_bit_length as u8);
-    
-    let rans_precision_bits = compute_rans_precision_from_unique_symbols_bit_length(unique_symbols_bit_length);
-    
+
+    let rans_precision_bits =
+        compute_rans_precision_from_unique_symbols_bit_length(unique_symbols_bit_length);
+
     match rans_precision_bits {
-        12 => encode_raw_symbols_internal::<12>(symbols, &frequencies, target_buffer),
-        13 => encode_raw_symbols_internal::<13>(symbols, &frequencies, target_buffer),
-        14 => encode_raw_symbols_internal::<14>(symbols, &frequencies, target_buffer),
-        15 => encode_raw_symbols_internal::<15>(symbols, &frequencies, target_buffer),
-        16 => encode_raw_symbols_internal::<16>(symbols, &frequencies, target_buffer),
-        17 => encode_raw_symbols_internal::<17>(symbols, &frequencies, target_buffer),
-        18 => encode_raw_symbols_internal::<18>(symbols, &frequencies, target_buffer),
-        19 => encode_raw_symbols_internal::<19>(symbols, &frequencies, target_buffer),
-        20 => encode_raw_symbols_internal::<20>(symbols, &frequencies, target_buffer),
+        12 => encode_raw_symbols_internal::<12>(symbols, frequencies, target_buffer),
+        13 => encode_raw_symbols_internal::<13>(symbols, frequencies, target_buffer),
+        14 => encode_raw_symbols_internal::<14>(symbols, frequencies, target_buffer),
+        15 => encode_raw_symbols_internal::<15>(symbols, frequencies, target_buffer),
+        16 => encode_raw_symbols_internal::<16>(symbols, frequencies, target_buffer),
+        17 => encode_raw_symbols_internal::<17>(symbols, frequencies, target_buffer),
+        18 => encode_raw_symbols_internal::<18>(symbols, frequencies, target_buffer),
+        19 => encode_raw_symbols_internal::<19>(symbols, frequencies, target_buffer),
+        20 => encode_raw_symbols_internal::<20>(symbols, frequencies, target_buffer),
         _ => false,
     }
 }
@@ -338,6 +387,10 @@ fn encode_tagged_symbols(
     let mut tag_encoder = RAnsSymbolEncoder::<12>::new();
     if !tag_encoder.create(&frequencies, 33, target_buffer) {
         return false;
+    }
+    
+    if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+        eprintln!("RUST TAGGED tag frequencies: {:?}", &frequencies[..15.min(frequencies.len())]);
     }
     
     // Create a separate bit buffer for raw values (C++ value_buffer)
@@ -453,19 +506,24 @@ fn decode_tagged_symbols(
 
     let num_chunks = num_values / num_components;
     
-    for i in 0..num_chunks {
+    // Pre-validate that the bit stream has enough data for the worst case:
+    // each chunk reads at most 32 bits × num_components.
+    // The bit stream is already bounded by start_bit_decoding.
+    
+    // Process each chunk
+    let mut val_idx = 0;
+    for _ in 0..num_chunks {
         let len = tag_decoder.decode_symbol();
         if len == 0 || len > 32 {
             return false;
         }
-        let val_idx = i * num_components;
-        for j in 0..num_components {
-            // Read least significant bits for this value
-            let val = match in_buffer.decode_least_significant_bits32(len) {
+        for _ in 0..num_components {
+            let val = match in_buffer.decode_least_significant_bits32_fast(len) {
                 Ok(v) => v,
                 Err(_) => return false,
             };
-            symbols[val_idx + j] = val;
+            symbols[val_idx] = val;
+            val_idx += 1;
         }
     }
 

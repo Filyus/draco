@@ -5,6 +5,7 @@ use crate::geometry_indices::{PointIndex, FaceIndex, CornerIndex, VertexIndex};
 use crate::mesh_edgebreaker_shared::{EdgebreakerSymbol, TopologySplitEventData, EdgeFaceName};
 use crate::rans_bit_decoder::RAnsBitDecoder;
 use crate::edgebreaker_connectivity_decoder::{EdgebreakerConnectivityDecoder, EdgebreakerTraversalDecoder};
+use crate::corner_table::CornerTable;
 
 pub struct MeshEdgebreakerDecoder {
     data_to_corner_map: Option<Vec<u32>>,
@@ -76,7 +77,8 @@ impl MeshEdgebreakerDecoder {
         
         if bitstream_version >= 0x0102 {
             self.traversal_decoder_type = in_buffer.decode_u8().map_err(|_| DracoError::DracoError("Failed to read traversal decoder type".to_string()))?;
-            if self.traversal_decoder_type > 1 {
+            // Type 0 = Standard, Type 1 = Predictive, Type 2 = Valence
+            if self.traversal_decoder_type > 2 {
                 return Err(DracoError::DracoError(format!("Unsupported Edgebreaker traversal decoder type: {}", self.traversal_decoder_type)));
             }
         }
@@ -155,7 +157,6 @@ impl MeshEdgebreakerDecoder {
             (events, decoded_bytes)
         } else {
             let events = Self::decode_topology_split_events_inline(in_buffer, bitstream_version)?;
-            println!("DEBUG: Post-SplitInline Pos: {}", in_buffer.position());
             (events, 0)
         };
 
@@ -171,12 +172,13 @@ impl MeshEdgebreakerDecoder {
         // The encoder generates symbols Top-Down (Root->Leaf).
         // The decoder must process them Bottom-Up (Leaf->Root).
         // So we must reverse the stream.
-        let symbols = Self::decode_symbol_stream(in_buffer, num_symbols)?;
-        // symbols should NOT be reversed as Encoder writes them Leaf-to-Root (Post-Order).
-        if cfg!(feature = "debug_logs") {
-            println!("DEBUG: Post-SymbolStream Pos: {}", in_buffer.position());
-            println!("DEBUG: First 20 symbols: {:?}", symbols.iter().take(20).collect::<Vec<_>>());
-        }
+        // NOTE: For valence traversal (type 2), symbols are stored per-context and
+        // read during init_from_buffer, so we skip the main symbol stream here.
+        let symbols = if self.traversal_decoder_type == 2 {
+            Vec::new()
+        } else {
+            Self::decode_symbol_stream(in_buffer, num_symbols)?
+        };
 
 
         // Reconstruct topology.
@@ -192,6 +194,7 @@ impl MeshEdgebreakerDecoder {
             num_faces as usize,
             max_num_vertices,
             num_attribute_data,
+            num_symbols,
             in_buffer,
         )?;
 
@@ -430,9 +433,9 @@ impl MeshEdgebreakerDecoder {
         }
     }
 
-    // Mesh reconstruction requires 7 parameters: symbols, topology split data, output mesh,
-    // size constraints, attribute count, and decoder buffer. Each parameter controls a
-    // different aspect of the complex topology reconstruction process.
+    // Mesh reconstruction requires 8 parameters: symbols, topology split data, output mesh,
+    // size constraints, attribute count, num_symbols for valence path, and decoder buffer. Each 
+    // parameter controls a different aspect of the complex topology reconstruction process.
     #[allow(clippy::too_many_arguments)]
     fn reconstruct_mesh<'a>(
         &mut self,
@@ -442,9 +445,17 @@ impl MeshEdgebreakerDecoder {
         _total_num_faces: usize,
         max_num_vertices: usize,
         num_attribute_data: u8,
+        num_symbols: usize,
         in_buffer: &mut DecoderBuffer<'a>,
     ) -> Result<usize, DracoError> {
-        if symbols.is_empty() {
+        // For standard traversal, use symbols.len(); for valence, use num_symbols parameter
+        let actual_num_symbols = if self.traversal_decoder_type == 2 {
+            num_symbols
+        } else {
+            symbols.len()
+        };
+        
+        if actual_num_symbols == 0 {
             let corner_table = crate::corner_table::CornerTable::new(0);
             self.corner_table = Some(corner_table);
             self.data_to_corner_map = Some(Vec::new());
@@ -454,38 +465,90 @@ impl MeshEdgebreakerDecoder {
         let mut start_face_decoder = RAnsBitDecoder::new();
         let has_start_face_bits = start_face_decoder.start_decoding(in_buffer);
 
-        let mut traversal_decoder = InternalTraversalDecoder::new(
-            symbols,
-            topology_split_data,
-            start_face_decoder,
-            has_start_face_bits,
-            max_num_vertices,
-        );
-
         let mut connectivity_decoder = EdgebreakerConnectivityDecoder::new(
             mesh.num_faces() as i32,
             max_num_vertices as i32,
         );
 
-        let num_vertices = connectivity_decoder
-            .decode_connectivity(symbols.len() as i32, &mut traversal_decoder)
-            .map_err(DracoError::DracoError)? as usize;
-        
-        if cfg!(feature = "debug_logs") {
-            println!("DEBUG: Actual decoder produced {} vertices from {} symbols, {} faces", num_vertices, symbols.len(), mesh.num_faces());
-        }
+        // Choose traversal decoder based on the traversal_decoder_type read earlier.
+        #[allow(unused_assignments)]
+        let mut start_face_decoder_opt: Option<RAnsBitDecoder> = None;
+        #[allow(unused_assignments)]
+        let mut has_start_face_bits_flag = false;
+        #[allow(unused_assignments)]
+        let mut processed_connectivity_corners: Vec<u32> = Vec::new();
 
-        if traversal_decoder.has_start_face_bits {
-            traversal_decoder.start_face_decoder.end_decoding();
+        // For valence mode, we need to save the seam decoders to use after connectivity
+        let mut valence_seam_decoders: Vec<RAnsBitDecoder> = Vec::new();
+        
+        let num_vertices = if self.traversal_decoder_type == 2 {
+            // Valence mode
+            // For valence traversal, the buffer order is:
+            // 1. Start face bits (already decoded above)
+            // 2. Attribute seam decoders (need to skip past their size prefix to read context symbols)
+            // 3. Context symbols
+            //
+            // Start attribute seam decoders to position buffer past them
+            for _ in 0..num_attribute_data {
+                let mut seam_decoder = RAnsBitDecoder::new();
+                if !seam_decoder.start_decoding(in_buffer) {
+                    return Err(DracoError::DracoError("Failed to start attribute seam decoding for valence".to_string()));
+                }
+                valence_seam_decoders.push(seam_decoder);
+            }
+            
+            let mut valence_decoder = crate::mesh_edgebreaker_traversal_valence_decoder::MeshEdgebreakerTraversalValenceDecoder::new(
+                start_face_decoder,
+                has_start_face_bits,
+            );
+            // Initialize contexts by reading counts/symbol arrays from the buffer
+            if !valence_decoder.init_from_buffer(in_buffer, max_num_vertices) {
+                return Err(DracoError::DracoError("Failed to init valence traversal decoder".to_string()));
+            }
+
+            let nv = connectivity_decoder
+                .decode_connectivity(actual_num_symbols as i32, &mut valence_decoder)
+                .map_err(DracoError::DracoError)? as usize;
+
+            // Don't end seam decoders yet - we need to decode from them after corner table is built
+
+            // Extract state we need after the decoder is consumed
+            has_start_face_bits_flag = valence_decoder.has_start_face_bits;
+            start_face_decoder_opt = Some(valence_decoder.start_face_decoder);
+            processed_connectivity_corners = valence_decoder.processed_connectivity_corners;
+            nv
+        } else {
+            let mut traversal_decoder = InternalTraversalDecoder::new(
+                symbols,
+                topology_split_data,
+                start_face_decoder,
+                has_start_face_bits,
+                max_num_vertices,
+            );
+
+            let nv = connectivity_decoder
+                .decode_connectivity(actual_num_symbols as i32, &mut traversal_decoder)
+                .map_err(DracoError::DracoError)? as usize;
+
+            has_start_face_bits_flag = traversal_decoder.has_start_face_bits;
+            start_face_decoder_opt = Some(traversal_decoder.start_face_decoder);
+            processed_connectivity_corners = traversal_decoder.processed_connectivity_corners;
+            nv
+        };
+        
+
+        if has_start_face_bits_flag {
+            if let Some(mut sfd) = start_face_decoder_opt {
+                sfd.end_decoding();
+            }
         }
 
         // Reverse the connectivity corner order to match the encoder-side
         // reversal applied before attribute sequencing.
-        let mut processed = traversal_decoder.processed_connectivity_corners;
+        let mut processed = processed_connectivity_corners;
         processed.reverse();
         self.processed_connectivity_corners = processed;
         
-        eprintln!("DECODER: processed_connectivity_corners: {:?}", self.processed_connectivity_corners);
 
         // Store the corner table and truncate to the actual vertex count
         let mut ct = connectivity_decoder.corner_table;
@@ -506,33 +569,63 @@ impl MeshEdgebreakerDecoder {
         self.assign_points_to_corners(mesh)?;
 
         // Decode attribute seams.
+        // For valence mode, we already started the seam decoders before reading context symbols
+        // to properly position the buffer. Now we need to decode from them.
         self.attribute_seam_corners.clear();
-        for _ in 0..num_attribute_data {
-            let mut seam_corners = Vec::new();
-            let mut seam_decoder = RAnsBitDecoder::new();
-            if !seam_decoder.start_decoding(in_buffer) {
-                return Err(DracoError::DracoError("Failed to start seam decoding".to_string()));
-            }
-
-            if let Some(ct) = &self.corner_table {
-                for f in 0..mesh.num_faces() {
-                    for k in 0..3 {
-                        let c = (f * 3 + k) as u32;
-                        let opp = ct.opposite(CornerIndex(c));
-                        if opp != crate::geometry_indices::INVALID_CORNER_INDEX {
-                            let opp_face = (opp.0 / 3) as usize;
-                            if f < opp_face && seam_decoder.decode_next_bit() {
+        
+        if self.traversal_decoder_type == 2 {
+            // Valence mode - use the seam decoders we already started
+            for mut seam_decoder in valence_seam_decoders.into_iter() {
+                let mut seam_corners = Vec::new();
+                if let Some(ct) = &self.corner_table {
+                    for f in 0..mesh.num_faces() {
+                        for k in 0..3 {
+                            let c = (f * 3 + k) as u32;
+                            let opp = ct.opposite(CornerIndex(c));
+                            if opp != crate::geometry_indices::INVALID_CORNER_INDEX {
+                                let opp_face = (opp.0 / 3) as usize;
+                                if f < opp_face && seam_decoder.decode_next_bit() {
+                                    seam_corners.push(c);
+                                    seam_corners.push(opp.0);
+                                }
+                            } else {
                                 seam_corners.push(c);
-                                seam_corners.push(opp.0);
                             }
-                        } else {
-                            seam_corners.push(c);
                         }
                     }
                 }
+                seam_decoder.end_decoding();
+                self.attribute_seam_corners.push(seam_corners);
             }
-            seam_decoder.end_decoding();
-            self.attribute_seam_corners.push(seam_corners);
+        } else {
+            // Non-valence mode - start seam decoders from buffer now
+            for _ in 0..num_attribute_data {
+                let mut seam_corners = Vec::new();
+                let mut seam_decoder = RAnsBitDecoder::new();
+                if !seam_decoder.start_decoding(in_buffer) {
+                    return Err(DracoError::DracoError("Failed to start seam decoding".to_string()));
+                }
+
+                if let Some(ct) = &self.corner_table {
+                    for f in 0..mesh.num_faces() {
+                        for k in 0..3 {
+                            let c = (f * 3 + k) as u32;
+                            let opp = ct.opposite(CornerIndex(c));
+                            if opp != crate::geometry_indices::INVALID_CORNER_INDEX {
+                                let opp_face = (opp.0 / 3) as usize;
+                                if f < opp_face && seam_decoder.decode_next_bit() {
+                                    seam_corners.push(c);
+                                    seam_corners.push(opp.0);
+                                }
+                            } else {
+                                seam_corners.push(c);
+                            }
+                        }
+                    }
+                }
+                seam_decoder.end_decoding();
+                self.attribute_seam_corners.push(seam_corners);
+            }
         }
 
         Ok(mesh.num_faces())
@@ -601,11 +694,6 @@ impl MeshEdgebreakerDecoder {
                 return;
             }
 
-            if cfg!(feature = "debug_logs") {
-                 println!("DEBUG: Rust Decoder TraverseFromCorner STARTED: seed_corner={} face={} offset={}", 
-                    start_corner.0, start_corner.0/3, start_corner.0%3);
-            }
-
             let mut corner_stack = vec![start_corner];
             
             // Pre-visit next and prev vertices (matching C++ exactly - NOT the tip vertex)
@@ -623,10 +711,6 @@ impl MeshEdgebreakerDecoder {
             if !visited_vertices[next_vert.0 as usize] {
                 visited_vertices[next_vert.0 as usize] = true;
                 point_ids[next_vert.0 as usize] = PointIndex(*next_point_id);
-                if cfg!(feature = "debug_logs") && *next_point_id < 10 {
-                    eprintln!("Decoder DFS previsit next: data_id={} vertex={} corner={}", 
-                        *next_point_id, next_vert.0, next_c.0);
-                }
                 *next_point_id += 1;
                 data_to_corner_map.push(next_c.0);
             }
@@ -634,10 +718,6 @@ impl MeshEdgebreakerDecoder {
             if !visited_vertices[prev_vert.0 as usize] {
                 visited_vertices[prev_vert.0 as usize] = true;
                 point_ids[prev_vert.0 as usize] = PointIndex(*next_point_id);
-                if cfg!(feature = "debug_logs") && *next_point_id < 10 {
-                    eprintln!("Decoder DFS previsit prev: data_id={} vertex={} corner={}", 
-                        *next_point_id, prev_vert.0, prev_c.0);
-                }
                 *next_point_id += 1;
                 data_to_corner_map.push(prev_c.0);
             }
@@ -668,10 +748,6 @@ impl MeshEdgebreakerDecoder {
                             || corner_table.swing_left(lmc) == crate::geometry_indices::INVALID_CORNER_INDEX;
                         visited_vertices[vert_id.0 as usize] = true;
                         point_ids[vert_id.0 as usize] = PointIndex(*next_point_id);
-                        if cfg!(feature = "debug_logs") && *next_point_id < 10 {
-                            eprintln!("Decoder DFS main loop: data_id={} vertex={} corner={} on_boundary={}", 
-                                *next_point_id, vert_id.0, corner_id.0, on_boundary);
-                        }
                         *next_point_id += 1;
                         data_to_corner_map.push(corner_id.0);
                         
@@ -888,7 +964,7 @@ impl<'a> EdgebreakerTraversalDecoder for InternalTraversalDecoder<'a> {
         let _ = corner;
     }
 
-    fn new_active_corner_reached(&mut self, corner: CornerIndex) {
+    fn new_active_corner_reached(&mut self, corner: CornerIndex, _corner_table: &CornerTable) {
         // Matches C++ MeshEdgebreakerDecoderImpl::processed_connectivity_corners_:
         // store corners in the order they were visited during connectivity decoding.
         self.processed_connectivity_corners.push(corner.0);

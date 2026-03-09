@@ -2,5 +2,32 @@
 members = [
     "draco-core",
     "draco-io",
+    "draco-cpp-ffi",
 ]
 resolver = "2"
+
+# Optimize draco-core even in dev/test builds so benchmarks are meaningful.
+[profile.dev.package.draco-core]
+opt-level = 3
+codegen-units = 1
+
+[profile.test.package.draco-core]
+opt-level = 3
+codegen-units = 1
+
+[profile.dev.package.draco-io]
+opt-level = 2
+
+[profile.test.package.draco-io]
+opt-level = 2
+
+# Also optimize the FFI test crate so the benchmark loops themselves are fast.
+[profile.dev.package.draco-cpp-ffi]
+opt-level = 2
+
+[profile.test.package.draco-cpp-ffi]
+opt-level = 2
+
+# Enable thin LTO for cross-crate inlining in test builds.
+[profile.test]
+lto = "thin"

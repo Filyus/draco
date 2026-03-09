@@ -66,6 +66,8 @@ pub mod mesh_decoder;
 #[cfg(feature = "decoder")]
 pub mod mesh_edgebreaker_decoder;
 #[cfg(feature = "decoder")]
+pub mod mesh_edgebreaker_traversal_valence_decoder;
+#[cfg(feature = "decoder")]
 pub mod point_cloud_decoder;
 #[cfg(feature = "decoder")]
 pub mod prediction_scheme_normal_octahedron_canonicalized_decoding_transform;
@@ -96,6 +98,8 @@ pub mod encoder_options;
 pub mod kd_tree_attributes_encoder;
 #[cfg(feature = "encoder")]
 pub mod mesh_edgebreaker_encoder;
+#[cfg(feature = "encoder")]
+pub mod mesh_edgebreaker_traversal_valence_encoder;
 #[cfg(feature = "encoder")]
 pub mod mesh_encoder;
 #[cfg(feature = "encoder")]

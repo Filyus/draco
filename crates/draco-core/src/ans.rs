@@ -53,25 +53,29 @@ impl AnsCoder {
         Ok(self.buf.len())
     }
 
+    #[inline]
     pub fn rabs_desc_write(&mut self, val: bool, p0: u8) {
         let p = ANS_P8_PRECISION - p0 as u32;
         let l_s = if val { p } else { p0 as u32 };
         
         if self.state >= ANS_L_BASE / ANS_P8_PRECISION * ANS_IO_BASE * l_s {
-            self.buf.push((self.state % ANS_IO_BASE) as u8);
-            self.state /= ANS_IO_BASE;
+            // ANS_IO_BASE is 256.
+            self.buf.push((self.state & 0xFF) as u8);
+            self.state >>= 8;
         }
         
         let quot = self.state / l_s;
-        let rem = self.state % l_s;
+        let rem = self.state - quot * l_s;
         self.state = quot * ANS_P8_PRECISION + rem + if val { 0 } else { p };
     }
 
+    #[inline]
     pub fn rabs_desc_write_bits(&mut self, val: u32, bit_length: u32) {
         let limit = (self.l_base >> bit_length) * ANS_IO_BASE;
         if self.state >= limit {
-            self.buf.push((self.state % ANS_IO_BASE) as u8);
-            self.state /= ANS_IO_BASE;
+            // ANS_IO_BASE is 256.
+            self.buf.push((self.state & 0xFF) as u8);
+            self.state >>= 8;
         }
         
         let mask = (1 << bit_length) - 1;
@@ -103,10 +107,11 @@ impl<'a> AnsDecoder<'a> {
         }
     }
 
+    #[inline(always)]
     pub fn read_normalize(&mut self) {
         while self.state < self.l_base && self.buf_offset > 0 {
             self.buf_offset -= 1;
-            self.state = (self.state * ANS_IO_BASE) | (self.buf[self.buf_offset] as u32);
+            self.state = (self.state << 8) | self.buf[self.buf_offset] as u32;
         }
     }
 

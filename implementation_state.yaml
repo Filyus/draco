@@ -1,4 +1,36 @@
+parity_check_count: 3
+parity_verifications:
+  - id: 1
+    function: "DepthFirstTraverser::TraverseFromCorner"
+    source_file: "src/draco/compression/mesh/traverser/depth_first_traverser.h"
+    status: completed
+    note: "Iterative DFS logic verified. Shortcut for non-boundary vertices (continue Right without stack push) and stack-top replacement on split. Verified visit order: Next, Prev before Tip."
+  - id: 2
+    function: "MeshAttributeIndicesEncodingObserver::OnNewVertexVisited"
+    source_file: "src/draco/compression/mesh/traverser/mesh_attribute_indices_encoding_observer.h"
+    status: completed
+    note: "Mapping order verified: AddPointId, corner_map.push, vertex_map[v]=num_values, num_values++."
+  - id: 3
+    function: "MeshTraversalSequencer::GenerateSequenceInternal"
+    source_file: "src/draco/compression/mesh/traverser/mesh_traversal_sequencer.h"
+    status: completed
+    note: "Seed processing verified: connectivity corners reversed then init face corners appended."
+
 files:
+  - path: "crates/draco-cpp-ffi/src/lib.rs"
+    structures:
+      - name: "CppMesh"
+        type: "struct"
+        progress: "added"
+        note: "RAII wrapper around C++ mesh handle (create/free, set_face, add_position_attribute)."
+      - name: "CppEncoderBuffer"
+        type: "struct"
+        progress: "added"
+        note: "RAII wrapper around C++ EncoderBuffer (create/free, data/size)."
+    functions:
+      - name: "encode_with_handles"
+        progress: "added"
+        note: "Encodes a mesh using the C++ handle API and returns encoded bytes."
   - path: "crates/draco-core/src/ans.rs"
     structures:
       - name: "AnsCoder"
@@ -769,6 +801,9 @@ files:
       - name: "add_face"
         progress: "fully implemented"
         note: "Matches C++ logic."
+      - name: "deduplicate_point_ids"
+        progress: "fully implemented"
+        note: "Remaps point IDs to match C++ OBJ loader behavior. Points are assigned new IDs in face-traversal order, and face indices plus attribute data are reordered accordingly. Required for binary compatibility with C++ sequential encoding."
       - name: "deref"
         progress: "fully implemented"
         note: "Matches C++ logic."
@@ -1159,18 +1194,18 @@ files:
       - name: "PredictionSchemeConstrainedMultiParallelogramEncoder"
         type: "struct"
         progress: "fully implemented"
-        note: "Port of Draco's constrained multi-parallelogram mesh prediction scheme. Includes overhead modeling and crease-edge flag coding."
+        note: "Port of Draco's constrained multi-parallelogram mesh prediction scheme. Includes overhead modeling and crease-edge flag coding. Uses i32 wrapping arithmetic for accumulation to match C++ unsigned overflow semantics. FIX: Entropy tracking now uses predicted-actual (not actual-predicted) to match C++ ComputeError sign convention."
       - name: "PredictionSchemeConstrainedMultiParallelogramDecoder"
         type: "struct"
         progress: "fully implemented"
-        note: "Decoder counterpart for constrained  lti-parallelogram prediction scheme."
+        note: "Decoder counterpart for constrained multi-parallelogram prediction scheme. Uses add_as_unsigned for C++ compatible accumulation."
     functions:
       - name: "compute_correction_values"
         progress: "fully implemented"
-        note: "Computes correction values for multiple constrained parallelogram candidates and encodes per-vertex mode signaling."
+        note: "Computes correction values for multiple constrained parallelogram candidates and encodes per-vertex mode signaling. Uses i32 wrapping arithmetic for accumulation."
       - name: "compute_original_values"
         progress: "fully implemented"
-        note: "Reconstructs original values using decoded prediction data and per-vertex selected mode."
+        note: "Reconstructs original values using decoded prediction data and per-vertex selected mode. Uses add_as_unsigned for C++ compatible accumulation."
       - name: "encode_prediction_data"
         progress: "fully implemented"
         note: "Encodes prediction data using varints and RANS bit coding into the prediction-data stream."
@@ -1180,6 +1215,19 @@ files:
       - name: "compute_overhead_bits"
         progress: "fully implemented"
         note: "Estimates overhead bits for mode signaling and crease-edge flags to drive selection."
+  - path: "crates/draco-core/src/prediction_scheme_parallelogram.rs"
+    structures:
+      - name: "ParallelogramDataType"
+        type: "trait"
+        progress: "fully implemented"
+        note: "Defines operations needed for parallelogram prediction including add_as_unsigned for C++ compatible unsigned wrapping arithmetic."
+    functions:
+      - name: "add_as_unsigned"
+        progress: "fully implemented"
+        note: "Performs addition using unsigned wrapping semantics to match C++ behavior where signed values are cast to unsigned for accumulation."
+      - name: "compute_parallelogram_prediction"
+        progress: "fully implemented"
+        note: "Computes parallelogram prediction from three corner values."
   - path: "crates/draco-core/src/prediction_scheme_selection.rs"
     structures: []
     functions:
@@ -1337,6 +1385,29 @@ files:
       - name: "start_encoding"
         progress: "fully implemented"
         note: "Matches C++ logic."
+  - path: "crates/draco-core/src/shannon_entropy.rs"
+    structures:
+      - name: "ShannonEntropyTracker"
+        type: "struct"
+        progress: "fully implemented"
+        note: "FIX: Now correctly handles peek by cloning and mutating temporary frequency table. Previous implementation did not track cumulative frequency changes during peek when the same symbol appeared multiple times in input. This caused incorrect entropy norm calculations, leading to wrong cost estimates in CMP encoder configuration selection."
+      - name: "EntropyData"
+        type: "struct"
+        progress: "fully implemented"
+        note: "Holds entropy statistics: entropy_norm, num_values, max_symbol, num_unique_symbols."
+    functions:
+      - name: "push"
+        progress: "fully implemented"
+        note: "Adds symbols and permanently updates tracker state."
+      - name: "peek"
+        progress: "fully implemented"
+        note: "Computes entropy data without modifying permanent state. FIX: Now clones frequency table to correctly track cumulative changes when same symbol appears multiple times."
+      - name: "get_number_of_data_bits_static"
+        progress: "fully implemented"
+        note: "Computes Shannon entropy bits from entropy_norm using formula: N*log2(N) - entropy_norm."
+      - name: "get_number_of_r_ans_table_bits_static"
+        progress: "fully implemented"
+        note: "Estimates rANS frequency table bits."
   - path: "crates/draco-core/src/sequential_attribute_decoder.rs"
     structures:
       - name: "SequentialAttributeDecoder"
@@ -1904,6 +1975,32 @@ files:
       - name: "app.js"
         progress: "fully implemented"
         note: "Application logic for loading WASM modules and handling conversions."
+
+  - path: "crates/draco-core/src/mesh_edgebreaker_traversal_valence_decoder.rs"
+    structures:
+      - name: "MeshEdgebreakerTraversalValenceDecoder"
+        type: "struct"
+        progress: "fully implemented"
+        note: "Valence-based traversal decoder for EdgeBreaker (type 2). Uses context-based symbol decoding where symbols are stored per-valence (2-7) and decoded from back. Maintains vertex valences during traversal for context prediction."
+    functions:
+      - name: "new"
+        progress: "fully implemented"
+        note: "Creates new valence decoder with start face decoder."
+      - name: "init_from_buffer"
+        progress: "fully implemented"
+        note: "Reads varint counts and symbol streams per context (6 contexts for valences 2-7). Matches C++ EdgeBreakerTraversalValenceStart."
+      - name: "decode_symbol"
+        progress: "fully implemented"
+        note: "Returns symbol_id (0-4) from active context. First symbol is E when no context. Matches C++ DecodeSymbol."
+      - name: "decode_start_face_configuration"
+        progress: "fully implemented"
+        note: "Returns start face configuration bit from rANS decoder."
+      - name: "merge_vertices"
+        progress: "fully implemented"
+        note: "Adds source valence to dest valence when vertices are merged."
+      - name: "new_active_corner_reached"
+        progress: "fully implemented"
+        note: "Updates vertex valences based on decoded symbol (C/S/L/R/E). Computes next active context from clamped valence of next vertex."
 
   - path: "draco_core/include/draco/mesh/mesh.h"
     structures:

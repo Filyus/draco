@@ -568,6 +568,11 @@ impl GltfReader {
             }
         }
 
+        // Match C++ Draco behavior: deduplicate point IDs in face-traversal order.
+        // This ensures binary compatibility when encoding.
+        // Note: Draco-compressed meshes don't need this as they're already in the correct format.
+        mesh.deduplicate_point_ids();
+
         Ok(mesh)
     }
 

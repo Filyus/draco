@@ -26,7 +26,9 @@ impl Quantizer {
 
     pub fn quantize_float(&self, val: f32) -> i32 {
         let val = val * self.inverse_delta;
-        (val + 0.5).floor() as i32
+        // Use explicit f32 literal to avoid accidental promotion to f64 and
+        // to match C++'s float-floor(val + 0.5f) behavior exactly.
+        (val + 0.5f32).floor() as i32
     }
 }
 
@@ -58,6 +60,7 @@ impl Dequantizer {
         }
     }
 
+    #[inline(always)]
     pub fn dequantize_float(&self, val: i32) -> f32 {
         val as f32 * self.delta
     }

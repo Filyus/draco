@@ -152,7 +152,7 @@ impl<'a> RAnsSymbolDecoder<'a> {
         true
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn decode_symbol(&mut self) -> u32 {
         if self.num_symbols <= 1 {
             return 0;
@@ -164,7 +164,6 @@ impl<'a> RAnsSymbolDecoder<'a> {
         let quo = self.ans.state >> self.rans_precision_bits;  // Fast division
         let rem = self.ans.state & self.rans_precision_mask;   // Fast modulo
         let symbol_id = self.lut[rem as usize];
-
         let sym = &self.probability_table[symbol_id as usize];
         self.ans.state = quo * sym.prob + rem - sym.cum_prob;
         symbol_id

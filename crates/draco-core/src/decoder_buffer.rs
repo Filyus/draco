@@ -163,20 +163,55 @@ impl<'a> DecoderBuffer<'a> {
     /// # Errors
     ///
     /// Returns `DracoError::BufferError` if bit decoding is not active or end of stream.
+    #[inline(always)]
     pub fn decode_least_significant_bits32(&mut self, nbits: u32) -> Result<u32, DracoError> {
         if !self.bit_decoder_active {
             return Err(DracoError::BufferError(
                 "Bit decoding not active".into(),
             ));
         }
-        let mut value = 0;
-        for i in 0..nbits {
-            let bit = self.get_bit()?;
-            value |= bit << i;
+        self.decode_least_significant_bits32_fast(nbits)
+    }
+
+    /// Optimized version for hot paths - reads multiple bytes at once.
+    #[inline(always)]
+    pub fn decode_least_significant_bits32_fast(&mut self, nbits: u32) -> Result<u32, DracoError> {
+        if nbits == 0 {
+            return Ok(0);
         }
+        
+        let total_bit_offset = self.current_bit_offset;
+        let byte_offset = self.bit_start_pos + total_bit_offset / 8;
+        let bit_shift = (total_bit_offset % 8) as u32;
+        
+        let remaining = self.data.len() - byte_offset;
+        if byte_offset >= self.bit_stream_end_pos || remaining == 0 {
+            return Err(DracoError::BufferError("Unexpected end of bit stream".into()));
+        }
+        
+        // Fast path: read 8 bytes at once when enough data remains (avoids per-byte loop).
+        let raw = if remaining >= 8 {
+            let bytes: [u8; 8] = self.data[byte_offset..byte_offset + 8].try_into().unwrap();
+            u64::from_le_bytes(bytes)
+        } else {
+            let needed_bytes = ((bit_shift + nbits + 7) / 8) as usize;
+            if remaining < needed_bytes {
+                return Err(DracoError::BufferError("Unexpected end of bit stream".into()));
+            }
+            let mut v = 0u64;
+            for i in 0..needed_bytes {
+                v |= (self.data[byte_offset + i] as u64) << (i * 8);
+            }
+            v
+        };
+        let value = ((raw >> bit_shift) as u32) & ((1u32 << nbits) - 1);
+        
+        self.current_bit_offset += nbits as usize;
         Ok(value)
     }
 
+    #[inline]
+    #[allow(dead_code)]
     fn get_bit(&mut self) -> Result<u32, DracoError> {
         let total_bit_offset = self.current_bit_offset;
         let byte_offset = self.bit_start_pos + total_bit_offset / 8;

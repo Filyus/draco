@@ -46,6 +46,23 @@ pub struct ExportOptions {
     pub texcoord_quantization: Option<i32>,
     /// Output format: "glb" or "gltf"
     pub format: Option<String>,
+    /// Draco encoding speed (0-10, default: 5). Lower = better compression, slower. Higher = faster, worse compression.
+    pub encoding_speed: Option<i32>,
+    /// Draco encoding method: 0 = sequential, 1 = edgebreaker, -1 = auto (default)
+    pub encoding_method: Option<i32>,
+}
+
+/// Draco compression statistics.
+#[derive(Serialize, Deserialize, Default)]
+pub struct DracoStats {
+    /// Compression method used: "sequential" or "edgebreaker"
+    pub method: String,
+    /// Encoding speed used (0-10)
+    pub speed: i32,
+    /// Compressed size in bytes
+    pub compressed_size: usize,
+    /// Prediction scheme used for position attribute
+    pub prediction_scheme: String,
 }
 
 /// Export result.
@@ -57,6 +74,8 @@ pub struct ExportResult {
     /// Binary data (for .glb format)
     pub binary_data: Option<Vec<u8>>,
     pub error: Option<String>,
+    /// Draco compression statistics (if Draco was used)
+    pub draco_stats: Option<DracoStats>,
 }
 
 /// Initialize panic hook for better error messages in browser console.
@@ -111,6 +130,7 @@ pub fn create_gltf(meshes_js: JsValue, options_js: JsValue) -> JsValue {
                 json_data: None,
                 binary_data: None,
                 error: Some(format!("Invalid mesh data: {}", e)),
+                draco_stats: None,
             };
             return serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL);
         }
@@ -138,6 +158,7 @@ pub fn create_gltf(meshes_js: JsValue, options_js: JsValue) -> JsValue {
                 json_data: None,
                 binary_data: None,
                 error: Some(format!("Internal error: {}", msg)),
+                draco_stats: None,
             }
         }
     };
@@ -156,6 +177,7 @@ pub fn create_gltf_with_scene(meshes_js: JsValue, nodes_js: JsValue, options_js:
                 json_data: None,
                 binary_data: None,
                 error: Some(format!("Invalid mesh data: {}", e)),
+                draco_stats: None,
             };
             return serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL);
         }
@@ -169,6 +191,7 @@ pub fn create_gltf_with_scene(meshes_js: JsValue, nodes_js: JsValue, options_js:
                 json_data: None,
                 binary_data: None,
                 error: Some(format!("Invalid node data: {}", e)),
+                draco_stats: None,
             };
             return serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL);
         }
@@ -204,6 +227,7 @@ fn create_gltf_with_scene_internal(
 ) -> ExportResult {
     let use_draco = options.use_draco.unwrap_or(false);
     let format = options.format.as_deref().unwrap_or("glb");
+    let mut total_draco_stats: Option<DracoStats> = None;
 
     // Build binary buffer
     let mut binary_data: Vec<u8> = Vec::new();
@@ -223,9 +247,9 @@ fn create_gltf_with_scene_internal(
         log(&format!("[GLTF_WRITER] Processing {} meshes", meshes.len()));
     }
 
-    for (mesh_idx, mesh) in meshes.iter().enumerate() {
+    for (_mesh_idx, mesh) in meshes.iter().enumerate() {
         let vertex_count = mesh.positions.len() / 3;
-        let face_count = mesh.indices.len() / 3;
+        let _face_count = mesh.indices.len() / 3;
 
         #[cfg(feature = "console_error_panic_hook")]
         {
@@ -235,14 +259,26 @@ fn create_gltf_with_scene_internal(
                 #[wasm_bindgen(js_namespace = console)]
                 fn log(s: &str);
             }
-            log(&format!("[GLTF_WRITER] Mesh {}: positions.len()={}, indices.len()={}, vertex_count={}, face_count={}", 
-                mesh_idx, mesh.positions.len(), mesh.indices.len(), vertex_count, face_count));
+            log(&format!("[GLTF_WRITER] Mesh: positions.len()={}, indices.len()={}, vertex_count={}", 
+                mesh.positions.len(), mesh.indices.len(), vertex_count));
         }
 
         if use_draco {
             // Encode with Draco compression
             match encode_draco_mesh(mesh, options) {
                 Ok(draco_result) => {
+                    // Track stats from first mesh (or aggregate if multiple)
+                    if total_draco_stats.is_none() {
+                        total_draco_stats = Some(DracoStats {
+                            method: draco_result.method.clone(),
+                            speed: draco_result.speed,
+                            compressed_size: draco_result.data.len(),
+                            prediction_scheme: draco_result.prediction_scheme.clone(),
+                        });
+                    } else if let Some(stats) = total_draco_stats.as_mut() {
+                        stats.compressed_size += draco_result.data.len();
+                    }
+                    
                     let bv_offset = binary_data.len();
                     binary_data.extend_from_slice(&draco_result.data);
                     // Pad to 4-byte alignment
@@ -257,13 +293,39 @@ fn create_gltf_with_scene_internal(
                         "byteLength": draco_result.data.len()
                     }));
 
-                    // Accessor for positions
+                    // Compute position min/max bounds (required by glTF spec for position accessors)
+                    let mut pos_min = [f32::INFINITY, f32::INFINITY, f32::INFINITY];
+                    let mut pos_max = [f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY];
+                    for chunk in mesh.positions.chunks(3) {
+                        if chunk.len() == 3 {
+                            pos_min[0] = pos_min[0].min(chunk[0]);
+                            pos_min[1] = pos_min[1].min(chunk[1]);
+                            pos_min[2] = pos_min[2].min(chunk[2]);
+                            pos_max[0] = pos_max[0].max(chunk[0]);
+                            pos_max[1] = pos_max[1].max(chunk[1]);
+                            pos_max[2] = pos_max[2].max(chunk[2]);
+                        }
+                    }
+
+                    // Accessor for positions (must include min/max for glTF)
                     let pos_accessor_idx = accessors.len();
                     accessors.push(serde_json::json!({
                         "count": vertex_count,
                         "componentType": 5126,
-                        "type": "VEC3"
+                        "type": "VEC3",
+                        "min": pos_min,
+                        "max": pos_max
                     }));
+                    
+                    {
+                        use wasm_bindgen::prelude::*;
+                        #[wasm_bindgen]
+                        extern "C" {
+                            #[wasm_bindgen(js_namespace = console)]
+                            fn log(s: &str);
+                        }
+                        log(&format!("[GLTF] Position accessor: idx={}, count={}", pos_accessor_idx, vertex_count));
+                    }
 
                     // Accessor for indices
                     let idx_accessor_idx = accessors.len();
@@ -272,6 +334,16 @@ fn create_gltf_with_scene_internal(
                         "componentType": 5125,
                         "type": "SCALAR"
                     }));
+                    
+                    {
+                        use wasm_bindgen::prelude::*;
+                        #[wasm_bindgen]
+                        extern "C" {
+                            #[wasm_bindgen(js_namespace = console)]
+                            fn log(s: &str);
+                        }
+                        log(&format!("[GLTF] Indices accessor: idx={}, count={}", idx_accessor_idx, mesh.indices.len()));
+                    }
 
                     let mut attributes = serde_json::json!({
                         "POSITION": pos_accessor_idx
@@ -326,6 +398,7 @@ fn create_gltf_with_scene_internal(
                         json_data: None,
                         binary_data: None,
                         error: Some(format!("Draco encoding failed: {}", e)),
+                        draco_stats: None,
                     };
                 }
             }
@@ -484,6 +557,18 @@ fn create_gltf_with_scene_internal(
         gltf_json["extensionsRequired"] = serde_json::json!(["KHR_draco_mesh_compression"]);
     }
 
+    // Log the full glTF JSON for debugging
+    {
+        use wasm_bindgen::prelude::*;
+        #[wasm_bindgen]
+        extern "C" {
+            #[wasm_bindgen(js_namespace = console)]
+            fn log(s: &str);
+        }
+        let pretty = serde_json::to_string_pretty(&gltf_json).unwrap_or_default();
+        log(&format!("[GLTF] Final JSON structure:\n{}", pretty));
+    }
+
     match format {
         "glb" => {
             // Build GLB
@@ -529,6 +614,7 @@ fn create_gltf_with_scene_internal(
                 json_data: None,
                 binary_data: Some(glb),
                 error: None,
+                draco_stats: total_draco_stats,
             }
         }
         _ => {
@@ -543,6 +629,7 @@ fn create_gltf_with_scene_internal(
                 json_data: Some(json_string),
                 binary_data: None,
                 error: None,
+                draco_stats: total_draco_stats,
             }
         }
     }
@@ -680,6 +767,20 @@ fn encode_draco_mesh(mesh: &MeshInput, options: &ExportOptions) -> Result<DracoE
 
     let mut enc_options = EncoderOptions::default();
 
+    // Set encoding speed (0-10, default 5)
+    if let Some(speed) = options.encoding_speed {
+        enc_options.set_global_int("encoding_speed", speed);
+        log(&format!("[DRACO] Setting encoding speed: {}", speed));
+    }
+
+    // Set encoding method (0 = sequential, 1 = edgebreaker, -1 = auto)
+    if let Some(method) = options.encoding_method {
+        if method >= 0 {
+            enc_options.set_encoding_method(method);
+            log(&format!("[DRACO] Setting encoding method: {}", method));
+        }
+    }
+
     if let Some(pq) = options.position_quantization {
         let att_id = draco_mesh.named_attribute_id(GeometryAttributeType::Position);
         if att_id != -1 {
@@ -725,7 +826,35 @@ fn encode_draco_mesh(mesh: &MeshInput, options: &ExportOptions) -> Result<DracoE
     match encoder.encode(&enc_options, &mut encoder_buffer) {
         Ok(_) => {
             log(&format!("[DRACO] Encode successful, buffer size: {}", encoder_buffer.data().len()));
-
+            // Determine which method was actually used
+            let method_used = if let Some(method) = enc_options.get_encoding_method() {
+                if method == 1 { "edgebreaker" } else { "sequential" }
+            } else {
+                // Auto mode: edgebreaker unless speed == 10
+                let speed = enc_options.get_speed();
+                if speed == 10 { "sequential" } else { "edgebreaker" }
+            };
+            
+            let speed_used = enc_options.get_speed();
+            
+            // Determine primary prediction scheme based on speed and method
+            // This matches the C++ SelectPredictionMethod() from prediction_scheme_encoder_factory.cc
+            let prediction_scheme = if method_used == "sequential" {
+                // Sequential encoder doesn't use mesh prediction, always DIFFERENCE
+                "DIFFERENCE".to_string()
+            } else if speed_used >= 10 {
+                "DIFFERENCE".to_string()
+            } else if speed_used >= 8 {
+                "DIFFERENCE".to_string()
+            } else if speed_used >= 2 {
+                // C++: speeds 2-7 use PARALLELOGRAM
+                "PARALLELOGRAM".to_string()
+            } else {
+                // C++: speeds 0-1 use CONSTRAINED_MULTI_PARALLELOGRAM
+                "CONSTRAINED_MULTI_PARALLELOGRAM".to_string()
+            };
+            
+            log(&format!("[DRACO] Method: {}, Speed: {}, Prediction: {}", method_used, speed_used, prediction_scheme));
             // Verify produced buffer is decodable by the Rust decoder to catch encoding issues
             {
                 use draco_core::decoder_buffer::DecoderBuffer;
@@ -741,6 +870,9 @@ fn encode_draco_mesh(mesh: &MeshInput, options: &ExportOptions) -> Result<DracoE
                             position_attr_id: pos_attr_id,
                             normal_attr_id: norm_attr_id,
                             texcoord_attr_id: uv_attr_id,
+                            method: method_used.to_string(),
+                            speed: speed_used,
+                            prediction_scheme: prediction_scheme.clone(),
                         });
                     }
                     Err(e) => {
@@ -773,6 +905,9 @@ fn encode_draco_mesh(mesh: &MeshInput, options: &ExportOptions) -> Result<DracoE
                                                 position_attr_id: pos_attr_id,
                                                 normal_attr_id: norm_attr_id,
                                                 texcoord_attr_id: uv_attr_id,
+                                                method: method_used.to_string(),
+                                                speed: speed_used,
+                                                prediction_scheme: prediction_scheme.clone(),
                                             });
                                         }
                                         Err(e2) => {
@@ -806,6 +941,9 @@ struct DracoEncodingResult {
     position_attr_id: i32,
     normal_attr_id: i32,
     texcoord_attr_id: i32,
+    method: String,
+    speed: i32,
+    prediction_scheme: String,
 }
 
 fn base64_encode(data: &[u8]) -> String {

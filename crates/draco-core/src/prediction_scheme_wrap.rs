@@ -154,10 +154,12 @@ impl PredictionSchemeDecodingTransform<i32, i32> for PredictionSchemeWrapDecodin
         PredictionSchemeTransformType::Wrap
     }
 
+    #[inline]
     fn init(&mut self, num_components: usize) {
         self.num_components = num_components;
     }
 
+    #[inline(always)]
     fn compute_original_value(
         &self,
         predicted_vals: &[i32],

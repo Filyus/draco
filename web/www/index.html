@@ -181,10 +181,29 @@
                     <div id="draco-settings" class="draco-sliders">
                         <div class="slider-row">
                             <div class="slider-header">
-                                <span>Position Quantization</span>
-                                <span><span id="position-bits-value">14</span> bits</span>
+                                <span>Encoding Speed</span>
+                                <span><span id="speed-value">5</span> (0=best, 10=fastest)</span>
                             </div>
-                            <input type="range" id="position-bits" min="8" max="16" value="14">
+                            <input type="range" id="encoding-speed" min="0" max="10" value="5">
+                        </div>
+
+                        <div class="slider-row">
+                            <div class="slider-header">
+                                <span>Compression Method</span>
+                            </div>
+                            <select id="encoding-method">
+                                <option value="-1" selected>Auto</option>
+                                <option value="0">Sequential</option>
+                                <option value="1">Edgebreaker</option>
+                            </select>
+                        </div>
+
+                        <div class="slider-row">
+                            <div class="slider-header">
+                                <span>Position Quantization</span>
+                                <span><span id="position-bits-value">14</span> bits (0=no quant)</span>
+                            </div>
+                            <input type="range" id="position-bits" min="0" max="16" value="14">
                         </div>
 
                         <div class="slider-row">
@@ -209,6 +228,17 @@
             <button id="export-btn" class="primary-btn">
                 <span>⬇</span> Convert & Download
             </button>
+
+            <!-- Compression Stats (Hidden until export completes) -->
+            <div id="compression-stats" class="stats-box" style="display: none; margin-top: 1.5rem; padding: 1rem; background: #1e3a5f; border-radius: 8px; border: 1px solid #3b82f6; color: #f8fafc;">
+                <strong style="color: #60a5fa;">✅ Compression Statistics:</strong>
+                <div style="margin-top: 0.5rem; font-size: 0.9rem; color: #e2e8f0;">
+                    <div><strong>Method:</strong> <span id="stats-method">-</span></div>
+                    <div><strong>Speed:</strong> <span id="stats-speed">-</span></div>
+                    <div><strong>Prediction Scheme:</strong> <span id="stats-prediction">-</span></div>
+                    <div><strong>Compressed Size:</strong> <span id="stats-size">-</span></div>
+                </div>
+            </div>
         </section>
 
         <!-- Console Log -->

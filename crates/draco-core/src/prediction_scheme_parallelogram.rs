@@ -13,11 +13,20 @@ use crate::prediction_scheme::{PredictionSchemeEncoder, PredictionSchemeEncoding
 
 pub trait ParallelogramDataType: Copy + Default + 'static {
     fn compute_parallelogram_prediction(next: Self, prev: Self, opp: Self) -> Self;
+    /// Perform addition as unsigned (matching C++ AddAsUnsigned).
+    /// This avoids signed overflow by treating the values as unsigned during addition.
+    fn add_as_unsigned(a: Self, b: Self) -> Self;
 }
 
 impl ParallelogramDataType for i32 {
     fn compute_parallelogram_prediction(next: Self, prev: Self, opp: Self) -> Self {
         ((next as i64 + prev as i64) - opp as i64) as i32
+    }
+
+    fn add_as_unsigned(a: Self, b: Self) -> Self {
+        // C++ AddAsUnsigned: cast to unsigned, add, cast back to signed
+        // In Rust, this is equivalent to wrapping_add
+        (a as u32).wrapping_add(b as u32) as i32
     }
 }
 

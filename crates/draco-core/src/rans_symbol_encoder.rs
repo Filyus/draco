@@ -40,6 +40,11 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
         let num_symbols = max_valid_symbol + 1;
         self.num_symbols = num_symbols;
         self.probability_table.resize(num_symbols, RAnsSymbol::default());
+        
+        if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+            eprintln!("RUST RANS create: num_symbols={} total_freq={}", num_symbols, total_freq);
+            eprintln!("RUST RANS frequencies: {:?}", &frequencies[..num_symbols.min(frequencies.len())]);
+        }
 
         if total_freq == 0 {
             return false;
@@ -59,12 +64,24 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
             self.probability_table[i].prob = rans_prob;
             total_rans_prob += rans_prob;
         }
+        
+        if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+            eprintln!("RUST RANS initial probs (before norm): {:?}", self.probability_table.iter().map(|s| s.prob).collect::<Vec<_>>());
+            eprintln!("RUST RANS total_rans_prob: {} vs precision: {}", total_rans_prob, Self::RANS_PRECISION);
+        }
 
         if total_rans_prob != Self::RANS_PRECISION {
             let mut sorted_probabilities: Vec<usize> = (0..num_symbols).collect();
+            // Use stable sort to match C++ std::stable_sort behavior
+            // Rust Vec::sort_by is documented to be stable
             sorted_probabilities.sort_by(|&a, &b| {
                 self.probability_table[a].prob.cmp(&self.probability_table[b].prob)
             });
+            
+            if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+                eprintln!("RUST RANS sorted_probabilities: {:?}", sorted_probabilities);
+                eprintln!("RUST RANS total_rans_prob before fix: {}", total_rans_prob);
+            }
 
             if total_rans_prob < Self::RANS_PRECISION {
                 let last = *sorted_probabilities.last().unwrap();
@@ -113,6 +130,10 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
             total_prob += self.probability_table[i].prob;
         }
         
+        if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+            eprintln!("RUST RANS probability_table (probs): {:?}", self.probability_table.iter().map(|s| s.prob).collect::<Vec<_>>());
+            eprintln!("RUST RANS probability_table (cums): {:?}", self.probability_table.iter().map(|s| s.cum_prob).collect::<Vec<_>>());
+        }
 
 
         if total_prob != Self::RANS_PRECISION {
@@ -185,11 +206,21 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
     }
 
     fn rans_write(&mut self, sym: RAnsSymbol) {
+        // Hot path: avoid / and % by 256 (ANS_IO_BASE) and avoid computing both /p and %p.
         let p = sym.prob;
-        while self.ans.state >= Self::L_RANS_BASE / Self::RANS_PRECISION * crate::ans::ANS_IO_BASE * p {
-            self.ans.buf.push((self.ans.state % crate::ans::ANS_IO_BASE) as u8);
-            self.ans.state /= crate::ans::ANS_IO_BASE;
+        let renorm_bound = (Self::L_RANS_BASE / Self::RANS_PRECISION) * crate::ans::ANS_IO_BASE * p;
+
+        let mut state = self.ans.state;
+        while state >= renorm_bound {
+            // ANS_IO_BASE is 256.
+            self.ans.buf.push((state & 0xFF) as u8);
+            state >>= 8;
         }
-        self.ans.state = (self.ans.state / p) * Self::RANS_PRECISION + (self.ans.state % p) + sym.cum_prob;
+
+        // Compute quotient once; derive remainder without an extra division.
+        let quot = state / p;
+        let rem = state - quot * p;
+        state = quot * Self::RANS_PRECISION + rem + sym.cum_prob;
+        self.ans.state = state;
     }
 }

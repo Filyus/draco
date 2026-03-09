@@ -98,10 +98,12 @@ where
     DataType: Copy + Add<CorrType, Output = DataType>,
     CorrType: Copy,
 {
+    #[inline]
     fn init(&mut self, num_components: usize) {
         self.num_components = num_components;
     }
 
+    #[inline]
     fn compute_original_value(
         &self,
         predicted_vals: &[DataType],
@@ -212,6 +214,7 @@ where
         }
 
         // Encode correction for the first element.
+        // Pre-allocate zero values outside the loop
         let zero_vals = vec![DataType::default(); num_components];
         let original = &in_data[0..num_components];
         let corr = &mut out_corr[0..num_components];
@@ -301,21 +304,16 @@ where
         self.transform.init(num_components);
 
         // Decode the original value for the first element.
-        let zero_vals = vec![DataType::default(); num_components];
+        // Pre-allocate buffer that will be reused for zero_vals and then predicted vals
+        let mut predicted = vec![DataType::default(); num_components];
         let corr = &in_corr[0..num_components];
         let out = &mut out_data[0..num_components];
         self.transform
-            .compute_original_value(&zero_vals, corr, out);
+            .compute_original_value(&predicted, corr, out);  // predicted is all zeros here
 
         // Decode data from the front using D(i) = D(i) + D(i - 1).
         for i in (num_components..size).step_by(num_components) {
-            // We need to read the previous value. Since we are writing to out_data,
-            // and we need the previous value which is already written, we can't easily
-            // take mutable and immutable references to the same slice.
-            // However, we can split the slice.
-            
-            // Safe way: copy previous values to a temp buffer
-            let mut predicted = vec![DataType::default(); num_components];
+            // Copy previous values to the pre-allocated buffer
             predicted.copy_from_slice(&out_data[i - num_components..i]);
             
             let corr = &in_corr[i..i + num_components];
