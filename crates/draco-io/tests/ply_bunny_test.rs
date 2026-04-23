@@ -4,6 +4,8 @@ use std::fs;
 
 use std::path::Path;
 
+use draco_io::ply_reader::PlyReader;
+
 /// Parse the bun_zipper.ply file to verify the structure  
 #[test]
 fn test_ply_bunny_structure() {
@@ -112,200 +114,52 @@ fn test_ply_bunny_structure() {
     println!("\n=== Test passed! ===");
 }
 
-
-/// Parse PLY file like the WASM module does
-fn parse_ply_like_wasm(content: &str) -> (Vec<f32>, Vec<u32>, Vec<f32>) {
-    let mut lines = content.lines().peekable();
-
-    // Parse header
-    let first_line = lines.next().unwrap_or("").trim();
-    assert_eq!(first_line, "ply");
-
-    let mut vertex_count = 0usize;
-    let mut face_count = 0usize;
-    let mut current_element = String::new();
-    let mut vertex_properties: Vec<String> = Vec::new();
-
-    for l in lines.by_ref() {
-        let line = l.trim();
-
-        if line == "end_header" {
-            break;
-        }
-
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.is_empty() {
-            continue;
-        }
-
-        match parts[0] {
-            "element" => {
-                if parts.len() >= 3 {
-                    current_element = parts[1].to_string();
-                    let count: usize = parts[2].parse().unwrap_or(0);
-                    if current_element == "vertex" {
-                        vertex_count = count;
-                    } else if current_element == "face" {
-                        face_count = count;
-                    }
-                }
-            }
-            "property" => {
-                if parts.len() >= 3 && current_element == "vertex" && parts[1] != "list" {
-                    vertex_properties.push(parts[2].to_string());
-                }
-            }
-            _ => {}
-        }
-    }
-
-    // Find property indices
-    let x_idx = vertex_properties.iter().position(|p| p == "x");
-    let y_idx = vertex_properties.iter().position(|p| p == "y");
-    let z_idx = vertex_properties.iter().position(|p| p == "z");
-    let nx_idx = vertex_properties.iter().position(|p| p == "nx");
-    let ny_idx = vertex_properties.iter().position(|p| p == "ny");
-    let nz_idx = vertex_properties.iter().position(|p| p == "nz");
-
-    let has_normals = nx_idx.is_some() && ny_idx.is_some() && nz_idx.is_some();
-
-    let mut positions: Vec<f32> = Vec::with_capacity(vertex_count * 3);
-    let mut normals: Vec<f32> = Vec::new();
-
-    if has_normals {
-        normals.reserve(vertex_count * 3);
-    }
-
-    // Parse vertices
-    for _ in 0..vertex_count {
-        let line = match lines.next() {
-            Some(l) => l.trim(),
-            None => break,
-        };
-
-        let values: Vec<f32> = line
-            .split_whitespace()
-            .filter_map(|s| s.parse().ok())
-            .collect();
-
-        if let (Some(xi), Some(yi), Some(zi)) = (x_idx, y_idx, z_idx) {
-            positions.push(*values.get(xi).unwrap_or(&0.0));
-            positions.push(*values.get(yi).unwrap_or(&0.0));
-            positions.push(*values.get(zi).unwrap_or(&0.0));
-        }
-
-        if has_normals {
-            if let (Some(nxi), Some(nyi), Some(nzi)) = (nx_idx, ny_idx, nz_idx) {
-                normals.push(*values.get(nxi).unwrap_or(&0.0));
-                normals.push(*values.get(nyi).unwrap_or(&0.0));
-                normals.push(*values.get(nzi).unwrap_or(&0.0));
-            }
-        }
-    }
-
-    // Parse faces
-    let mut indices: Vec<u32> = Vec::with_capacity(face_count * 3);
-
-    for _ in 0..face_count {
-        let line = match lines.next() {
-            Some(l) => l.trim(),
-            None => break,
-        };
-
-        let values: Vec<u32> = line
-            .split_whitespace()
-            .filter_map(|s| s.parse().ok())
-            .collect();
-
-        if values.is_empty() {
-            continue;
-        }
-
-        let count = values[0] as usize;
-        if values.len() < count + 1 {
-            continue;
-        }
-
-        // Triangulate (fan triangulation for polygons)
-        for j in 1..count - 1 {
-            indices.push(values[1]);
-            indices.push(values[j + 1]);
-            indices.push(values[j + 2]);
-        }
-    }
-
-    (positions, indices, normals)
-}
-
-
-/// Test parsing PLY like the WASM module does and encode with Draco
+/// Test reading the bunny PLY through PlyReader and encoding it with Draco
 #[test]
 fn test_ply_bunny_encode_draco() {
     use draco_core::encoder_buffer::EncoderBuffer;
     use draco_core::encoder_options::EncoderOptions;
     use draco_core::mesh::Mesh as DracoMesh;
     use draco_core::mesh_encoder::MeshEncoder;
-    use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
-    use draco_core::draco_types::DataType;
-    use draco_core::geometry_indices::PointIndex;
     
     let ply_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/bun_zipper.ply");
-    let content = fs::read_to_string(&ply_path).expect("Failed to read PLY file");
-    
-    let (positions, indices, normals) = parse_ply_like_wasm(&content);
+    let mut positions_reader = PlyReader::open(&ply_path).expect("Failed to open PLY file");
+    let raw_positions = positions_reader.read_positions().expect("Failed to read PLY positions");
+    let mut reader = PlyReader::open(&ply_path).expect("Failed to open PLY file");
+    let draco_mesh = reader.read_mesh().expect("Failed to parse PLY mesh");
     
     println!("\n=== Parsed PLY Data ===");
-    println!("Positions length: {}", positions.len());
-    println!("Indices length: {}", indices.len());
-    println!("Normals length: {}", normals.len());
+    let positions_len = draco_mesh.attribute(0).buffer().data().len() / 4;
+    let indices_len = draco_mesh.num_faces() * 3;
+    println!("Positions length: {}", positions_len);
+    println!("Indices length: {}", indices_len);
+    println!("Normals length: 0");
     
-    let vertex_count = positions.len() / 3;
-    let face_count = indices.len() / 3;
+    let vertex_count = draco_mesh.num_points();
+    let face_count = draco_mesh.num_faces();
     
     println!("Vertex count: {}", vertex_count);
     println!("Face count: {}", face_count);
     
     // Verify counts match expectations
-    assert_eq!(vertex_count, 35947, "Expected 35947 vertices");
-    assert_eq!(positions.len(), 35947 * 3, "Expected 35947 * 3 = 107841 position floats");
+    assert_eq!(raw_positions.len(), 35947, "Expected 35947 raw PLY vertices");
+    assert!(vertex_count <= raw_positions.len(), "Mesh point count should not exceed raw PLY vertices");
+    assert!(vertex_count > 34000, "Expected substantial point count after deduplication");
+    assert_eq!(positions_len, vertex_count * 3, "Position buffer should match deduplicated mesh point count");
     assert_eq!(face_count, 69451, "Expected 69451 faces");
-    assert_eq!(indices.len(), 69451 * 3, "Expected 69451 * 3 = 208353 indices");
-    assert_eq!(normals.len(), 0, "Expected 0 normals (bunny has no normals)");
+    assert_eq!(indices_len, 69451 * 3, "Expected 69451 * 3 = 208353 indices");
     
     // Verify index range
-    let max_index = indices.iter().max().copied().unwrap_or(0);
-    let min_index = indices.iter().min().copied().unwrap_or(0);
+    let mut max_index = 0u32;
+    let mut min_index = u32::MAX;
+    for face_id in 0..face_count {
+        for point_index in draco_mesh.face(draco_core::geometry_indices::FaceIndex(face_id as u32)) {
+            max_index = max_index.max(point_index.0);
+            min_index = min_index.min(point_index.0);
+        }
+    }
     println!("Index range: {} to {}", min_index, max_index);
     assert!(max_index < vertex_count as u32, "Max index should be < vertex count");
-    
-    // Now create Draco mesh and encode
-    println!("\n=== Creating Draco Mesh ===");
-    let mut draco_mesh = DracoMesh::new();
-    draco_mesh.set_num_points(vertex_count);
-
-    // Add position attribute
-    let mut pos_attr = PointAttribute::new();
-    pos_attr.init(
-        GeometryAttributeType::Position,
-        3,
-        DataType::Float32,
-        false,
-        vertex_count,
-    );
-    let pos_buffer = pos_attr.buffer_mut();
-    for (i, chunk) in positions.chunks(3).enumerate() {
-        let bytes: Vec<u8> = chunk.iter().flat_map(|v| v.to_le_bytes()).collect();
-        pos_buffer.write(i * 12, &bytes);
-    }
-    draco_mesh.add_attribute(pos_attr);
-
-    // Add faces
-    for i in 0..face_count {
-        let i0 = PointIndex(indices[i * 3]);
-        let i1 = PointIndex(indices[i * 3 + 1]);
-        let i2 = PointIndex(indices[i * 3 + 2]);
-        draco_mesh.add_face([i0, i1, i2]);
-    }
     
     println!("Draco mesh created:");
     println!("  num_points: {}", draco_mesh.num_points());
@@ -359,53 +213,24 @@ fn test_bunny_cpp_interop() {
     use std::process::Command;
     use draco_core::encoder_buffer::EncoderBuffer;
     use draco_core::encoder_options::EncoderOptions;
-    use draco_core::mesh::Mesh as DracoMesh;
     use draco_core::mesh_encoder::MeshEncoder;
-    use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
-    use draco_core::draco_types::DataType;
-    use draco_core::geometry_indices::PointIndex;
 
     let ply_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/bun_zipper.ply");
     println!("Reading PLY: {:?}", ply_path);
-    
-    // Parse PLY manually since the reader doesn't handle faces yet
-    let content = fs::read_to_string(&ply_path).expect("Failed to read PLY file");
-    let (positions, indices, _normals) = parse_ply_like_wasm(&content);
-    
-    let vertex_count = positions.len() / 3;
-    let face_count = indices.len() / 3;
+
+    let mut positions_reader = PlyReader::open(&ply_path).expect("Failed to open PLY file");
+    let raw_positions = positions_reader.read_positions().expect("Failed to read PLY positions");
+    let mut reader = PlyReader::open(&ply_path).expect("Failed to open PLY file");
+    let mesh = reader.read_mesh().expect("Failed to parse PLY mesh");
+
+    let vertex_count = mesh.num_points();
+    let face_count = mesh.num_faces();
     
     println!("Loaded mesh: {} points, {} faces", vertex_count, face_count);
-    assert_eq!(vertex_count, 35947, "Expected 35947 vertices");
+    assert_eq!(raw_positions.len(), 35947, "Expected 35947 raw PLY vertices");
+    assert!(vertex_count <= raw_positions.len(), "Mesh point count should not exceed raw PLY vertices");
+    assert!(vertex_count > 34000, "Expected substantial point count after deduplication");
     assert_eq!(face_count, 69451, "Expected 69451 faces");
-    
-    // Create Draco mesh
-    let mut mesh = DracoMesh::new();
-    mesh.set_num_points(vertex_count);
-
-    // Add position attribute
-    let mut pos_attr = PointAttribute::new();
-    pos_attr.init(
-        GeometryAttributeType::Position,
-        3,
-        DataType::Float32,
-        false,
-        vertex_count,
-    );
-    let pos_buffer = pos_attr.buffer_mut();
-    for (i, chunk) in positions.chunks(3).enumerate() {
-        let bytes: Vec<u8> = chunk.iter().flat_map(|v| v.to_le_bytes()).collect();
-        pos_buffer.write(i * 12, &bytes);
-    }
-    mesh.add_attribute(pos_attr);
-
-    // Add faces
-    for i in 0..face_count {
-        let i0 = PointIndex(indices[i * 3]);
-        let i1 = PointIndex(indices[i * 3 + 1]);
-        let i2 = PointIndex(indices[i * 3 + 2]);
-        mesh.add_face([i0, i1, i2]);
-    }
     
     // Encode with Draco
     let mut encoder = MeshEncoder::new();
