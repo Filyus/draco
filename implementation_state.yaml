@@ -1906,11 +1906,11 @@ files:
       - name: "PlyReader"
         type: "struct"
         progress: "partially implemented"
-        note: "ASCII PLY reader. Now reconstructs mesh connectivity from face elements using C++-style fan triangulation, while broader PLY format coverage remains narrower than upstream C++."
+        note: "ASCII PLY reader. Reconstructs mesh connectivity from face elements using C++-style fan triangulation, preserves standard normal/color vertex attributes, and keeps int32 position attributes instead of forcing float32, while broader PLY format coverage remains narrower than upstream C++."
     functions:
       - name: "read_mesh"
         progress: "partially implemented"
-        note: "Builds a Mesh with positions and triangulated faces from ASCII PLY input, then deduplicates point ids in face-traversal order for Draco parity."
+        note: "Builds a Mesh with float32 or int32 positions, optional normals/colors, and triangulated faces from ASCII PLY input, then deduplicates point ids in face-traversal order for Draco parity."
       - name: "read_ply_positions"
         progress: "fully implemented"
         note: "Returns ASCII PLY positions using the shared parser also used for mesh face reconstruction."
