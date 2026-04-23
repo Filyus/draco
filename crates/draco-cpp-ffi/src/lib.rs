@@ -223,6 +223,21 @@ pub fn benchmark_cpp_encode(
     None
 }
 
+#[cfg(draco_ffi_disabled)]
+pub unsafe fn draco_benchmark_encode_mesh(
+    _num_points: u32,
+    _positions: *const f32,
+    _num_faces: u32,
+    _faces: *const u32,
+    _encoding_speed: i32,
+    _decoding_speed: i32,
+    _quantization_bits: i32,
+    _iterations: u32,
+    _output_size: *mut usize,
+) -> i64 {
+    -1
+}
+
 /// Encode a mesh using C++ Draco and return the encoded bytes
 #[cfg(not(draco_ffi_disabled))]
 pub fn encode_cpp_mesh(
@@ -453,6 +468,14 @@ pub struct CppMesh;
 #[cfg(draco_ffi_disabled)]
 impl CppMesh {
     pub fn new() -> Option<Self> { None }
+
+    pub fn set_num_faces(&mut self, _num_faces: u32) {}
+
+    pub fn set_face(&mut self, _face_idx: u32, _v0: u32, _v1: u32, _v2: u32) {}
+
+    pub fn add_position_attribute(&mut self, _num_points: u32, _positions: &[f32]) -> Option<i32> {
+        None
+    }
 }
 
 #[cfg(not(draco_ffi_disabled))]
@@ -482,7 +505,13 @@ impl Drop for CppEncoderBuffer { fn drop(&mut self) { unsafe { draco_free_encode
 pub struct CppEncoderBuffer;
 
 #[cfg(draco_ffi_disabled)]
-impl CppEncoderBuffer { pub fn new() -> Option<Self> { None } }
+impl CppEncoderBuffer {
+    pub fn new() -> Option<Self> { None }
+
+    pub fn data(&self) -> &[u8] {
+        &[]
+    }
+}
 
 /// Encode using the C++ handle-based API and return encoded bytes
 #[cfg(not(draco_ffi_disabled))]

@@ -9,3 +9,13 @@ pub fn disable_noisy_debug_env() {
         std::env::remove_var("DRACO_CT_DEBUG");
     }
 }
+
+#[allow(dead_code)]
+pub fn skip_if_ffi_unavailable() -> bool {
+    if draco_cpp_ffi::is_available() {
+        false
+    } else {
+        eprintln!("SKIPPING: C++ FFI not available");
+        true
+    }
+}

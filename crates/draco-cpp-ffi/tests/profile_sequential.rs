@@ -79,6 +79,9 @@ fn create_grid_mesh(grid_size: usize) -> (Mesh, Vec<f32>, Vec<u32>) {
 #[test]
 fn profile_sequential_encoding() {
     common::disable_noisy_debug_env();
+    if common::skip_if_ffi_unavailable() {
+        return;
+    }
 
     println!("\n=== Profiling Sequential Encoding (Speed 10) ===\n");
     
@@ -154,6 +157,9 @@ fn profile_sequential_encoding() {
 #[test]
 fn profile_detailed_breakdown() {
     common::disable_noisy_debug_env();
+    if common::skip_if_ffi_unavailable() {
+        return;
+    }
 
     println!("\n=== Detailed Encoding Breakdown (Speed 10) ===\n");
     
@@ -789,6 +795,9 @@ fn profile_rans_loop_micro() {
 #[test]
 fn profile_full_encode_breakdown() {
     common::disable_noisy_debug_env();
+    if common::skip_if_ffi_unavailable() {
+        return;
+    }
     
     println!("\n=== Full Encode Breakdown ===\n");
     

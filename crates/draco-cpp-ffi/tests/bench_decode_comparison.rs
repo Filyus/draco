@@ -9,6 +9,8 @@ use draco_core::EncoderOptions;
 use draco_core::geometry_attribute::{PointAttribute, GeometryAttributeType};
 use draco_core::draco_types::DataType;
 
+mod common;
+
 fn create_test_mesh(grid_size: usize) -> Mesh {
     let num_points = grid_size * grid_size;
     let num_faces = (grid_size - 1) * (grid_size - 1) * 2;
@@ -54,6 +56,11 @@ fn create_test_mesh(grid_size: usize) -> Mesh {
 
 #[test]
 fn bench_decode_comparison() {
+    common::disable_noisy_debug_env();
+    if common::skip_if_ffi_unavailable() {
+        return;
+    }
+
     let mesh = create_test_mesh(100);
     let iterations = 100;
     
