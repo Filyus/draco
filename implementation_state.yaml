@@ -1,4 +1,8 @@
 parity_check_count: 3
+status_notes:
+  - "This file is a manually curated implementation log, not an exact percentage metric."
+  - "Entries may be selective and some files appear more than once when later audits refined specific functions."
+  - "When duplicate entries disagree, prefer the most conservative reading and verify against code/tests."
 parity_verifications:
   - id: 1
     function: "DepthFirstTraverser::TraverseFromCorner"
@@ -156,11 +160,11 @@ files:
   - path: "crates/draco-core/src/corner_table.rs"
     functions:
       - name: "map_corner_to_vertex"
-        progress: "partially implemented"
-        note: "Core mapping logic implemented; debug output now gated behind DRACO_CT_DEBUG to keep C++ parity tests usable. Functional behavior unchanged."
+        progress: "fully implemented"
+        note: "Core mapping logic is implemented; debug output is gated behind DRACO_CT_DEBUG. No known functional gap remains here."
       - name: "set_opposite"
-        progress: "partially implemented"
-        note: "Core opposite mapping logic implemented; debug output now gated behind DRACO_CT_DEBUG to keep C++ parity tests usable. Functional behavior unchanged."
+        progress: "fully implemented"
+        note: "Core opposite mapping logic is implemented; debug output is gated behind DRACO_CT_DEBUG. No known functional gap remains here."
       - name: "new"
         progress: "fully implemented"
         note: "Matches C++ logic."
@@ -484,20 +488,20 @@ files:
   - path: "crates/draco-core/src/prediction_scheme_normal_octahedron_transform_base.rs"
     functions:
       - name: "set_max_quantized_value"
-        progress: "partially implemented"
-        note: "Updated to validate max_quantized_value is of form 2^q-1 and compute quantization bits robustly; returns bool for stream validation."
+        progress: "fully implemented"
+        note: "Validates max_quantized_value is of form 2^q-1, computes quantization bits robustly, and is used as a strict stream-validation helper."
 
   - path: "crates/draco-core/src/prediction_scheme_normal_octahedron_canonicalized_decoding_transform.rs"
     functions:
       - name: "decode_transform_data"
-        progress: "partially implemented"
-        note: "Hardened to match C++: validates max_quantized_value and requires quantization bits in [2,30]."
+        progress: "fully implemented"
+        note: "Validates max_quantized_value and quantization bits bounds and matches the current C++-compatible decoding path."
 
   - path: "crates/draco-core/src/prediction_scheme_geometric_normal.rs"
     functions:
       - name: "decode_prediction_data"
         progress: "partially implemented"
-        note: "Adds guarded v2.2+ retry with +2-byte skew when canonical transform+flip-bit init fails; intended to handle observed fixture layout while remaining strict."
+        note: "Functional for current supported fixtures, but still relies on a guarded v2.2+ +2-byte retry workaround when canonical transform+flip-bit init fails. Treat as working-but-not-clean parity."
   - path: "crates/draco-core/src/draco_types.rs"
     structures:
       - name: "DataType"
@@ -718,7 +722,7 @@ files:
       - name: "MeshDecoder"
         type: "struct"
         progress: "fully implemented"
-        note: "Supports Sequential and Edgebreaker decoding. Edgebreaker path parses attribute decoder identifiers, applies per-attribute seam corner tables, and respects per-decoder traversal_method (depth-first vs prediction-degree) for attribute decoding order/mapping to keep prediction side-streams synchronized. Fixed is_vertex_on_boundary to use swing_left matching C++ CornerTable::IsOnBoundary."
+        note: "Strong support for current Sequential and Edgebreaker decoding, including valence traversal, per-attribute seam corner tables, and traversal-aware attribute mapping. Practical support is still narrower than upstream C++ across the full legacy bitstream matrix."
     functions:
       - name: "decode"
         progress: "fully implemented"
@@ -728,7 +732,7 @@ files:
         note: "Decodes mesh connectivity using Sequential or Edgebreaker methods. Version-aware num_faces/num_points decoding (raw u32 for v<2.2, varint for v>=2.2)."
       - name: "decode_attributes"
         progress: "fully implemented"
-        note: "Decodes attributes using SequentialIntegerAttributeDecoder. Sequential mesh parsing matches MeshEncoder stream (no per-decoder header; num decoders stored as u8). Edgebreaker parses attribute decoder identifiers and wires per-decoder traversal ordering (depth-first or prediction-degree) into explicit mappings and data_to_corner_map overrides. Version-aware num_attributes_in_decoder and unique_id decoding. Backward-compatible v<2.0 support: traversal_method not present for v<1.2; quantization and normal transform params decoded before integer values using save/restore/skip pattern; seam-expanded corner tables get separate vertex_to_data_map."
+        note: "Decodes attributes using SequentialIntegerAttributeDecoder. Sequential mesh parsing matches MeshEncoder stream; Edgebreaker parses attribute decoder identifiers and wires per-decoder traversal ordering into explicit mappings and data_to_corner_map overrides. Legacy support exists for important older layouts, but overall version coverage is still narrower than C++."
       - name: "generate_point_ids_dfs"
         progress: "fully implemented"
         note: "Implements Draco C++ DepthFirstTraverser traversal order over the decoded CornerTable for Edgebreaker attribute decoding. Uses sequential face iteration as seeds matching C++ decoder (not encoder's processed_connectivity_corners). Fixed DFS visit order (Next, Prev before loop; Tip in loop) matching C++ depth_first_traverser.h."
@@ -1853,7 +1857,7 @@ files:
       - name: "GltfReader"
         type: "struct"
         progress: "fully implemented"
-        note: "Reads .gltf/.glb, parses scenes/nodes/hierarchy and transforms. Decodes both Draco (KHR_draco_mesh_compression) and standard primitives via accessors/bufferViews."
+        note: "Reads .gltf/.glb, parses scenes/nodes/hierarchy and transforms, and decodes Draco plus common standard primitives. Coverage is practical rather than exhaustive: common FLOAT VEC2/VEC3 attributes and standard index component types are supported, not every glTF accessor variation."
       - name: "GltfError"
         type: "enum"
         progress: "fully implemented"
@@ -1878,7 +1882,7 @@ files:
       - name: "GltfWriter"
         type: "struct"
         progress: "fully implemented"
-        note: "Writes .gltf/.glb with Draco-compressed meshes. Supports writing a full scene graph (nodes, children, transforms) via add_scene()."
+        note: "Writes .gltf/.glb with Draco-compressed meshes and supports full scene graphs via add_scene(). Internal roundtrip coverage is good, but some external-tool compatibility cases (for example Blender Draco roundtrip) are still tracked as known limitations."
       - name: "GltfWriteError"
         type: "enum"
         progress: "fully implemented"
@@ -1906,14 +1910,25 @@ files:
       - name: "PlyReader"
         type: "struct"
         progress: "partially implemented"
-        note: "ASCII PLY reader. Reconstructs mesh connectivity from face elements using C++-style fan triangulation, preserves standard normal/color vertex attributes, and keeps int32 position attributes instead of forcing float32, while broader PLY format coverage remains narrower than upstream C++."
+        note: "Reads ASCII and binary_little_endian PLY. Reconstructs mesh connectivity from face elements using C++-style fan triangulation, preserves standard normal/color vertex attributes, and keeps int32 position attributes instead of forcing float32. Coverage is still narrower than full PLY/C++ breadth: binary_big_endian and some less common property layouts remain unsupported."
     functions:
       - name: "read_mesh"
         progress: "partially implemented"
-        note: "Builds a Mesh with float32 or int32 positions, optional normals/colors, and triangulated faces from ASCII PLY input, then deduplicates point ids in face-traversal order for Draco parity."
+        note: "Builds a Mesh with float32 or int32 positions, optional normals/colors, and triangulated faces from ASCII or binary_little_endian PLY input, then deduplicates point ids in face-traversal order for Draco parity."
       - name: "read_ply_positions"
         progress: "fully implemented"
-        note: "Returns ASCII PLY positions using the shared parser also used for mesh face reconstruction."
+        note: "Returns PLY positions using the shared parser also used for mesh face reconstruction."
+
+  - path: "crates/draco-io/src/ply_writer.rs"
+    structures:
+      - name: "PlyWriter"
+        type: "struct"
+        progress: "partially implemented"
+        note: "Writes ASCII PLY by default and supports binary_little_endian output as an option. Writer coverage is still narrower than full PLY breadth: binary_big_endian is not implemented."
+    functions:
+      - name: "write"
+        progress: "partially implemented"
+        note: "Writes mesh/point data as ASCII or binary_little_endian PLY, including roundtrip-tested binary output. binary_big_endian output is not supported."
 
   - path: "crates/draco-io/src/traits.rs"
     structures:
@@ -1963,10 +1978,10 @@ files:
         note: "OBJ writer WASM module. Exports meshes to OBJ format."
       - name: "ply-reader-wasm"
         progress: "fully implemented"
-        note: "PLY parser WASM module. Supports ASCII PLY with positions, normals, colors."
+        note: "PLY parser WASM module. Supports ASCII and binary_little_endian PLY with positions, normals, and colors; binary_big_endian remains unsupported."
       - name: "ply-writer-wasm"
         progress: "fully implemented"
-        note: "PLY writer WASM module. Exports meshes to ASCII PLY format."
+        note: "PLY writer WASM module. Exports meshes to ASCII PLY by default and can emit binary_little_endian output; binary_big_endian is not implemented."
       - name: "gltf-reader-wasm"
         progress: "fully implemented"
         note: "glTF/GLB parser WASM module. Supports Draco-compressed and standard meshes."
