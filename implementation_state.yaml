@@ -1233,7 +1233,7 @@ files:
     functions:
       - name: "select_prediction_method"
         progress: "fully implemented"
-        note: "Implements Draco-like selection rules for mesh attributes. CRITICAL FIX: For sequential encoding (method=0), returns Difference prediction only, matching C++ MeshSequentialEncoder which does not provide a corner table and therefore cannot use mesh prediction schemes. For Edgebreaker encoding, supports Parallelogram, TexCoordsPortable, GeometricNormal, and ConstrainedMultiParallelogram based on encoding speed settings."
+        note: "Implements C++ SelectPredictionMethod rules directly. Mesh prediction is no longer disabled for sequential encoding, and normal attributes now select MeshPredictionGeometricNormal at speeds < 4 when positions are integral or quantized."
   - path: "crates/draco-core/src/quantization_utils.rs"
     structures:
       - name: "Dequantizer"
@@ -1890,7 +1890,7 @@ files:
     functions:
       - name: "encode_draco_mesh"
         progress: "fully implemented"
-        note: "Encodes raw .drc bytes using the same glTF-style encoder options and quantization behavior as GltfWriter, for reuse in tools/tests without duplicating logic."
+        note: "Encodes raw .drc bytes using the same glTF-style quantization behavior as GltfWriter while delegating mesh encoding method selection to draco-core, matching C++ ExpertEncoder defaults instead of forcing sequential."
       - name: "add_draco_mesh"
         progress: "fully implemented"
         note: "Encodes a mesh with Draco and adds a root node; maintains a default scene when scenes are not explicitly constructed."
@@ -1900,6 +1900,20 @@ files:
       - name: "write_glb"
         progress: "fully implemented"
         note: "Writes binary GLB output."
+
+  - path: "crates/draco-io/src/ply_reader.rs"
+    structures:
+      - name: "PlyReader"
+        type: "struct"
+        progress: "partially implemented"
+        note: "ASCII PLY reader. Now reconstructs mesh connectivity from face elements using C++-style fan triangulation, while broader PLY format coverage remains narrower than upstream C++."
+    functions:
+      - name: "read_mesh"
+        progress: "partially implemented"
+        note: "Builds a Mesh with positions and triangulated faces from ASCII PLY input, then deduplicates point ids in face-traversal order for Draco parity."
+      - name: "read_ply_positions"
+        progress: "fully implemented"
+        note: "Returns ASCII PLY positions using the shared parser also used for mesh face reconstruction."
 
   - path: "crates/draco-io/src/traits.rs"
     structures:

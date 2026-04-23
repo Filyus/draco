@@ -257,9 +257,6 @@ fn encode_draco_mesh_bytes(mesh: &Mesh, quantization: &QuantizationBits) -> Resu
     encoder.set_mesh(mesh.clone());
 
     let mut options = EncoderOptions::new();
-    // Use Sequential encoding for reliable multi-attribute support
-    // TODO: Enable Edgebreaker when multi-attribute encoding is fixed
-    options.set_global_int("encoding_method", 0);
 
     // Set quantization for each attribute type, clamped to 1..=31.
     // This matches the behavior used by the glTF writer.
@@ -915,6 +912,14 @@ mod tests {
         let decoded = reader.decode_draco_mesh(&primitives[0]).unwrap();
         assert_eq!(decoded.num_faces(), 1);
         assert_eq!(decoded.num_points(), 3);
+    }
+
+    #[test]
+    fn test_gltf_writer_uses_default_mesh_encoding_method_selection() {
+        let encoded = encode_draco_mesh(&create_test_triangle(), None).unwrap();
+
+        assert!(encoded.len() > 8, "encoded Draco buffer is too small");
+        assert_eq!(encoded[8], 1, "default mesh encoding method should match C++ ExpertEncoder selection");
     }
 
     #[test]
