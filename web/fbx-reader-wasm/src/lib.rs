@@ -284,14 +284,14 @@ fn parse_property<R: Read>(reader: &mut R) -> Result<FbxProperty, String> {
             }
         }
         b'b' | b'c' => {
-            let (_count, _encoding, compressed_len) = read_array_header(reader)?;
-            let data = read_array_data(reader, compressed_len)?;
+            let (_count, encoding, compressed_len) = read_array_header(reader)?;
+            let data = read_array_data(reader, encoding, compressed_len)?;
             let bools: Vec<bool> = data.iter().map(|&b| b != 0).collect();
             Ok(FbxProperty::BoolArray(bools))
         }
         b'i' => {
-            let (count, _encoding, compressed_len) = read_array_header(reader)?;
-            let data = read_array_data(reader, compressed_len)?;
+            let (count, encoding, compressed_len) = read_array_header(reader)?;
+            let data = read_array_data(reader, encoding, compressed_len)?;
             let mut ints = Vec::with_capacity(count);
             for chunk in data.chunks(4) {
                 if chunk.len() == 4 {
@@ -301,8 +301,8 @@ fn parse_property<R: Read>(reader: &mut R) -> Result<FbxProperty, String> {
             Ok(FbxProperty::I32Array(ints))
         }
         b'l' => {
-            let (count, _encoding, compressed_len) = read_array_header(reader)?;
-            let data = read_array_data(reader, compressed_len)?;
+            let (count, encoding, compressed_len) = read_array_header(reader)?;
+            let data = read_array_data(reader, encoding, compressed_len)?;
             let mut longs = Vec::with_capacity(count);
             for chunk in data.chunks(8) {
                 if chunk.len() == 8 {
@@ -315,8 +315,8 @@ fn parse_property<R: Read>(reader: &mut R) -> Result<FbxProperty, String> {
             Ok(FbxProperty::I64Array(longs))
         }
         b'f' => {
-            let (count, _encoding, compressed_len) = read_array_header(reader)?;
-            let data = read_array_data(reader, compressed_len)?;
+            let (count, encoding, compressed_len) = read_array_header(reader)?;
+            let data = read_array_data(reader, encoding, compressed_len)?;
             let mut floats = Vec::with_capacity(count);
             for chunk in data.chunks(4) {
                 if chunk.len() == 4 {
@@ -326,8 +326,8 @@ fn parse_property<R: Read>(reader: &mut R) -> Result<FbxProperty, String> {
             Ok(FbxProperty::F32Array(floats))
         }
         b'd' => {
-            let (count, _encoding, compressed_len) = read_array_header(reader)?;
-            let data = read_array_data(reader, compressed_len)?;
+            let (count, encoding, compressed_len) = read_array_header(reader)?;
+            let data = read_array_data(reader, encoding, compressed_len)?;
             let mut doubles = Vec::with_capacity(count);
             for chunk in data.chunks(8) {
                 if chunk.len() == 8 {
@@ -354,11 +354,15 @@ fn read_array_header<R: Read>(reader: &mut R) -> Result<(usize, u32, usize), Str
     Ok((count, encoding, compressed_len))
 }
 
-fn read_array_data<R: Read>(reader: &mut R, len: usize) -> Result<Vec<u8>, String> {
+fn read_array_data<R: Read>(reader: &mut R, encoding: u32, len: usize) -> Result<Vec<u8>, String> {
+    if encoding != 0 {
+        return Err(format!(
+            "Compressed FBX arrays are not supported in the WASM reader yet (encoding={})",
+            encoding
+        ));
+    }
     let mut data = vec![0u8; len];
     reader.read_exact(&mut data).map_err(|e| e.to_string())?;
-    // Note: Decompression would be needed for encoding != 0
-    // For now, assume uncompressed data
     Ok(data)
 }
 
@@ -447,5 +451,12 @@ mod tests {
     fn test_invalid_file() {
         let result = parse_fbx_internal(&[0, 1, 2, 3]);
         assert!(!result.success);
+    }
+
+    #[test]
+    fn test_read_array_data_rejects_compressed_arrays() {
+        let mut cursor = Cursor::new(vec![1u8, 2, 3, 4]);
+        let error = read_array_data(&mut cursor, 1, 4).unwrap_err();
+        assert!(error.contains("Compressed FBX arrays"));
     }
 }

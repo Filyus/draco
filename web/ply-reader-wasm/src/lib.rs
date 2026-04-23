@@ -1,7 +1,7 @@
 //! PLY Reader WASM module.
 //!
 //! Provides PLY file parsing functionality for web applications.
-//! Supports ASCII PLY format.
+//! Supports ASCII PLY parsing in this WASM module.
 
 use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -379,16 +379,72 @@ fn parse_ply_internal(content: &str) -> ParseResult {
     }
 }
 
-fn parse_binary_ply(_data: &[u8]) -> ParseResult {
-    // Basic binary PLY parsing would go here
-    // For now, return an error indicating binary is not yet fully supported
+fn parse_binary_ply(data: &[u8]) -> ParseResult {
+    let mut format = "unknown".to_string();
+    let mut vertex_count = 0usize;
+    let mut face_count = 0usize;
+    let mut property_names: Vec<String> = Vec::new();
+
+    if let Some(header_end) = find_ply_header_end(data) {
+        let header_text = String::from_utf8_lossy(&data[..header_end]);
+        for line in header_text.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.is_empty() {
+                continue;
+            }
+            match parts[0] {
+                "format" if parts.len() >= 2 => {
+                    format = parts[1].to_string();
+                }
+                "element" if parts.len() >= 3 => {
+                    let count = parts[2].parse().unwrap_or(0);
+                    if parts[1] == "vertex" {
+                        vertex_count = count;
+                    } else if parts[1] == "face" {
+                        face_count = count;
+                    }
+                }
+                "property" if parts.len() >= 3 => {
+                    if parts[1] == "list" && parts.len() >= 5 {
+                        property_names.push(parts[4].to_string());
+                    } else {
+                        property_names.push(parts[2].to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     ParseResult {
         success: false,
         meshes: vec![],
-        error: Some("Binary PLY format parsing is not yet implemented. Please use ASCII PLY files.".to_string()),
+        error: Some(format!(
+            "Binary PLY format '{}' is not implemented in the WASM reader yet. Use the native draco-io reader for binary PLY, or ASCII PLY in this module.",
+            format
+        )),
         warnings: vec![],
-        header: None,
+        header: Some(PlyHeader {
+            format,
+            vertex_count,
+            face_count,
+            properties: property_names,
+        }),
     }
+}
+
+fn find_ply_header_end(data: &[u8]) -> Option<usize> {
+    const HEADER_END_LF: &[u8] = b"end_header\n";
+    const HEADER_END_CRLF: &[u8] = b"end_header\r\n";
+
+    data.windows(HEADER_END_CRLF.len())
+        .position(|window| window == HEADER_END_CRLF)
+        .map(|pos| pos + HEADER_END_CRLF.len())
+        .or_else(|| {
+            data.windows(HEADER_END_LF.len())
+                .position(|window| window == HEADER_END_LF)
+                .map(|pos| pos + HEADER_END_LF.len())
+        })
 }
 
 #[cfg(test)]
@@ -446,5 +502,21 @@ end_header
         assert_eq!(result.meshes.len(), 1, "Should have 1 mesh");
         assert_eq!(result.meshes[0].positions.len(), 35947 * 3, "Should have 35947 vertices");
         assert_eq!(result.meshes[0].indices.len(), 69451 * 3, "Should have 69451 faces (triangulated)");
+    }
+
+    #[test]
+    fn test_parse_binary_ply_reports_header_and_honest_error() {
+        let mut data = b"ply\nformat binary_little_endian 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nelement face 0\nend_header\n".to_vec();
+        data.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+        let result = parse_binary_ply(&data);
+        assert!(!result.success);
+        assert!(result.error.as_ref().unwrap().contains("binary_little_endian"));
+
+        let header = result.header.expect("binary header should be parsed");
+        assert_eq!(header.format, "binary_little_endian");
+        assert_eq!(header.vertex_count, 1);
+        assert_eq!(header.face_count, 0);
+        assert!(header.properties.contains(&"x".to_string()));
     }
 }
