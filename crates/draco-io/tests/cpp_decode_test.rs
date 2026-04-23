@@ -1,24 +1,27 @@
 //! Test decoding C++ encoded files with Rust decoder
 
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
 #[test]
-#[ignore = "Unsupported Edgebreaker traversal decoder type: 2"]
 fn test_decode_cpp_encoded_bunny() {
     use draco_core::decoder_buffer::DecoderBuffer;
     use draco_core::mesh::Mesh as DracoMesh;
     use draco_core::mesh_decoder::MeshDecoder;
 
-    // Path to C++ encoded file
-    let cpp_encoded_path = Path::new("C:/Users/filyus/Downloads/cpp_encoded_bunny.drc");
+    let cpp_encoded_path = std::env::var_os("DRACO_CPP_ENCODED_BUNNY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("../../testdata/cpp_encoded_bunny.drc"));
     
     if !cpp_encoded_path.exists() {
-        println!("Skipping test - C++ encoded file not found");
+        println!(
+            "Skipping test - C++ encoded file not found at {}",
+            cpp_encoded_path.display()
+        );
         return;
     }
     
-    let data = fs::read(cpp_encoded_path).expect("Failed to read C++ encoded file");
+    let data = fs::read(&cpp_encoded_path).expect("Failed to read C++ encoded file");
     println!("C++ encoded file size: {} bytes", data.len());
     
     let mut decoder_buffer = DecoderBuffer::new(&data);

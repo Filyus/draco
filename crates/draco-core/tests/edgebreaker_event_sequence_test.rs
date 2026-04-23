@@ -46,20 +46,19 @@ fn create_grid_mesh(width: u32, height: u32) -> Mesh {
     mesh
 }
 
-// This test is currently ignored because the encoder and decoder log events
-// from different phases:
-// - Encoder logs MAP events during DFS attribute traversal
-// - Decoder uses sequential face order for attribute decoding (not DFS)
-// The test should be re-enabled once the decoder implements DFS-based attribute
-// traversal matching the encoder's order.
+// This test is currently ignored because it compares encoder-side DFS traversal
+// events against decoder output, but the decoder does not currently emit
+// corresponding test_event_log entries for that phase.
 #[test]
-#[ignore]
+#[ignore = "Decoder does not emit traversal events to test_event_log yet (enc=32, dec=0 on 4x4 grid)"]
 fn test_encoder_decoder_event_sequence_4x4() {
     // Initialize and clear the test event log
     draco_core::test_event_log::init();
     draco_core::test_event_log::clear();
 
-    // Build mesh and run encoder path (which constructs the decoder-order CT)
+    // Build mesh and run encoder path (which constructs the encoder corner
+    // table and records traversal order used to simulate decoder-side
+    // attribute sequencing)
     let mesh = create_grid_mesh(4, 4);
     let mut encoder = MeshEncoder::new();
     encoder.set_mesh(mesh.clone());
