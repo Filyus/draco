@@ -1,5 +1,5 @@
 use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
-use crate::geometry_indices::{CornerIndex, PointIndex};
+use crate::geometry_indices::{CornerIndex, PointIndex, INVALID_ATTRIBUTE_VALUE_INDEX};
 use crate::math_utils::int_sqrt;
 use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
 use crate::prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
@@ -46,33 +46,18 @@ impl<'a> PredictionSchemeTexCoordsPortableDecoder<'a> {
         true
     }
 
-    fn get_position_for_entry_id(&self, entry_id: i32, entry_to_point_id_map: &[u32]) -> [i64; 3] {
+    fn get_position_for_entry_id(&self, entry_id: i32, entry_to_point_id_map: &[u32]) -> Option<[i64; 3]> {
         let point_id = entry_to_point_id_map[entry_id as usize];
         let att = self.pos_attribute.unwrap();
         let mut pos = [0i64; 3];
-        // Assuming 3 components for position
-        // We need to read values. PointAttribute stores data in buffer.
-        // We can use convert_value equivalent or read directly if we know type.
-        // For now, let's assume we can read as i64 (or whatever the attribute stores).
-        // But PointAttribute is generic over DataType? No, it holds a DataBuffer.
-        // We need to use `convert_value` logic.
-        // Since we don't have `convert_value` exposed easily on PointAttribute in Rust yet (maybe?),
-        // we might need to implement it or use `read_value`.
-        
-        // Let's check PointAttribute implementation.
-        // For now, assuming generic read.
-        
-        // Actually, we can use `att.mapped_index(PointIndex(point_id))` to get value index.
         let val_index = att.mapped_index(PointIndex(point_id));
-        
-        // Helper to read 3 components.
-        // This is slow if we do it for every point.
-        // But this is what C++ does.
-        
-        // We need a way to read values as i64.
-        // Let's implement a helper in this file.
-        read_vector3(att, val_index.0 as usize, &mut pos);
-        pos
+        if val_index == INVALID_ATTRIBUTE_VALUE_INDEX {
+            return None;
+        }
+        if !read_vector3(att, val_index.0 as usize, &mut pos) {
+            return None;
+        }
+        Some(pos)
     }
 
     fn get_tex_coord_for_entry_id(&self, entry_id: i32, data: &[i32]) -> [i64; 2] {
@@ -111,9 +96,15 @@ impl<'a> PredictionSchemeTexCoordsPortableDecoder<'a> {
                 return true;
             }
 
-            let tip_pos = self.get_position_for_entry_id(data_id, entry_to_point_id_map);
-            let next_pos = self.get_position_for_entry_id(next_data_id, entry_to_point_id_map);
-            let prev_pos = self.get_position_for_entry_id(prev_data_id, entry_to_point_id_map);
+            let Some(tip_pos) = self.get_position_for_entry_id(data_id, entry_to_point_id_map) else {
+                return false;
+            };
+            let Some(next_pos) = self.get_position_for_entry_id(next_data_id, entry_to_point_id_map) else {
+                return false;
+            };
+            let Some(prev_pos) = self.get_position_for_entry_id(prev_data_id, entry_to_point_id_map) else {
+                return false;
+            };
 
             let pn = vec3_sub(&prev_pos, &next_pos);
             let pn_norm2_squared = vec3_squared_norm(&pn);
@@ -301,51 +292,54 @@ impl<'a> PredictionSchemeDecoder<'a, i32, i32> for PredictionSchemeTexCoordsPort
 }
 
 // Helper functions for vector math
-fn read_vector3(att: &PointAttribute, index: usize, out: &mut [i64; 3]) {
-    // This is a placeholder. We need to read actual values.
-    // Assuming generic attribute, we can use `buffer().read_component`.
-    // But we need to know the type.
-    // For now, let's assume we can read as i64 via a helper that handles types.
-    // Or we can use `convert_value` if we implement it.
-    // Let's implement a simple reader here.
-    
-    // TODO: Optimize this.
+fn read_vector3(att: &PointAttribute, index: usize, out: &mut [i64; 3]) -> bool {
     for c in 0..3 {
-        out[c] = read_component_as_i64(att, index, c);
+        let Some(value) = read_component_as_i64(att, index, c) else {
+            return false;
+        };
+        out[c] = value;
     }
+    true
 }
 
-fn read_component_as_i64(att: &PointAttribute, index: usize, component: usize) -> i64 {
+fn read_component_as_i64(att: &PointAttribute, index: usize, component: usize) -> Option<i64> {
     use crate::draco_types::DataType;
     let buffer = att.buffer();
     let byte_offset = index * att.byte_stride() as usize + component * att.data_type().byte_length();
-    
-    // Helper to read bytes
-    let read_i8 = |offset| -> i8 { let mut b = [0u8; 1]; buffer.read(offset, &mut b); i8::from_le_bytes(b) };
-    let read_u8 = |offset| -> u8 { let mut b = [0u8; 1]; buffer.read(offset, &mut b); u8::from_le_bytes(b) };
-    let read_i16 = |offset| -> i16 { let mut b = [0u8; 2]; buffer.read(offset, &mut b); i16::from_le_bytes(b) };
-    let read_u16 = |offset| -> u16 { let mut b = [0u8; 2]; buffer.read(offset, &mut b); u16::from_le_bytes(b) };
-    let read_i32 = |offset| -> i32 { let mut b = [0u8; 4]; buffer.read(offset, &mut b); i32::from_le_bytes(b) };
-    let read_u32 = |offset| -> u32 { let mut b = [0u8; 4]; buffer.read(offset, &mut b); u32::from_le_bytes(b) };
-    let read_i64 = |offset| -> i64 { let mut b = [0u8; 8]; buffer.read(offset, &mut b); i64::from_le_bytes(b) };
-    let read_u64 = |offset| -> u64 { let mut b = [0u8; 8]; buffer.read(offset, &mut b); u64::from_le_bytes(b) };
-    let read_f32 = |offset| -> f32 { let mut b = [0u8; 4]; buffer.read(offset, &mut b); f32::from_le_bytes(b) };
-    let read_f64 = |offset| -> f64 { let mut b = [0u8; 8]; buffer.read(offset, &mut b); f64::from_le_bytes(b) };
 
     match att.data_type() {
-        DataType::Int8 => read_i8(byte_offset) as i64,
-        DataType::Uint8 => read_u8(byte_offset) as i64,
-        DataType::Int16 => read_i16(byte_offset) as i64,
-        DataType::Uint16 => read_u16(byte_offset) as i64,
-        DataType::Int32 => read_i32(byte_offset) as i64,
-        DataType::Uint32 => read_u32(byte_offset) as i64,
-        DataType::Int64 => read_i64(byte_offset),
-        DataType::Uint64 => read_u64(byte_offset) as i64,
-        DataType::Float32 => read_f32(byte_offset) as i64, // Lossy!
-        DataType::Float64 => read_f64(byte_offset) as i64, // Lossy!
-        DataType::Bool => read_u8(byte_offset) as i64,
-        _ => 0,
+        DataType::Int8 => Some(i8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)) as i64),
+        DataType::Uint8 => Some(u8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)) as i64),
+        DataType::Int16 => Some(i16::from_le_bytes(read_bytes::<2>(buffer, byte_offset)) as i64),
+        DataType::Uint16 => Some(u16::from_le_bytes(read_bytes::<2>(buffer, byte_offset)) as i64),
+        DataType::Int32 => Some(i32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)) as i64),
+        DataType::Uint32 => Some(u32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)) as i64),
+        DataType::Int64 => Some(i64::from_le_bytes(read_bytes::<8>(buffer, byte_offset))),
+        DataType::Uint64 => i64::try_from(u64::from_le_bytes(read_bytes::<8>(buffer, byte_offset))).ok(),
+        DataType::Float32 => float_to_i64(f32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)) as f64),
+        DataType::Float64 => float_to_i64(f64::from_le_bytes(read_bytes::<8>(buffer, byte_offset))),
+        DataType::Bool => Some(u8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)) as i64),
+        _ => None,
     }
+}
+
+fn read_bytes<const N: usize>(
+    buffer: &crate::data_buffer::DataBuffer,
+    byte_offset: usize,
+) -> [u8; N] {
+    let mut bytes = [0u8; N];
+    buffer.read(byte_offset, &mut bytes);
+    bytes
+}
+
+fn float_to_i64(value: f64) -> Option<i64> {
+    if !value.is_finite() {
+        return None;
+    }
+    if value < i64::MIN as f64 || value >= i64::MAX as f64 {
+        return None;
+    }
+    Some(value as i64)
 }
 
 fn vec3_sub(a: &[i64; 3], b: &[i64; 3]) -> [i64; 3] {
@@ -378,6 +372,36 @@ fn vec2_mul(a: &[i64; 2], s: i64) -> [i64; 2] {
 }
 fn vec2_div_scalar(a: &[i64; 2], s: i64) -> [i64; 2] {
     [a[0] / s, a[1] / s]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::draco_types::DataType;
+
+    #[test]
+    fn test_read_component_as_i64_rejects_nan() {
+        let mut att = PointAttribute::new();
+        att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, 1);
+        att.buffer_mut().write(0, &f32::NAN.to_le_bytes());
+        att.buffer_mut().write(4, &0.0f32.to_le_bytes());
+        att.buffer_mut().write(8, &0.0f32.to_le_bytes());
+
+        assert_eq!(read_component_as_i64(&att, 0, 0), None);
+    }
+
+    #[test]
+    fn test_read_component_as_i64_accepts_integer_positions() {
+        let mut att = PointAttribute::new();
+        att.init(GeometryAttributeType::Position, 3, DataType::Int32, false, 1);
+        att.buffer_mut().write(0, &123i32.to_le_bytes());
+        att.buffer_mut().write(4, &(-7i32).to_le_bytes());
+        att.buffer_mut().write(8, &99i32.to_le_bytes());
+
+        let mut out = [0i64; 3];
+        assert!(read_vector3(&att, 0, &mut out));
+        assert_eq!(out, [123, -7, 99]);
+    }
 }
 
 #[cfg(feature = "encoder")]

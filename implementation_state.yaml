@@ -722,7 +722,7 @@ files:
       - name: "MeshDecoder"
         type: "struct"
         progress: "fully implemented"
-        note: "Strong support for current Sequential and Edgebreaker decoding, including valence traversal, per-attribute seam corner tables, and traversal-aware attribute mapping. Practical support is still narrower than upstream C++ across the full legacy bitstream matrix, and the DFS attribute mapping path still contains a defensive point-id padding fallback that should be removed once traversal recovery is made total."
+        note: "Strong support for current Sequential and Edgebreaker decoding, including valence traversal, per-attribute seam corner tables, and traversal-aware attribute mapping. Practical support is still narrower than upstream C++ across the full legacy bitstream matrix, but incomplete DFS attribute mapping now fails loudly instead of silently padding bogus point IDs."
     functions:
       - name: "decode"
         progress: "fully implemented"
@@ -959,7 +959,7 @@ files:
       - name: "PointCloudDecoder"
         type: "struct"
         progress: "fully implemented"
-        note: "Supports Sequential (method=0) and KD-Tree (method=1) decoding. Provides decode_after_header() for delegation from MeshDecoder when geometry_type is PointCloud. Handles v<2.0 save/restore/skip pattern for quantization (decoder_type=2) and normal (decoder_type=3) transform parameters."
+        note: "Supports Sequential (method=0) and KD-Tree (method=1) decoding. Provides decode_after_header() for delegation from MeshDecoder when geometry_type is PointCloud. Legacy v<=1.1 portable-transform layouts are handled through explicit compatibility shims for quantization (decoder_type=2) and normal (decoder_type=3) parameters."
     functions:
       - name: "decode"
         progress: "fully implemented"
@@ -1780,7 +1780,7 @@ files:
       - name: "PredictionSchemeTexCoordsPortableDecoder"
         type: "struct"
         progress: "partially implemented"
-        note: "Implements orientation bitstream decoding and computes original values; uses Wrap transform decoding (min/max bounds) to match Draco C++. Decoder still needs a cleaner PointAttribute::ConvertValue-equivalent parent position read path and deeper validation against the remaining TexCoordsPortable parity fixtures."
+        note: "Implements orientation bitstream decoding and computes original values; uses Wrap transform decoding (min/max bounds) to match Draco C++. Parent position reads now use a stricter ConvertValue-like path with finite/range validation, but broader TexCoordsPortable parity coverage still needs more fixture validation."
       - name: "PredictionSchemeTexCoordsPortableEncoder"
         type: "struct"
         progress: "fully implemented"

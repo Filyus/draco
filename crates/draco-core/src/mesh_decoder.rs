@@ -561,7 +561,7 @@ impl MeshDecoder {
                         // Speed >= 1: use DFS with sequential faces
                         let seeds: Vec<u32> = (0..mesh.num_faces()).map(|f| (f * 3) as u32).collect();
 
-                        let (ids, map, v_map) = self.generate_point_ids_and_corners_dfs(mesh, &seeds);
+                        let (ids, map, v_map) = self.generate_point_ids_and_corners_dfs(mesh, &seeds)?;
                         sequenced_point_ids = Some(ids.clone());
                         sequenced_data_to_corner_map = Some(map);
                         sequenced_vertex_to_data_map = Some(v_map);  // Use directly from DFS traversal
@@ -653,12 +653,10 @@ impl MeshDecoder {
                             point_ids_for_values.len(),
                         );
                         let mut transform = AttributeQuantizationTransform::new();
-                        // For C++ files with bitstream version < 2.0, quantization params are
-                        // stored BEFORE the integer values in the stream (legacy format from
-                        // old Draco versions). v2.0+ store quant params after values.
-                        // NOTE: The Rust encoder never writes v < 2.0 format, so Rust-generated
-                        // files at version 1.x use the v2.0+ layout regardless of version header.
-                        // This peek-ahead is only for reading actual old C++ files.
+                        // Legacy compatibility shim: C++ bitstreams with version < 2.0 store
+                        // quantization params before the integer values, while v2.0+ stores
+                        // them after the values. Rust-generated files never use the legacy
+                        // layout, so this peek-ahead only exists to decode genuine old C++ files.
                         let quant_skip_bytes = if bitstream_version < 0x0200 {
                             let saved_pos = buffer.position();
                             let method_byte = buffer.decode_u8().map_err(|_| DracoError::DracoError("Failed to read prediction method".to_string()))?;
@@ -716,10 +714,9 @@ impl MeshDecoder {
                             false,
                             point_ids_for_values.len(),
                         );
-                        // For C++ files with bitstream version < 2.0, octahedron quantization_bits
-                        // is stored AFTER prediction header but BEFORE integer values (legacy
-                        // format from old Draco versions). v2.0+ store it after all values.
-                        // NOTE: The Rust encoder never writes v < 2.0 format.
+                        // Legacy compatibility shim: C++ bitstreams with version < 2.0 store
+                        // normal octahedron quantization bits after the prediction header but
+                        // before integer values. Rust-generated files never use this layout.
                         let mut quant_bits: u8 = 0;
                         let normal_skip_bytes = if bitstream_version < 0x0200 {
                             let saved_pos = buffer.position();
@@ -868,7 +865,11 @@ impl MeshDecoder {
     }
 
     #[allow(dead_code)]
-    fn generate_point_ids_and_corners_dfs(&self, mesh: &Mesh, processed_connectivity_corners: &[u32]) -> (Vec<PointIndex>, Vec<u32>, Vec<i32>) {
+    fn generate_point_ids_and_corners_dfs(
+        &self,
+        mesh: &Mesh,
+        processed_connectivity_corners: &[u32],
+    ) -> Result<(Vec<PointIndex>, Vec<u32>, Vec<i32>), DracoError> {
         let corner_table = self.corner_table.as_ref().expect("corner_table must be set before generating point IDs");
         let num_vertices = corner_table.num_vertices();
         let num_faces = corner_table.num_faces();
@@ -1061,7 +1062,7 @@ impl MeshDecoder {
             }
         }
 
-        // Add any remaining isolated vertices or padding to match expected count
+        // Add any remaining isolated vertices to match the expected point count.
         let total_points_expected = mesh.num_points();
         for i in 0..num_vertices {
             if !visited_vertices[i] && point_ids.len() < total_points_expected {
@@ -1074,14 +1075,17 @@ impl MeshDecoder {
                 data_to_corner_map.push(if c != INVALID_CORNER_INDEX { c.0 } else { 0 });
             }
         }
-        
-        // Final padding if still short
-        while point_ids.len() < total_points_expected {
-            point_ids.push(PointIndex(0)); // fallback
-            data_to_corner_map.push(0);
+
+        if point_ids.len() != total_points_expected || data_to_corner_map.len() != total_points_expected {
+            return Err(DracoError::DracoError(format!(
+                "DFS attribute mapping produced incomplete point sequence: expected {} points, got {} point_ids and {} data_to_corner entries",
+                total_points_expected,
+                point_ids.len(),
+                data_to_corner_map.len()
+            )));
         }
 
-        (point_ids, data_to_corner_map, vertex_to_data_map)
+        Ok((point_ids, data_to_corner_map, vertex_to_data_map))
     }
 
     #[allow(dead_code)]
