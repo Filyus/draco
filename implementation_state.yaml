@@ -1471,11 +1471,11 @@ files:
       - name: "SequentialIntegerAttributeEncoder"
         type: "struct"
         progress: "fully implemented"
-        note: "Supports quantization transform and Draco prediction framing. Difference, MeshPredictionParallelogram, MeshPredictionTexCoordsPortable, MeshPredictionGeometricNormal, and MeshPredictionConstrainedMultiParallelogram are implemented end-to-end. Fixed ZigZag encoding to check are_corrections_positive() - octahedron normal corrections are already positive."
+        note: "Supports quantization transform and Draco prediction framing. Difference, MeshPredictionParallelogram, MeshPredictionTexCoordsPortable, MeshPredictionGeometricNormal, and MeshPredictionConstrainedMultiParallelogram are implemented end-to-end. When a mesh-only prediction scheme cannot be instantiated, encoder behavior matches C++ factory fallback and emits Difference instead. Fixed ZigZag encoding to check are_corrections_positive() - octahedron normal corrections are already positive."
     functions:
       - name: "encode_values"
         progress: "fully implemented"
-        note: "Supports quantization transform and prediction scheme selection. Fixed to skip ZigZag encoding when corrections are already positive (e.g., normal octahedron transform). Difference, MeshPredictionParallelogram, MeshPredictionTexCoordsPortable, MeshPredictionGeometricNormal, and MeshPredictionConstrainedMultiParallelogram are fully implemented."
+        note: "Supports quantization transform and prediction scheme selection. Fixed to skip ZigZag encoding when corrections are already positive (e.g., normal octahedron transform). Difference, MeshPredictionParallelogram, MeshPredictionTexCoordsPortable, MeshPredictionGeometricNormal, and MeshPredictionConstrainedMultiParallelogram are fully implemented, with C++-compatible fallback to Difference when mesh-only schemes are unavailable."
       - name: "init"
         progress: "fully implemented"
         note: "Matches C++ logic."

@@ -312,7 +312,8 @@ impl SequentialIntegerAttributeEncoder {
                             }
                             predictor_parallelogram = Some(predictor);
                         } else {
-                            // Fallback to Difference if no corner table
+                            // Compatibility fallback: match C++ factory behavior and use
+                            // Difference when a mesh-only prediction scheme cannot be created.
                             selected_method = PredictionSchemeMethod::Difference;
                             let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
                             let mut predictor = PredictionSchemeDeltaEncoder::new(transform);
@@ -329,7 +330,8 @@ impl SequentialIntegerAttributeEncoder {
                             predictor_delta = Some(predictor);
                         }
                     } else {
-                        // Fallback to Difference if not a mesh
+                        // Compatibility fallback: mesh-only prediction schemes degrade to
+                        // Difference for non-mesh geometry, matching C++.
                         selected_method = PredictionSchemeMethod::Difference;
                         let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
                         let mut predictor = PredictionSchemeDeltaEncoder::new(transform);
@@ -395,7 +397,8 @@ impl SequentialIntegerAttributeEncoder {
                             }
                             predictor_constrained_multi_parallelogram = Some(predictor);
                         } else {
-                            // Fallback to Difference if no corner table
+                            // Compatibility fallback: match C++ factory behavior and use
+                            // Difference when a mesh-only prediction scheme cannot be created.
                             selected_method = PredictionSchemeMethod::Difference;
                             let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
                             let mut predictor = PredictionSchemeDeltaEncoder::new(transform);
@@ -411,7 +414,8 @@ impl SequentialIntegerAttributeEncoder {
                             predictor_delta = Some(predictor);
                         }
                     } else {
-                        // Fallback to Difference if not a mesh
+                        // Compatibility fallback: mesh-only prediction schemes degrade to
+                        // Difference for non-mesh geometry, matching C++.
                         selected_method = PredictionSchemeMethod::Difference;
                         let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
                         let mut predictor = PredictionSchemeDeltaEncoder::new(transform);
@@ -489,6 +493,8 @@ impl SequentialIntegerAttributeEncoder {
                             }
                             predictor_tex_coords_portable = Some(predictor);
                         } else {
+                            // Compatibility fallback: match C++ factory behavior and use
+                            // Difference when a mesh-only prediction scheme cannot be created.
                             selected_method = PredictionSchemeMethod::Difference;
                             let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
                             let mut predictor = PredictionSchemeDeltaEncoder::new(transform);
@@ -505,6 +511,8 @@ impl SequentialIntegerAttributeEncoder {
                             predictor_delta = Some(predictor);
                         }
                     } else {
+                        // Compatibility fallback: mesh-only prediction schemes degrade to
+                        // Difference for non-mesh geometry, matching C++.
                         selected_method = PredictionSchemeMethod::Difference;
                         let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
                         let mut predictor = PredictionSchemeDeltaEncoder::new(transform);
@@ -574,6 +582,8 @@ impl SequentialIntegerAttributeEncoder {
                             }
                             predictor_geometric_normal = Some(predictor);
                         } else {
+                            // Compatibility fallback: match C++ factory behavior and use
+                            // Difference when a mesh-only prediction scheme cannot be created.
                             selected_method = PredictionSchemeMethod::Difference;
                             let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
                             let mut predictor = PredictionSchemeDeltaEncoder::new(transform);
@@ -590,6 +600,8 @@ impl SequentialIntegerAttributeEncoder {
                             predictor_delta = Some(predictor);
                         }
                     } else {
+                        // Compatibility fallback: mesh-only prediction schemes degrade to
+                        // Difference for non-mesh geometry, matching C++.
                         selected_method = PredictionSchemeMethod::Difference;
                         let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
                         let mut predictor = PredictionSchemeDeltaEncoder::new(transform);

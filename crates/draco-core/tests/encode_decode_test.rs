@@ -148,3 +148,44 @@ fn test_point_cloud_encode_decode_kd_tree() {
         assert!((z - expected_z).abs() < 0.5);
     }
 }
+
+#[test]
+fn test_point_cloud_forced_mesh_prediction_scheme_falls_back_like_cpp() {
+    let mut pc = PointCloud::new();
+    let mut pos_att = PointAttribute::new();
+
+    let num_points = 3;
+    pos_att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, num_points);
+
+    let positions: [f32; 9] = [
+        0.0, 0.0, 0.0,
+        1.0, 0.0, 0.0,
+        0.0, 1.0, 0.0,
+    ];
+
+    let buffer = pos_att.buffer_mut();
+    for (i, &position) in positions.iter().enumerate() {
+        buffer.write(i * 4, &position.to_le_bytes());
+    }
+
+    pc.add_attribute(pos_att);
+
+    let mut encoder = PointCloudEncoder::new();
+    encoder.set_point_cloud(pc);
+
+    let mut options = EncoderOptions::new();
+    options.set_prediction_scheme(1); // MeshPredictionParallelogram, invalid for point clouds.
+    options.set_attribute_int(0, "quantization_bits", 14);
+
+    let mut enc_buffer = EncoderBuffer::new();
+    let status = encoder.encode(&options, &mut enc_buffer);
+    assert!(status.is_ok(), "Encoding failed: {:?}", status.err());
+
+    let mut dec_buffer = DecoderBuffer::new(enc_buffer.data());
+    let mut decoded_pc = PointCloud::new();
+    let mut decoder = PointCloudDecoder::new();
+    let status = decoder.decode(&mut dec_buffer, &mut decoded_pc);
+    assert!(status.is_ok(), "Decoding failed: {:?}", status.err());
+    assert_eq!(decoded_pc.num_points(), num_points);
+    assert_eq!(decoded_pc.num_attributes(), 1);
+}
