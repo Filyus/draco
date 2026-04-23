@@ -416,16 +416,6 @@ impl<'a> PredictionSchemeDecoder<'a, i32, i32> for MeshPredictionSchemeGeometric
             return true;
         }
 
-        // If the primary decode failed, reset position and (for v2.2+) attempt
-        // a guarded +2-byte retry. The v2.2 cube_att fixture appears to have a
-        // 2-byte skew before the canonicalized transform payload.
-        let _ = buffer.set_position(start_pos);
-        if bitstream_version >= 0x0202
-            && buffer.remaining_size() >= 2 && buffer.set_position(start_pos + 2).is_ok()
-                && try_decode_at_pos(self, buffer) {
-                    return true;
-                }
-
         let _ = buffer.set_position(start_pos);
         false
     }
