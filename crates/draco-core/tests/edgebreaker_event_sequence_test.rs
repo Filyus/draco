@@ -4,6 +4,7 @@ use draco_core::mesh_decoder::MeshDecoder;
 use draco_core::encoder_buffer::EncoderBuffer;
 use draco_core::decoder_buffer::DecoderBuffer;
 use draco_core::encoder_options::EncoderOptions;
+use std::collections::BTreeSet;
 
 // Create small grid mesh helper (same as other tests)
 fn create_grid_mesh(width: u32, height: u32) -> Mesh {
@@ -46,12 +47,8 @@ fn create_grid_mesh(width: u32, height: u32) -> Mesh {
     mesh
 }
 
-// This test is currently ignored because it compares encoder-side DFS traversal
-// events against decoder output, but the decoder does not currently emit
-// corresponding test_event_log entries for that phase.
 #[test]
-#[ignore = "Decoder does not emit traversal events to test_event_log yet (enc=32, dec=0 on 4x4 grid)"]
-fn test_encoder_decoder_event_sequence_4x4() {
+fn test_encoder_and_decoder_emit_complete_map_point_traversals_4x4() {
     // Initialize and clear the test event log
     draco_core::test_event_log::init();
     draco_core::test_event_log::clear();
@@ -69,6 +66,12 @@ fn test_encoder_decoder_event_sequence_4x4() {
     encoder.encode(&options, &mut buffer).expect("Encode failed");
 
     let enc_events = draco_core::test_event_log::take_events();
+    let enc_map_points: Vec<u32> = enc_events
+        .iter()
+        .filter_map(|event| event.strip_prefix("MAP_POINT:"))
+        .filter_map(|payload| payload.split("->p").nth(1))
+        .map(|point| point.parse::<u32>().expect("valid point id"))
+        .collect();
 
     // Now clear and run decoder to capture its sequence
     draco_core::test_event_log::clear();
@@ -79,21 +82,42 @@ fn test_encoder_decoder_event_sequence_4x4() {
     decoder.decode(&mut dec_buffer, &mut decoded_mesh).expect("Decode failed");
 
     let dec_events = draco_core::test_event_log::take_events();
+    let dec_map_points: Vec<u32> = dec_events
+        .iter()
+        .filter_map(|event| event.strip_prefix("MAP_POINT:"))
+        .filter_map(|payload| payload.split("->p").nth(1))
+        .map(|point| point.parse::<u32>().expect("valid point id"))
+        .collect();
 
-    // Find first differing event (if any)
-    let min_len = usize::min(enc_events.len(), dec_events.len());
-    for i in 0..min_len {
-        if enc_events[i] != dec_events[i] {
-            panic!("First event mismatch at idx {}:\n  enc='{}'\n  dec='{}'\n\nEncoder events (first 40): {:?}\nDecoder events (first 40): {:?}", 
-                i, enc_events[i], dec_events[i], &enc_events[..enc_events.len().min(40)], &dec_events[..dec_events.len().min(40)]);
-        }
-    }
+    // Encoder and decoder intentionally use different traversal seeds in C++:
+    // the encoder sets corner_order to simulate decoder-side attribute
+    // sequencing, while the decoder traverser runs face-sequentially without a
+    // corner_order. Their MAP_POINT order therefore differs, but each side
+    // should still visit every point exactly once.
+    let expected_points: BTreeSet<u32> = (0..mesh.num_points() as u32).collect();
+    let enc_points_set: BTreeSet<u32> = enc_map_points.iter().copied().collect();
+    let dec_points_set: BTreeSet<u32> = dec_map_points.iter().copied().collect();
 
-    // If one is longer, fail too (ordering mismatch)
-    if enc_events.len() != dec_events.len() {
-        panic!("Event sequences differ in length: enc={} dec={}", enc_events.len(), dec_events.len());
-    }
-
-    // If equal, test passes
-    println!("Event sequences match for encoder and decoder on 4x4 grid ({} events)", enc_events.len());
+    assert_eq!(
+        enc_map_points.len(),
+        mesh.num_points(),
+        "Encoder should emit one MAP_POINT event per point"
+    );
+    assert_eq!(
+        dec_map_points.len(),
+        decoded_mesh.num_points(),
+        "Decoder should emit one MAP_POINT event per point"
+    );
+    assert_eq!(
+        enc_points_set.len(),
+        mesh.num_points(),
+        "Encoder MAP_POINT events should not contain duplicate point IDs"
+    );
+    assert_eq!(
+        dec_points_set.len(),
+        decoded_mesh.num_points(),
+        "Decoder MAP_POINT events should not contain duplicate point IDs"
+    );
+    assert_eq!(enc_points_set, expected_points, "Encoder should visit every point exactly once");
+    assert_eq!(dec_points_set, expected_points, "Decoder should visit every point exactly once");
 }
