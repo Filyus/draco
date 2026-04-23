@@ -4,11 +4,16 @@
 cmake_minimum_required(VERSION 3.12)
 project(draco_core)
 
+set(DRACO_EIGEN_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/eigen")
+if(NOT EXISTS "${DRACO_EIGEN_INCLUDE_DIR}/Eigen/Core")
+    set(DRACO_EIGEN_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen")
+endif()
+
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen
+    ${DRACO_EIGEN_INCLUDE_DIR}
 )
 
 add_definitions(-DDRACO_TRANSCODER_SUPPORTED)
