@@ -52,7 +52,10 @@ fn test_encoder_ct_equals_recomputed_ct() {
         let mut buffer = EncoderBuffer::new();
         encoder.encode(&options, &mut buffer).expect("Encode failed");
 
-        let ct = encoder.corner_table().expect("Expected encoder to produce simulated decoder corner table").clone();
+        let ct = encoder
+            .corner_table()
+            .expect("Expected encoder to produce a corner table")
+            .clone();
 
         // Recompute opposites by building faces vector and calling CornerTable::init
         use draco_core::corner_table::CornerTable;

@@ -52,7 +52,10 @@ fn test_encoder_ct_opposite_edges_consistent() {
         let mut buffer = EncoderBuffer::new();
         encoder.encode(&options, &mut buffer).expect("Encode failed");
 
-        let ct = encoder.corner_table().expect("Expected encoder to produce simulated decoder corner table").clone();
+        let ct = encoder
+            .corner_table()
+            .expect("Expected encoder to produce a corner table")
+            .clone();
 
         // For every corner with an opposite, ensure the opposite corresponds to the same undirected edge
         let num_c = ct.num_corners();
