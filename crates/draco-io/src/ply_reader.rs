@@ -1,9 +1,10 @@
-//! PLY format reader for meshes and point clouds (ASCII only).
+//! PLY format reader for meshes and point clouds.
 //!
 //! Provides both a struct-based API (`PlyReader`) and convenience functions.
 
+use byteorder::{LittleEndian, ReadBytesExt};
 use std::fs;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, Cursor, Write};
 use std::path::Path;
 
 use draco_core::draco_types::DataType;
@@ -51,6 +52,50 @@ impl ParsedPlyPositionData {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlyFormat {
+    Ascii,
+    BinaryLittleEndian,
+    BinaryBigEndian,
+}
+
+#[derive(Debug, Clone)]
+enum PlyPropertyKind {
+    Scalar(DataType),
+    List { count_type: DataType, item_type: DataType },
+}
+
+#[derive(Debug, Clone)]
+struct PlyPropertyDef {
+    name: String,
+    kind: PlyPropertyKind,
+}
+
+impl PlyPropertyDef {
+    fn scalar_type(&self) -> Option<DataType> {
+        match self.kind {
+            PlyPropertyKind::Scalar(data_type) => Some(data_type),
+            PlyPropertyKind::List { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PlyHeader {
+    format: PlyFormat,
+    vertex_count: usize,
+    face_count: usize,
+    vertex_properties: Vec<PlyPropertyDef>,
+    face_properties: Vec<PlyPropertyDef>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PlyReadSchema {
+    position_data_type: DataType,
+    has_normals: bool,
+    color_components: u8,
+}
+
 fn parse_ply_scalar_type(token: &str) -> Option<DataType> {
     match token {
         "char" | "int8" => Some(DataType::Int8),
@@ -67,7 +112,7 @@ fn parse_ply_scalar_type(token: &str) -> Option<DataType> {
 
 /// PLY format reader.
 ///
-/// Reads vertex positions from ASCII PLY files.
+/// Reads vertex positions from ASCII and little-endian binary PLY files.
 #[derive(Debug)]
 pub struct PlyReader {
     path: std::path::PathBuf,
@@ -88,12 +133,12 @@ impl PlyReader {
 
     /// Read all positions from the PLY file.
     pub fn read_positions(&mut self) -> io::Result<Vec<[f32; 3]>> {
-        Ok(read_ply_ascii(&self.path)?.positions.to_f32_positions())
+        Ok(read_ply(&self.path)?.positions.to_f32_positions())
     }
 
     /// Read a mesh with positions (and faces if present).
     pub fn read_mesh(&mut self) -> io::Result<Mesh> {
-        let parsed = read_ply_ascii(&self.path)?;
+        let parsed = read_ply(&self.path)?;
         let mut mesh = Mesh::new();
 
         if parsed.positions.len() == 0 {
@@ -191,10 +236,10 @@ impl PointCloudReader for PlyReader {
 // Convenience Functions (for backward compatibility)
 // ============================================================================
 
-/// Parse point positions from an ASCII PLY file.
+/// Parse point positions from an ASCII or binary little-endian PLY file.
 /// Returns a vec of [x, y, z] positions.
 pub fn read_ply_positions<P: AsRef<Path>>(path: P) -> io::Result<Vec<[f32; 3]>> {
-    Ok(read_ply_ascii(path)?.positions.to_f32_positions())
+    Ok(read_ply(path)?.positions.to_f32_positions())
 }
 
 fn make_f32x3_attribute(
@@ -253,283 +298,450 @@ fn make_u8_attribute(
     attribute
 }
 
-fn read_ply_ascii<P: AsRef<Path>>(path: P) -> io::Result<ParsedPlyData> {
-    let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut lines = reader.lines();
-    
-    // Read header.
-    let mut in_header = true;
+fn invalid_ply(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message.into())
+}
+
+fn parse_ply_property(parts: &[&str]) -> io::Result<PlyPropertyDef> {
+    if parts.len() < 3 {
+        return Err(invalid_ply("Malformed property declaration"));
+    }
+
+    if parts[1] == "list" {
+        if parts.len() < 5 {
+            return Err(invalid_ply("Malformed list property declaration"));
+        }
+        let count_type = parse_ply_scalar_type(parts[2])
+            .ok_or_else(|| invalid_ply(format!("Unsupported PLY scalar type: {}", parts[2])))?;
+        let item_type = parse_ply_scalar_type(parts[3])
+            .ok_or_else(|| invalid_ply(format!("Unsupported PLY scalar type: {}", parts[3])))?;
+        Ok(PlyPropertyDef {
+            name: parts[4].to_string(),
+            kind: PlyPropertyKind::List {
+                count_type,
+                item_type,
+            },
+        })
+    } else {
+        let data_type = parse_ply_scalar_type(parts[1])
+            .ok_or_else(|| invalid_ply(format!("Unsupported PLY scalar type: {}", parts[1])))?;
+        Ok(PlyPropertyDef {
+            name: parts[2].to_string(),
+            kind: PlyPropertyKind::Scalar(data_type),
+        })
+    }
+}
+
+fn parse_ply_header(bytes: &[u8]) -> io::Result<(PlyHeader, usize)> {
+    if bytes.is_empty() {
+        return Err(invalid_ply("Empty PLY file"));
+    }
+
+    let mut body_offset = None;
+    let mut offset = 0usize;
+    while offset < bytes.len() {
+        let line_end = bytes[offset..]
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map(|idx| offset + idx);
+        match line_end {
+            Some(end) => {
+                let line_bytes = if end > offset && bytes[end - 1] == b'\r' {
+                    &bytes[offset..end - 1]
+                } else {
+                    &bytes[offset..end]
+                };
+                let line = std::str::from_utf8(line_bytes)
+                    .map_err(|_| invalid_ply("PLY header must be valid UTF-8/ASCII"))?;
+                offset = end + 1;
+                if line.trim() == "end_header" {
+                    body_offset = Some(offset);
+                    break;
+                }
+            }
+            None => {
+                let line = std::str::from_utf8(&bytes[offset..])
+                    .map_err(|_| invalid_ply("PLY header must be valid UTF-8/ASCII"))?;
+                if line.trim() == "end_header" {
+                    body_offset = Some(bytes.len());
+                    break;
+                }
+                break;
+            }
+        }
+    }
+
+    let body_offset = body_offset.ok_or_else(|| invalid_ply("No end_header found"))?;
+    let header_text = std::str::from_utf8(&bytes[..body_offset])
+        .map_err(|_| invalid_ply("PLY header must be valid UTF-8/ASCII"))?;
+
+    let mut lines = header_text.lines();
+    let first_line = lines
+        .next()
+        .ok_or_else(|| invalid_ply("Empty PLY file"))?;
+    if first_line.trim() != "ply" {
+        return Err(invalid_ply("Missing PLY header"));
+    }
+
+    let mut format = None;
     let mut vertex_count = 0usize;
     let mut face_count = 0usize;
+    let mut vertex_properties = Vec::new();
+    let mut face_properties = Vec::new();
+    let mut current_element: Option<&str> = None;
+
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed == "end_header" {
+            continue;
+        }
+
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.is_empty() {
+            continue;
+        }
+
+        match parts[0] {
+            "comment" | "obj_info" => {}
+            "format" => {
+                if parts.len() < 2 {
+                    return Err(invalid_ply("Malformed format declaration"));
+                }
+                format = Some(match parts[1] {
+                    "ascii" => PlyFormat::Ascii,
+                    "binary_little_endian" => PlyFormat::BinaryLittleEndian,
+                    "binary_big_endian" => PlyFormat::BinaryBigEndian,
+                    other => {
+                        return Err(invalid_ply(format!("Unsupported PLY format: {other}")));
+                    }
+                });
+            }
+            "element" => {
+                if parts.len() < 3 {
+                    return Err(invalid_ply("Malformed element declaration"));
+                }
+                current_element = Some(parts[1]);
+                match parts[1] {
+                    "vertex" => {
+                        vertex_count = parts[2]
+                            .parse()
+                            .map_err(|_| invalid_ply("Invalid vertex count"))?;
+                    }
+                    "face" => {
+                        face_count = parts[2]
+                            .parse()
+                            .map_err(|_| invalid_ply("Invalid face count"))?;
+                    }
+                    _ => {}
+                }
+            }
+            "property" => {
+                let property = parse_ply_property(&parts)?;
+                match current_element {
+                    Some("vertex") => vertex_properties.push(property),
+                    Some("face") => face_properties.push(property),
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok((
+        PlyHeader {
+            format: format.ok_or_else(|| invalid_ply("Missing PLY format declaration"))?,
+            vertex_count,
+            face_count,
+            vertex_properties,
+            face_properties,
+        },
+        body_offset,
+    ))
+}
+
+fn position_data_type_for_scalar(data_type: DataType) -> DataType {
+    match data_type {
+        DataType::Int32 => DataType::Int32,
+        _ => DataType::Float32,
+    }
+}
+
+fn build_read_schema(header: &PlyHeader) -> io::Result<PlyReadSchema> {
+    let mut has_x = false;
+    let mut has_y = false;
+    let mut has_z = false;
     let mut position_data_type = DataType::Float32;
-    let mut prop_x_idx = None;
-    let mut prop_y_idx = None;
-    let mut prop_z_idx = None;
-    let mut prop_nx_idx = None;
-    let mut prop_ny_idx = None;
-    let mut prop_nz_idx = None;
     let mut prop_nx_type = None;
     let mut prop_ny_type = None;
     let mut prop_nz_type = None;
-    let mut prop_r_idx = None;
-    let mut prop_g_idx = None;
-    let mut prop_b_idx = None;
-    let mut prop_a_idx = None;
     let mut prop_r_type = None;
     let mut prop_g_type = None;
     let mut prop_b_type = None;
     let mut prop_a_type = None;
-    let mut prop_idx = 0;
-    let mut current_element: Option<String> = None;
-    let mut is_ascii = false;
 
-    if let Some(line) = lines.next() {
-        let line = line?;
-        if line.trim() != "ply" {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Missing PLY header"));
-        }
-    } else {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "Empty PLY file"));
-    }
-    
-    for line in lines.by_ref() {
-        let line = line?;
-        let trimmed = line.trim();
-        
-        if trimmed == "end_header" {
-            in_header = false;
-            break;
-        }
-        
-        if trimmed.starts_with("format ascii") {
-            is_ascii = true;
-        } else if trimmed.starts_with("element ") {
-            let parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if parts.len() >= 3 {
-                current_element = Some(parts[1].to_string());
-                match parts[1] {
-                    "vertex" => {
-                        vertex_count = parts[2].parse().map_err(|_| {
-                            io::Error::new(io::ErrorKind::InvalidData, "Invalid vertex count")
-                        })?;
-                        prop_idx = 0;
-                    }
-                    "face" => {
-                        face_count = parts[2].parse().map_err(|_| {
-                            io::Error::new(io::ErrorKind::InvalidData, "Invalid face count")
-                        })?;
-                    }
-                    _ => {
-                        prop_idx = 0;
-                    }
-                }
+    for property in &header.vertex_properties {
+        let Some(data_type) = property.scalar_type() else {
+            return Err(invalid_ply("List properties in vertex elements are not supported"));
+        };
+
+        match property.name.as_str() {
+            "x" => {
+                has_x = true;
+                position_data_type = position_data_type_for_scalar(data_type);
             }
-        } else if current_element.as_deref() == Some("vertex") && trimmed.starts_with("property ") {
-            let parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if parts.len() >= 3 {
-                let prop_type = parts.get(1).and_then(|token| parse_ply_scalar_type(token));
-                let prop_name = if parts[1] == "list" {
-                    parts.get(4).copied()
-                } else {
-                    parts.get(2).copied()
-                };
-                if let Some(prop_name) = prop_name {
-                    if matches!(prop_name, "x" | "y" | "z") {
-                        position_data_type = match parts.get(1).copied() {
-                            Some("float") | Some("float32") | Some("double") | Some("float64") => DataType::Float32,
-                            Some("int") | Some("int32") => DataType::Int32,
-                            _ => DataType::Float32,
-                        };
-                    }
-                    match prop_name {
-                        "x" => prop_x_idx = Some(prop_idx),
-                        "y" => prop_y_idx = Some(prop_idx),
-                        "z" => prop_z_idx = Some(prop_idx),
-                        "nx" => {
-                            prop_nx_idx = Some(prop_idx);
-                            prop_nx_type = prop_type;
-                        }
-                        "ny" => {
-                            prop_ny_idx = Some(prop_idx);
-                            prop_ny_type = prop_type;
-                        }
-                        "nz" => {
-                            prop_nz_idx = Some(prop_idx);
-                            prop_nz_type = prop_type;
-                        }
-                        "red" => {
-                            prop_r_idx = Some(prop_idx);
-                            prop_r_type = prop_type;
-                        }
-                        "green" => {
-                            prop_g_idx = Some(prop_idx);
-                            prop_g_type = prop_type;
-                        }
-                        "blue" => {
-                            prop_b_idx = Some(prop_idx);
-                            prop_b_type = prop_type;
-                        }
-                        "alpha" => {
-                            prop_a_idx = Some(prop_idx);
-                            prop_a_type = prop_type;
-                        }
-                        _ => {}
-                    }
-                }
-                prop_idx += 1;
+            "y" => {
+                has_y = true;
+                position_data_type = position_data_type_for_scalar(data_type);
             }
+            "z" => {
+                has_z = true;
+                position_data_type = position_data_type_for_scalar(data_type);
+            }
+            "nx" => prop_nx_type = Some(data_type),
+            "ny" => prop_ny_type = Some(data_type),
+            "nz" => prop_nz_type = Some(data_type),
+            "red" => prop_r_type = Some(data_type),
+            "green" => prop_g_type = Some(data_type),
+            "blue" => prop_b_type = Some(data_type),
+            "alpha" => prop_a_type = Some(data_type),
+            _ => {}
         }
-    }
-    
-    if in_header {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "No end_header found"));
     }
 
-    if !is_ascii {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Only ASCII PLY files are currently supported",
-        ));
+    if !has_x {
+        return Err(invalid_ply("No x property"));
     }
-    
-    let x_idx = prop_x_idx.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "No x property"))?;
-    let y_idx = prop_y_idx.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "No y property"))?;
-    let z_idx = prop_z_idx.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "No z property"))?;
-    let has_normals = prop_nx_idx.is_some()
-        && prop_ny_idx.is_some()
-        && prop_nz_idx.is_some()
-        && prop_nx_type == Some(DataType::Float32)
+    if !has_y {
+        return Err(invalid_ply("No y property"));
+    }
+    if !has_z {
+        return Err(invalid_ply("No z property"));
+    }
+
+    let has_normals = prop_nx_type == Some(DataType::Float32)
         && prop_ny_type == Some(DataType::Float32)
         && prop_nz_type == Some(DataType::Float32);
-    let color_indices: Vec<usize> = [prop_r_idx, prop_g_idx, prop_b_idx, prop_a_idx]
-        .into_iter()
-        .flatten()
-        .collect();
-    if !color_indices.is_empty() {
-        for color_type in [prop_r_type, prop_g_type, prop_b_type, prop_a_type]
-            .into_iter()
-            .flatten()
-        {
+
+    let color_types = [prop_r_type, prop_g_type, prop_b_type, prop_a_type];
+    let color_components = color_types.iter().flatten().count() as u8;
+    if color_components > 0 {
+        for color_type in color_types.into_iter().flatten() {
             if color_type != DataType::Uint8 {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Color properties must be uint8",
-                ));
+                return Err(invalid_ply("Color properties must be uint8"));
             }
         }
     }
-    
-    // Read vertex data.
-    let mut float_positions = matches!(position_data_type, DataType::Float32)
-        .then(|| Vec::with_capacity(vertex_count));
-    let mut int_positions = matches!(position_data_type, DataType::Int32)
-        .then(|| Vec::with_capacity(vertex_count));
-    let mut normals = has_normals.then(|| Vec::with_capacity(vertex_count));
-    let mut colors = (!color_indices.is_empty()).then(|| ParsedPlyColorData {
-        num_components: color_indices.len() as u8,
-        values: Vec::with_capacity(vertex_count),
-    });
-    for _ in 0..vertex_count {
-        let line = match lines.next() {
-            Some(line) => line?,
-            None => break,
-        };
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        
-        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        let mut max_required_idx = x_idx.max(y_idx).max(z_idx);
-        if let Some(nx_idx) = prop_nx_idx {
-            max_required_idx = max_required_idx.max(nx_idx);
-        }
-        if let Some(ny_idx) = prop_ny_idx {
-            max_required_idx = max_required_idx.max(ny_idx);
-        }
-        if let Some(nz_idx) = prop_nz_idx {
-            max_required_idx = max_required_idx.max(nz_idx);
-        }
-        for color_idx in &color_indices {
-            max_required_idx = max_required_idx.max(*color_idx);
-        }
-        if parts.len() <= max_required_idx {
-            continue;
-        }
-        
-        match position_data_type {
-            DataType::Int32 => {
-                int_positions.as_mut().unwrap().push([
-                    parts[x_idx].parse().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Bad x value"))?,
-                    parts[y_idx].parse().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Bad y value"))?,
-                    parts[z_idx].parse().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Bad z value"))?,
-                ]);
-            }
-            _ => {
-                float_positions.as_mut().unwrap().push([
-                    parts[x_idx].parse().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Bad x value"))?,
-                    parts[y_idx].parse().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Bad y value"))?,
-                    parts[z_idx].parse().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Bad z value"))?,
-                ]);
-            }
-        }
 
-        if let Some(normals) = normals.as_mut() {
-            normals.push([
-                parts[prop_nx_idx.unwrap()].parse().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Bad nx value"))?,
-                parts[prop_ny_idx.unwrap()].parse().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Bad ny value"))?,
-                parts[prop_nz_idx.unwrap()].parse().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Bad nz value"))?,
-            ]);
-        }
+    Ok(PlyReadSchema {
+        position_data_type,
+        has_normals,
+        color_components,
+    })
+}
 
-        if let Some(colors) = colors.as_mut() {
-            let mut color = [0u8; 4];
-            for (component, color_idx) in color_indices.iter().enumerate() {
-                color[component] = parts[*color_idx].parse().map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidData, "Bad color component value")
-                })?;
-            }
-            colors.values.push(color);
-        }
+fn triangulate_vertex_indices(indices: &[u32], faces: &mut Vec<[u32; 3]>) {
+    if indices.len() < 3 {
+        return;
     }
 
-    let mut faces = Vec::with_capacity(face_count);
-    for _ in 0..face_count {
-        let line = match lines.next() {
-            Some(line) => line?,
-            None => break,
-        };
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
+    for j in 1..indices.len() - 1 {
+        faces.push([indices[0], indices[j], indices[j + 1]]);
+    }
+}
 
-        let indices: Vec<u32> = trimmed
-            .split_whitespace()
+fn parse_ascii_face_line(
+    header: &PlyHeader,
+    line: &str,
+    faces: &mut Vec<[u32; 3]>,
+) -> io::Result<()> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.is_empty() {
+        return Ok(());
+    }
+
+    if header.face_properties.is_empty() {
+        let indices: Vec<u32> = parts
+            .iter()
             .map(|part| {
-                part.parse::<u32>().map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidData, "Bad face index value")
-                })
+                part.parse::<u32>()
+                    .map_err(|_| invalid_ply("Bad face index value"))
             })
             .collect::<io::Result<Vec<u32>>>()?;
 
         if indices.is_empty() {
-            continue;
+            return Ok(());
         }
 
         let polygon_size = indices[0] as usize;
         if polygon_size < 3 || indices.len() < polygon_size + 1 {
-            continue;
+            return Ok(());
         }
 
-        for j in 1..polygon_size - 1 {
-            faces.push([indices[1], indices[j + 1], indices[j + 2]]);
+        triangulate_vertex_indices(&indices[1..polygon_size + 1], faces);
+        return Ok(());
+    }
+
+    let mut cursor = 0usize;
+    let mut polygon_indices: Option<Vec<u32>> = None;
+
+    for property in &header.face_properties {
+        match property.kind {
+            PlyPropertyKind::Scalar(_) => {
+                if cursor >= parts.len() {
+                    return Ok(());
+                }
+                cursor += 1;
+            }
+            PlyPropertyKind::List { .. } => {
+                if cursor >= parts.len() {
+                    return Ok(());
+                }
+                let count: usize = parts[cursor]
+                    .parse()
+                    .map_err(|_| invalid_ply("Bad face list size"))?;
+                cursor += 1;
+                if parts.len() < cursor + count {
+                    return Ok(());
+                }
+
+                let values = parts[cursor..cursor + count]
+                    .iter()
+                    .map(|part| {
+                        part.parse::<u32>()
+                            .map_err(|_| invalid_ply("Bad face index value"))
+                    })
+                    .collect::<io::Result<Vec<u32>>>()?;
+                cursor += count;
+
+                if property.name == "vertex_indices" || polygon_indices.is_none() {
+                    polygon_indices = Some(values);
+                }
+            }
         }
     }
 
+    if let Some(indices) = polygon_indices {
+        triangulate_vertex_indices(&indices, faces);
+    }
+
+    Ok(())
+}
+
+fn parse_ascii_f32(token: &str, label: &str) -> io::Result<f32> {
+    token
+        .parse()
+        .map_err(|_| invalid_ply(format!("Bad {label} value")))
+}
+
+fn parse_ascii_i32(token: &str, label: &str) -> io::Result<i32> {
+    token
+        .parse()
+        .map_err(|_| invalid_ply(format!("Bad {label} value")))
+}
+
+fn parse_ascii_u8(token: &str) -> io::Result<u8> {
+    token
+        .parse()
+        .map_err(|_| invalid_ply("Bad color component value"))
+}
+
+fn read_ply_ascii_body(header: &PlyHeader, body: &[u8]) -> io::Result<ParsedPlyData> {
+    let schema = build_read_schema(header)?;
+    let body_text = std::str::from_utf8(body)
+        .map_err(|_| invalid_ply("ASCII PLY payload must be valid UTF-8/ASCII"))?;
+    let mut lines = body_text.lines();
+
+    let mut float_positions = matches!(schema.position_data_type, DataType::Float32)
+        .then(|| Vec::with_capacity(header.vertex_count));
+    let mut int_positions = matches!(schema.position_data_type, DataType::Int32)
+        .then(|| Vec::with_capacity(header.vertex_count));
+    let mut normals = schema
+        .has_normals
+        .then(|| Vec::with_capacity(header.vertex_count));
+    let mut colors = (schema.color_components > 0).then(|| ParsedPlyColorData {
+        num_components: schema.color_components,
+        values: Vec::with_capacity(header.vertex_count),
+    });
+
+    for _ in 0..header.vertex_count {
+        let line = match lines.next() {
+            Some(line) => line,
+            None => break,
+        };
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.len() < header.vertex_properties.len() {
+            continue;
+        }
+
+        let mut float_position = [0.0f32; 3];
+        let mut int_position = [0i32; 3];
+        let mut normal = [0.0f32; 3];
+        let mut color = [0u8; 4];
+        let mut color_component = 0usize;
+
+        for (property, token) in header.vertex_properties.iter().zip(parts.iter().copied()) {
+            let Some(_) = property.scalar_type() else {
+                return Err(invalid_ply("List properties in vertex elements are not supported"));
+            };
+
+            match property.name.as_str() {
+                "x" => match schema.position_data_type {
+                    DataType::Int32 => int_position[0] = parse_ascii_i32(token, "x")?,
+                    _ => float_position[0] = parse_ascii_f32(token, "x")?,
+                },
+                "y" => match schema.position_data_type {
+                    DataType::Int32 => int_position[1] = parse_ascii_i32(token, "y")?,
+                    _ => float_position[1] = parse_ascii_f32(token, "y")?,
+                },
+                "z" => match schema.position_data_type {
+                    DataType::Int32 => int_position[2] = parse_ascii_i32(token, "z")?,
+                    _ => float_position[2] = parse_ascii_f32(token, "z")?,
+                },
+                "nx" if schema.has_normals => normal[0] = parse_ascii_f32(token, "nx")?,
+                "ny" if schema.has_normals => normal[1] = parse_ascii_f32(token, "ny")?,
+                "nz" if schema.has_normals => normal[2] = parse_ascii_f32(token, "nz")?,
+                "red" | "green" | "blue" | "alpha" if schema.color_components > 0 => {
+                    color[color_component] = parse_ascii_u8(token)?;
+                    color_component += 1;
+                }
+                _ => {}
+            }
+        }
+
+        match schema.position_data_type {
+            DataType::Int32 => int_positions.as_mut().unwrap().push(int_position),
+            _ => float_positions.as_mut().unwrap().push(float_position),
+        }
+
+        if let Some(normals) = normals.as_mut() {
+            normals.push(normal);
+        }
+
+        if let Some(colors) = colors.as_mut() {
+            colors.values.push(color);
+        }
+    }
+
+    let mut faces = Vec::with_capacity(header.face_count);
+    for _ in 0..header.face_count {
+        let line = match lines.next() {
+            Some(line) => line,
+            None => break,
+        };
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        parse_ascii_face_line(header, trimmed, &mut faces)?;
+    }
+
     Ok(ParsedPlyData {
-        positions: match position_data_type {
+        positions: match schema.position_data_type {
             DataType::Int32 => ParsedPlyPositionData::Int32(int_positions.unwrap_or_default()),
             _ => ParsedPlyPositionData::Float32(float_positions.unwrap_or_default()),
         },
@@ -537,6 +749,250 @@ fn read_ply_ascii<P: AsRef<Path>>(path: P) -> io::Result<ParsedPlyData> {
         normals,
         colors,
     })
+}
+
+fn ensure_remaining(cursor: &Cursor<&[u8]>, bytes_needed: usize) -> io::Result<()> {
+    let position = cursor.position() as usize;
+    let end = position
+        .checked_add(bytes_needed)
+        .ok_or_else(|| invalid_ply("PLY payload is too large"))?;
+    if end > cursor.get_ref().len() {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "Unexpected end of binary PLY payload",
+        ));
+    }
+    Ok(())
+}
+
+fn skip_binary_scalar(cursor: &mut Cursor<&[u8]>, data_type: DataType) -> io::Result<()> {
+    ensure_remaining(cursor, data_type.byte_length())?;
+    cursor.set_position(cursor.position() + data_type.byte_length() as u64);
+    Ok(())
+}
+
+fn read_binary_scalar_as_f32(cursor: &mut Cursor<&[u8]>, data_type: DataType) -> io::Result<f32> {
+    ensure_remaining(cursor, data_type.byte_length())?;
+    match data_type {
+        DataType::Int8 => cursor.read_i8().map(|value| value as f32),
+        DataType::Uint8 => cursor.read_u8().map(|value| value as f32),
+        DataType::Int16 => cursor.read_i16::<LittleEndian>().map(|value| value as f32),
+        DataType::Uint16 => cursor.read_u16::<LittleEndian>().map(|value| value as f32),
+        DataType::Int32 => cursor.read_i32::<LittleEndian>().map(|value| value as f32),
+        DataType::Uint32 => cursor.read_u32::<LittleEndian>().map(|value| value as f32),
+        DataType::Int64 => cursor.read_i64::<LittleEndian>().map(|value| value as f32),
+        DataType::Uint64 => cursor.read_u64::<LittleEndian>().map(|value| value as f32),
+        DataType::Float32 => cursor.read_f32::<LittleEndian>(),
+        DataType::Float64 => cursor.read_f64::<LittleEndian>().map(|value| value as f32),
+        _ => Err(invalid_ply("Unsupported binary scalar type")),
+    }
+}
+
+fn read_binary_scalar_as_i32(cursor: &mut Cursor<&[u8]>, data_type: DataType) -> io::Result<i32> {
+    ensure_remaining(cursor, data_type.byte_length())?;
+    match data_type {
+        DataType::Int8 => cursor.read_i8().map(|value| value as i32),
+        DataType::Uint8 => cursor.read_u8().map(|value| value as i32),
+        DataType::Int16 => cursor.read_i16::<LittleEndian>().map(|value| value as i32),
+        DataType::Uint16 => cursor.read_u16::<LittleEndian>().map(|value| value as i32),
+        DataType::Int32 => cursor.read_i32::<LittleEndian>(),
+        DataType::Uint32 => {
+            let value = cursor.read_u32::<LittleEndian>()?;
+            i32::try_from(value).map_err(|_| invalid_ply("Binary PLY value does not fit in int32"))
+        }
+        _ => Err(invalid_ply("Unsupported binary int32 scalar type")),
+    }
+}
+
+fn read_binary_scalar_as_u8(cursor: &mut Cursor<&[u8]>, data_type: DataType) -> io::Result<u8> {
+    ensure_remaining(cursor, data_type.byte_length())?;
+    match data_type {
+        DataType::Uint8 => cursor.read_u8(),
+        DataType::Int8 => {
+            let value = cursor.read_i8()?;
+            u8::try_from(value).map_err(|_| invalid_ply("Negative color component value"))
+        }
+        _ => Err(invalid_ply("Color properties must be uint8")),
+    }
+}
+
+fn read_binary_scalar_as_u32(cursor: &mut Cursor<&[u8]>, data_type: DataType) -> io::Result<u32> {
+    ensure_remaining(cursor, data_type.byte_length())?;
+    match data_type {
+        DataType::Uint8 => cursor.read_u8().map(|value| value as u32),
+        DataType::Int8 => {
+            let value = cursor.read_i8()?;
+            u32::try_from(value).map_err(|_| invalid_ply("Negative face index value"))
+        }
+        DataType::Uint16 => cursor.read_u16::<LittleEndian>().map(|value| value as u32),
+        DataType::Int16 => {
+            let value = cursor.read_i16::<LittleEndian>()?;
+            u32::try_from(value).map_err(|_| invalid_ply("Negative face index value"))
+        }
+        DataType::Uint32 => cursor.read_u32::<LittleEndian>(),
+        DataType::Int32 => {
+            let value = cursor.read_i32::<LittleEndian>()?;
+            u32::try_from(value).map_err(|_| invalid_ply("Negative face index value"))
+        }
+        _ => Err(invalid_ply("Unsupported face index scalar type")),
+    }
+}
+
+fn read_binary_scalar_as_usize(
+    cursor: &mut Cursor<&[u8]>,
+    data_type: DataType,
+) -> io::Result<usize> {
+    let value = read_binary_scalar_as_u32(cursor, data_type)?;
+    usize::try_from(value).map_err(|_| invalid_ply("Binary list size is too large"))
+}
+
+fn read_ply_binary_little_endian_body(
+    header: &PlyHeader,
+    body: &[u8],
+) -> io::Result<ParsedPlyData> {
+    let schema = build_read_schema(header)?;
+    let mut cursor = Cursor::new(body);
+
+    let mut float_positions = matches!(schema.position_data_type, DataType::Float32)
+        .then(|| Vec::with_capacity(header.vertex_count));
+    let mut int_positions = matches!(schema.position_data_type, DataType::Int32)
+        .then(|| Vec::with_capacity(header.vertex_count));
+    let mut normals = schema
+        .has_normals
+        .then(|| Vec::with_capacity(header.vertex_count));
+    let mut colors = (schema.color_components > 0).then(|| ParsedPlyColorData {
+        num_components: schema.color_components,
+        values: Vec::with_capacity(header.vertex_count),
+    });
+
+    for _ in 0..header.vertex_count {
+        let mut float_position = [0.0f32; 3];
+        let mut int_position = [0i32; 3];
+        let mut normal = [0.0f32; 3];
+        let mut color = [0u8; 4];
+        let mut color_component = 0usize;
+
+        for property in &header.vertex_properties {
+            match property.kind {
+                PlyPropertyKind::Scalar(data_type) => match property.name.as_str() {
+                    "x" => match schema.position_data_type {
+                        DataType::Int32 => {
+                            int_position[0] = read_binary_scalar_as_i32(&mut cursor, data_type)?
+                        }
+                        _ => {
+                            float_position[0] = read_binary_scalar_as_f32(&mut cursor, data_type)?
+                        }
+                    },
+                    "y" => match schema.position_data_type {
+                        DataType::Int32 => {
+                            int_position[1] = read_binary_scalar_as_i32(&mut cursor, data_type)?
+                        }
+                        _ => {
+                            float_position[1] = read_binary_scalar_as_f32(&mut cursor, data_type)?
+                        }
+                    },
+                    "z" => match schema.position_data_type {
+                        DataType::Int32 => {
+                            int_position[2] = read_binary_scalar_as_i32(&mut cursor, data_type)?
+                        }
+                        _ => {
+                            float_position[2] = read_binary_scalar_as_f32(&mut cursor, data_type)?
+                        }
+                    },
+                    "nx" if schema.has_normals => {
+                        normal[0] = read_binary_scalar_as_f32(&mut cursor, data_type)?
+                    }
+                    "ny" if schema.has_normals => {
+                        normal[1] = read_binary_scalar_as_f32(&mut cursor, data_type)?
+                    }
+                    "nz" if schema.has_normals => {
+                        normal[2] = read_binary_scalar_as_f32(&mut cursor, data_type)?
+                    }
+                    "red" | "green" | "blue" | "alpha" if schema.color_components > 0 => {
+                        color[color_component] = read_binary_scalar_as_u8(&mut cursor, data_type)?;
+                        color_component += 1;
+                    }
+                    _ => skip_binary_scalar(&mut cursor, data_type)?,
+                },
+                PlyPropertyKind::List { .. } => {
+                    return Err(invalid_ply("List properties in vertex elements are not supported"));
+                }
+            }
+        }
+
+        match schema.position_data_type {
+            DataType::Int32 => int_positions.as_mut().unwrap().push(int_position),
+            _ => float_positions.as_mut().unwrap().push(float_position),
+        }
+
+        if let Some(normals) = normals.as_mut() {
+            normals.push(normal);
+        }
+
+        if let Some(colors) = colors.as_mut() {
+            colors.values.push(color);
+        }
+    }
+
+    if header.face_count > 0 && header.face_properties.is_empty() {
+        return Err(invalid_ply(
+            "Binary PLY faces require a face property declaration",
+        ));
+    }
+
+    let mut faces = Vec::with_capacity(header.face_count);
+    for _ in 0..header.face_count {
+        let mut polygon_indices: Option<Vec<u32>> = None;
+
+        for property in &header.face_properties {
+            match property.kind {
+                PlyPropertyKind::Scalar(data_type) => skip_binary_scalar(&mut cursor, data_type)?,
+                PlyPropertyKind::List {
+                    count_type,
+                    item_type,
+                } => {
+                    let count = read_binary_scalar_as_usize(&mut cursor, count_type)?;
+                    let mut values = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        values.push(read_binary_scalar_as_u32(&mut cursor, item_type)?);
+                    }
+
+                    if property.name == "vertex_indices" || polygon_indices.is_none() {
+                        polygon_indices = Some(values);
+                    }
+                }
+            }
+        }
+
+        if let Some(indices) = polygon_indices {
+            triangulate_vertex_indices(&indices, &mut faces);
+        }
+    }
+
+    Ok(ParsedPlyData {
+        positions: match schema.position_data_type {
+            DataType::Int32 => ParsedPlyPositionData::Int32(int_positions.unwrap_or_default()),
+            _ => ParsedPlyPositionData::Float32(float_positions.unwrap_or_default()),
+        },
+        faces,
+        normals,
+        colors,
+    })
+}
+
+fn read_ply<P: AsRef<Path>>(path: P) -> io::Result<ParsedPlyData> {
+    let bytes = fs::read(path)?;
+    let (header, body_offset) = parse_ply_header(&bytes)?;
+
+    match header.format {
+        PlyFormat::Ascii => read_ply_ascii_body(&header, &bytes[body_offset..]),
+        PlyFormat::BinaryLittleEndian => {
+            read_ply_binary_little_endian_body(&header, &bytes[body_offset..])
+        }
+        PlyFormat::BinaryBigEndian => Err(invalid_ply(
+            "Binary big-endian PLY files are not currently supported",
+        )),
+    }
 }
 
 /// Write point positions to an ASCII PLY file.
@@ -747,6 +1203,136 @@ end_header
         let error = reader.read_mesh().unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         assert!(error.to_string().contains("Color properties must be uint8"));
+    }
+
+    #[test]
+    fn test_read_binary_little_endian_mesh() {
+        let file = NamedTempFile::new().unwrap();
+        let mut ply = Vec::new();
+        ply.extend_from_slice(
+            br#"ply
+format binary_little_endian 1.0
+element vertex 4
+property float x
+property float y
+property float z
+element face 2
+property list uchar int vertex_indices
+end_header
+"#,
+        );
+
+        for vertex in [
+            [0.0f32, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ] {
+            for component in vertex {
+                ply.extend_from_slice(&component.to_le_bytes());
+            }
+        }
+
+        ply.push(3);
+        for index in [0i32, 1, 2] {
+            ply.extend_from_slice(&index.to_le_bytes());
+        }
+
+        ply.push(4);
+        for index in [0i32, 1, 2, 3] {
+            ply.extend_from_slice(&index.to_le_bytes());
+        }
+
+        std::fs::write(file.path(), ply).unwrap();
+
+        let mut reader = PlyReader::open(file.path()).unwrap();
+        let mesh = reader.read_mesh().unwrap();
+
+        assert_eq!(mesh.num_points(), 4);
+        assert_eq!(mesh.num_faces(), 3);
+        assert_eq!(
+            mesh.face(draco_core::geometry_indices::FaceIndex(0)),
+            [0u32.into(), 1u32.into(), 2u32.into()]
+        );
+        assert_eq!(
+            mesh.face(draco_core::geometry_indices::FaceIndex(1)),
+            [0u32.into(), 1u32.into(), 2u32.into()]
+        );
+        assert_eq!(
+            mesh.face(draco_core::geometry_indices::FaceIndex(2)),
+            [0u32.into(), 2u32.into(), 3u32.into()]
+        );
+    }
+
+    #[test]
+    fn test_read_binary_little_endian_attributes_and_int_positions() {
+        let file = NamedTempFile::new().unwrap();
+        let mut ply = Vec::new();
+        ply.extend_from_slice(
+            br#"ply
+format binary_little_endian 1.0
+element vertex 2
+property int x
+property int y
+property int z
+property float nx
+property float ny
+property float nz
+property uchar red
+property uchar green
+property uchar blue
+property uchar alpha
+end_header
+"#,
+        );
+
+        for (position, normal, color) in [
+            ([1i32, 2, 3], [0.0f32, 0.0, 1.0], [10u8, 20, 30, 40]),
+            ([4i32, 5, 6], [0.0f32, 1.0, 0.0], [50u8, 60, 70, 80]),
+        ] {
+            for component in position {
+                ply.extend_from_slice(&component.to_le_bytes());
+            }
+            for component in normal {
+                ply.extend_from_slice(&component.to_le_bytes());
+            }
+            ply.extend_from_slice(&color);
+        }
+
+        std::fs::write(file.path(), ply).unwrap();
+
+        let mut reader = PlyReader::open(file.path()).unwrap();
+        let mesh = reader.read_mesh().unwrap();
+
+        let position_att = mesh.named_attribute(GeometryAttributeType::Position).unwrap();
+        assert_eq!(position_att.data_type(), DataType::Int32);
+        assert_eq!(position_att.num_components(), 3);
+
+        let position_data = position_att.buffer().data();
+        let first_position = [
+            i32::from_le_bytes(position_data[0..4].try_into().unwrap()),
+            i32::from_le_bytes(position_data[4..8].try_into().unwrap()),
+            i32::from_le_bytes(position_data[8..12].try_into().unwrap()),
+        ];
+        assert_eq!(first_position, [1, 2, 3]);
+
+        let normal_att = mesh.named_attribute(GeometryAttributeType::Normal).unwrap();
+        assert_eq!(normal_att.data_type(), DataType::Float32);
+        assert_eq!(normal_att.num_components(), 3);
+
+        let normal_data = normal_att.buffer().data();
+        let first_normal = [
+            f32::from_le_bytes(normal_data[0..4].try_into().unwrap()),
+            f32::from_le_bytes(normal_data[4..8].try_into().unwrap()),
+            f32::from_le_bytes(normal_data[8..12].try_into().unwrap()),
+        ];
+        assert_eq!(first_normal, [0.0, 0.0, 1.0]);
+
+        let color_att = mesh.named_attribute(GeometryAttributeType::Color).unwrap();
+        assert_eq!(color_att.data_type(), DataType::Uint8);
+        assert_eq!(color_att.num_components(), 4);
+        assert!(color_att.normalized());
+        assert_eq!(color_att.buffer().data(), &[10, 20, 30, 40, 50, 60, 70, 80]);
     }
 }
 

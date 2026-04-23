@@ -196,6 +196,7 @@ obj.write("output.obj")?;
 use draco_io::PlyWriter;
 
 let mut ply = PlyWriter::new();
+ply.set_binary_little_endian(true); // optional, ASCII is the default
 
 // Add mesh
 ply.add_mesh(&mesh, None)?;

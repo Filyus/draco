@@ -378,7 +378,7 @@ writer.write("output.obj")?;
 
 ### PlyReader
 
-Reads Stanford PLY files (ASCII format).
+Reads Stanford PLY files (ASCII and binary little-endian formats).
 
 ```rust
 use draco_io::{PlyReader, Reader};
@@ -394,17 +394,19 @@ let mesh = reader.read_mesh()?;
 - Vertex colors (red, green, blue, alpha)
 - Faces (vertex_indices)
 - ASCII format
+- Binary little-endian format
 
 ---
 
 ### PlyWriter
 
-Writes Stanford PLY files (ASCII format).
+Writes Stanford PLY files (ASCII by default, or binary little-endian when enabled).
 
 ```rust
 use draco_io::{PlyWriter, Writer};
 
 let mut writer = PlyWriter::new();
+writer.set_binary_little_endian(true);
 
 // Add mesh
 writer.add_mesh(&mesh, None)?;
@@ -426,6 +428,8 @@ writer.write("output.ply")?;
 | Method | Description |
 |--------|-------------|
 | `new() -> PlyWriter` | Create new writer |
+| `with_binary_little_endian(self) -> PlyWriter` | Enable binary little-endian output |
+| `set_binary_little_endian(&mut self, enabled)` | Toggle binary little-endian output |
 | `add_mesh(&mut self, mesh, name)` | Add mesh (name ignored) |
 | `add_points(&mut self, points)` | Add point positions |
 | `add_points_with_colors(&mut self, points, colors)` | Add colored points |
