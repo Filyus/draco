@@ -171,10 +171,7 @@ impl<'a> PredictionSchemeTexCoordsPortableDecoder<'a> {
                 let cx_norm2_squared = vec3_squared_norm(&vec3_sub(&tip_pos, &x_pos));
 
                 let mut cx_uv = [pn_uv[1], -pn_uv[0]]; // Rotated
-                let Some(norm_squared_input) = cx_norm2_squared.checked_mul(pn_norm2_squared)
-                else {
-                    return false;
-                };
+                let norm_squared_input = cx_norm2_squared.wrapping_mul(pn_norm2_squared);
                 let norm_squared = int_sqrt(norm_squared_input);
                 let Some(scaled_cx_uv) = checked_vec2_mul_u64(&cx_uv, norm_squared) else {
                     return false;
@@ -546,17 +543,19 @@ fn checked_vec3_mul_i64(a: &[i64; 3], s: i64) -> Option<[i64; 3]> {
 
 #[cfg(feature = "decoder")]
 fn vec2_wrapping_add_div_u64(a: &[i64; 2], b: &[i64; 2], divisor: u64) -> [i64; 2] {
+    let divisor = divisor as i64;
     [
-        ((a[0] as u64).wrapping_add(b[0] as u64) / divisor) as i64,
-        ((a[1] as u64).wrapping_add(b[1] as u64) / divisor) as i64,
+        ((a[0] as u64).wrapping_add(b[0] as u64) as i64) / divisor,
+        ((a[1] as u64).wrapping_add(b[1] as u64) as i64) / divisor,
     ]
 }
 
 #[cfg(feature = "decoder")]
 fn vec2_wrapping_sub_div_u64(a: &[i64; 2], b: &[i64; 2], divisor: u64) -> [i64; 2] {
+    let divisor = divisor as i64;
     [
-        ((a[0] as u64).wrapping_sub(b[0] as u64) / divisor) as i64,
-        ((a[1] as u64).wrapping_sub(b[1] as u64) / divisor) as i64,
+        ((a[0] as u64).wrapping_sub(b[0] as u64) as i64) / divisor,
+        ((a[1] as u64).wrapping_sub(b[1] as u64) as i64) / divisor,
     ]
 }
 

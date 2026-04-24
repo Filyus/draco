@@ -114,6 +114,7 @@ impl SequentialNormalAttributeDecoder {
             None,
             Some(&mut portable_attribute),
             None,
+            None,
         ) {
             return Err(DracoError::DracoError(
                 "Failed to decode values".to_string(),

@@ -311,6 +311,7 @@ impl PointCloudDecoder {
                                 None,
                                 None,
                                 None,
+                                None,
                             ) {
                                 return Err(DracoError::DracoError(
                                     "Failed to decode integer attribute".to_string(),
@@ -387,6 +388,7 @@ impl PointCloudDecoder {
                                 None,
                                 None,
                                 Some(&mut portable),
+                                None,
                                 hook,
                             ) {
                                 return Err(DracoError::DracoError(
@@ -461,6 +463,7 @@ impl PointCloudDecoder {
                                 None,
                                 None,
                                 Some(&mut portable),
+                                None,
                                 hook,
                             ) {
                                 return Err(DracoError::DracoError(

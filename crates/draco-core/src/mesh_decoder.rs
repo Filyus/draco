@@ -48,6 +48,29 @@ fn validate_num_components(num_components: u8) -> Result<(), DracoError> {
     Ok(())
 }
 
+fn copy_point_mapping(source: &PointAttribute, target: &mut PointAttribute, num_points: usize) {
+    target.set_explicit_mapping(num_points);
+    for point in 0..num_points {
+        let point_id = PointIndex(point as u32);
+        target.set_point_map_entry(point_id, source.mapped_index(point_id));
+    }
+}
+
+fn upsert_portable_attribute(
+    portable_attributes_by_id: &mut Vec<(i32, PointAttribute)>,
+    att_id: i32,
+    portable: PointAttribute,
+) {
+    if let Some((_, existing)) = portable_attributes_by_id
+        .iter_mut()
+        .find(|(id, _)| *id == att_id)
+    {
+        *existing = portable;
+    } else {
+        portable_attributes_by_id.push((att_id, portable));
+    }
+}
+
 pub struct MeshDecoder {
     geometry_type: EncodedGeometryType,
     method: u8,
@@ -742,6 +765,7 @@ impl MeshDecoder {
         }
 
         // (3) Attribute decoder payloads.
+        let mut portable_attributes_by_id: Vec<(i32, PointAttribute)> = Vec::new();
         for dec_i in 0..num_attributes_decoders {
             let att_ids = &att_ids_by_decoder[dec_i];
             let decoder_types = &decoder_types_by_decoder[dec_i];
@@ -937,6 +961,16 @@ impl MeshDecoder {
                     1 => {
                         let mut att_decoder = SequentialIntegerAttributeDecoder::new();
                         att_decoder.init(&pc_decoder, att_id);
+                        let portable_parent_attribute = if bitstream_version >= 0x0200 {
+                            let pos_att_id =
+                                mesh.named_attribute_id(GeometryAttributeType::Position);
+                            portable_attributes_by_id
+                                .iter()
+                                .find(|(id, _)| *id == pos_att_id)
+                                .map(|(_, att)| att)
+                        } else {
+                            None
+                        };
                         if !att_decoder.decode_values(
                             mesh,
                             point_ids_for_values,
@@ -945,6 +979,7 @@ impl MeshDecoder {
                             data_to_corner_map_override_for_values,
                             vertex_to_data_map_override_for_values,
                             None,
+                            portable_parent_attribute,
                             None,
                         ) {
                             return Err(DracoError::DracoError(
@@ -1016,6 +1051,16 @@ impl MeshDecoder {
                             } else {
                                 None
                             };
+                        let portable_parent_attribute = if bitstream_version >= 0x0200 {
+                            let pos_att_id =
+                                mesh.named_attribute_id(GeometryAttributeType::Position);
+                            portable_attributes_by_id
+                                .iter()
+                                .find(|(id, _)| *id == pos_att_id)
+                                .map(|(_, att)| att)
+                        } else {
+                            None
+                        };
                         if !att_decoder.decode_values(
                             mesh,
                             point_ids_for_values,
@@ -1024,6 +1069,7 @@ impl MeshDecoder {
                             data_to_corner_map_override_for_values,
                             vertex_to_data_map_override_for_values,
                             Some(&mut portable),
+                            portable_parent_attribute,
                             pre_hook_opt,
                         ) {
                             return Err(DracoError::DracoError(
@@ -1096,6 +1142,16 @@ impl MeshDecoder {
                             } else {
                                 None
                             };
+                        let portable_parent_attribute = if bitstream_version >= 0x0200 {
+                            let pos_att_id =
+                                mesh.named_attribute_id(GeometryAttributeType::Position);
+                            portable_attributes_by_id
+                                .iter()
+                                .find(|(id, _)| *id == pos_att_id)
+                                .map(|(_, att)| att)
+                        } else {
+                            None
+                        };
                         if !att_decoder.decode_values(
                             mesh,
                             point_ids_for_values,
@@ -1104,6 +1160,7 @@ impl MeshDecoder {
                             data_to_corner_map_override_for_values,
                             vertex_to_data_map_override_for_values,
                             Some(&mut portable),
+                            portable_parent_attribute,
                             normal_hook,
                         ) {
                             return Err(DracoError::DracoError(
@@ -1171,7 +1228,7 @@ impl MeshDecoder {
             }
 
             // Apply inverse transforms.
-            for q in pending_quant {
+            for q in &pending_quant {
                 let dst = mesh.attribute_mut(q.att_id);
                 if dst.size() != q.portable.size() {
                     dst.resize_unique_entries(q.portable.size())?;
@@ -1182,7 +1239,7 @@ impl MeshDecoder {
                     ));
                 }
             }
-            for n in pending_normals {
+            for n in &pending_normals {
                 let mut oct = AttributeOctahedronTransform::new(-1);
                 oct.set_parameters(n.quantization_bits as i32);
                 let dst = mesh.attribute_mut(n.att_id);
@@ -1247,6 +1304,17 @@ impl MeshDecoder {
                         }
                     }
                 }
+            }
+
+            for q in pending_quant {
+                let mut portable = q.portable;
+                copy_point_mapping(mesh.attribute(q.att_id), &mut portable, mesh.num_points());
+                upsert_portable_attribute(&mut portable_attributes_by_id, q.att_id, portable);
+            }
+            for n in pending_normals {
+                let mut portable = n.portable;
+                copy_point_mapping(mesh.attribute(n.att_id), &mut portable, mesh.num_points());
+                upsert_portable_attribute(&mut portable_attributes_by_id, n.att_id, portable);
             }
         }
 

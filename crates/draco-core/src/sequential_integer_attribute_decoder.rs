@@ -69,6 +69,7 @@ impl SequentialIntegerAttributeDecoder {
         data_to_corner_map_override: Option<&[u32]>,
         vertex_to_data_map_override: Option<&[i32]>,
         portable_attribute: Option<&mut PointAttribute>,
+        portable_parent_attribute: Option<&PointAttribute>,
         pre_integer_decode: Option<&mut dyn FnMut(&mut DecoderBuffer<'_>) -> bool>,
     ) -> bool {
         let att_id = self.attribute;
@@ -472,7 +473,8 @@ impl SequentialIntegerAttributeDecoder {
                         crate::geometry_attribute::GeometryAttributeType::Position,
                     );
                     if pos_att_id >= 0 {
-                        let pos_att = point_cloud.attribute(pos_att_id);
+                        let pos_att = portable_parent_attribute
+                            .unwrap_or_else(|| point_cloud.attribute(pos_att_id));
                         if !predictor.set_parent_attribute(pos_att) {
                             eprintln!("Failed to set parent attribute for TexCoordsDeprecated");
                             return false;
@@ -557,7 +559,8 @@ impl SequentialIntegerAttributeDecoder {
                         crate::geometry_attribute::GeometryAttributeType::Position,
                     );
                     if pos_att_id >= 0 {
-                        let pos_att = point_cloud.attribute(pos_att_id);
+                        let pos_att = portable_parent_attribute
+                            .unwrap_or_else(|| point_cloud.attribute(pos_att_id));
                         if !predictor.set_parent_attribute(pos_att) {
                             eprintln!("Failed to set parent attribute for TexCoordsPortable");
                             return false;
@@ -646,7 +649,8 @@ impl SequentialIntegerAttributeDecoder {
                         crate::geometry_attribute::GeometryAttributeType::Position,
                     );
                     if pos_att_id >= 0 {
-                        let pos_att = point_cloud.attribute(pos_att_id);
+                        let pos_att = portable_parent_attribute
+                            .unwrap_or_else(|| point_cloud.attribute(pos_att_id));
                         if !predictor.set_parent_attribute(pos_att) {
                             eprintln!("Failed to set parent attribute for GeometricNormal");
                             return false;

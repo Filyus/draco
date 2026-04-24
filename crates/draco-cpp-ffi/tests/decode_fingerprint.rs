@@ -262,7 +262,6 @@ fn cpp_and_rust_decode_fingerprints_match_for_mesh_fixtures() {
 }
 
 #[test]
-#[ignore = "Documents the current multi-COLOR Edgebreaker decode parity gap."]
 fn cpp_and_rust_decode_fingerprints_match_for_multi_color_fixture() {
     if !draco_cpp_ffi::is_available() {
         eprintln!("SKIPPING: C++ FFI not available");

@@ -738,7 +738,7 @@ files:
         note: "Decodes mesh connectivity using Sequential or Edgebreaker methods. Version-aware num_faces/num_points decoding (raw u32 for v<2.2, varint for v>=2.2)."
       - name: "decode_attributes"
         progress: "fully implemented"
-        note: "Decodes attributes using SequentialIntegerAttributeDecoder. Sequential mesh parsing matches MeshEncoder stream; Edgebreaker parses attribute decoder identifiers, preserves the encoded decoder_type, and builds C++-style MeshAttributeCornerTable-equivalent connectivity for MESH_CORNER_ATTRIBUTE groups. Legacy Draco 1.0.0/1.1.0 cube_att Edgebreaker POSITION/TEX_COORD/NORMAL corner records now match matching C++ draco_decoder output. MESH_VERTEX_ATTRIBUTE split groups with no interior seams reuse the base Edgebreaker data-to-corner order, matching C++ and allowing speed 5 TEX_COORD parallelogram prediction without a Rust-specific fallback. Remaining caution is about unexercised historical combinations within the support policy, not a currently known mismatch in the committed legacy fixtures."
+        note: "Decodes attributes using SequentialIntegerAttributeDecoder. Sequential mesh parsing matches MeshEncoder stream; Edgebreaker parses attribute decoder identifiers, preserves the encoded decoder_type, and builds C++-style MeshAttributeCornerTable-equivalent connectivity for MESH_CORNER_ATTRIBUTE groups. Legacy Draco 1.0.0/1.1.0 cube_att Edgebreaker POSITION/TEX_COORD/NORMAL corner records now match matching C++ draco_decoder output. MESH_VERTEX_ATTRIBUTE split groups with no interior seams reuse the base Edgebreaker data-to-corner order, matching C++ and allowing speed 5 TEX_COORD parallelogram prediction without a Rust-specific fallback. For v2.0+ mesh prediction parents, decoded portable attributes are preserved with final point-to-value mappings so NORMAL and portable TEX_COORD prediction use the same parent data as C++ GetPortableAttribute(). Remaining caution is about unexercised historical combinations within the support policy, not a currently known mismatch in the committed legacy fixtures."
       - name: "generate_point_ids_dfs"
         progress: "fully implemented"
         note: "Implements Draco C++ DepthFirstTraverser traversal order over the decoded CornerTable for Edgebreaker attribute decoding. Uses sequential face iteration as seeds matching C++ decoder (not encoder's processed_connectivity_corners). Fixed DFS visit order (Next, Prev before loop; Tip in loop) matching C++ depth_first_traverser.h. Missing corner-table state in corrupted Edgebreaker streams now returns DracoError instead of panicking."
@@ -1460,7 +1460,7 @@ files:
     functions:
       - name: "decode_values"
         progress: "fully implemented"
-        note: "Supports prediction scheme decoding and symbol decoding for Difference, Parallelogram, MultiParallelogram, ConstrainedMultiParallelogram, TexCoordsDeprecated, TexCoordsPortable, GeometricNormal, and None. Fixed to skip ZigZag decoding for octahedron normal transforms (NormalOctahedron, NormalOctahedronCanonicalized)."
+        note: "Supports prediction scheme decoding and symbol decoding for Difference, Parallelogram, MultiParallelogram, ConstrainedMultiParallelogram, TexCoordsDeprecated, TexCoordsPortable, GeometricNormal, and None. Fixed to skip ZigZag decoding for octahedron normal transforms (NormalOctahedron, NormalOctahedronCanonicalized). Mesh prediction schemes can receive the decoded portable parent attribute for C++ v2.0+ parity."
       - name: "init"
         progress: "fully implemented"
         note: "Matches C++ logic."
@@ -1806,7 +1806,7 @@ files:
       - name: "PredictionSchemeTexCoordsPortableDecoder"
         type: "struct"
         progress: "fully implemented"
-        note: "Implements orientation bitstream decoding, Wrap transform decoding, C++-matching fallback prediction order, checked parent position conversion, bounds validation, unsigned/wrapping decoder orientation math, and overflow-risk rejection. Covered by roundtrip, fallback, and overflow tests."
+        note: "Implements orientation bitstream decoding, Wrap transform decoding, C++-matching fallback prediction order, checked parent position conversion, bounds validation, unsigned/wrapping decoder orientation math, and overflow-risk rejection. Decoder orientation math now matches C++ cast order by converting wrapped unsigned sums/differences back to signed before division, and preserves C++ wrapping multiplication before IntSqrt. Covered by roundtrip, fallback, overflow tests, and C++ fingerprint parity for glTF-style Edgebreaker POSITION/NORMAL/TEXCOORD/multi-COLOR fixtures."
       - name: "PredictionSchemeTexCoordsPortableEncoder"
         type: "struct"
         progress: "fully implemented"
@@ -2153,3 +2153,11 @@ files:
       - name: "generated_legacy_cube_attributes_match_cpp_decoder"
         progress: "added"
         note: "C++-oracle regression for generated Draco 1.0.0/1.1.0 cube_att mesh fixtures in both sequential and Edgebreaker modes. Runs the matching legacy draco_decoder.exe, parses the decoded OBJ, and compares Rust face-corner POSITION/TEX_COORD/NORMAL records against C++ output with tolerances."
+  - path: "crates/draco-cpp-ffi/tests/decode_fingerprint.rs"
+    functions:
+      - name: "cpp_and_rust_decode_fingerprints_match_for_multi_color_fixture"
+        progress: "added"
+        note: "Strict C++ fingerprint parity coverage for the Blender glTF-style Edgebreaker fixture with POSITION, NORMAL, TEXCOORD_0, COLOR_0, COLOR_1, and COLOR_2. This fixture now runs as a normal test instead of an ignored known gap."
+  - path: "docs/CXX_COMPATIBILITY_NOTES.md"
+    notes:
+      - "Documents C++-observable portable TEXCOORD arithmetic semantics that Rust preserves for decode parity, including wrapped unsigned orientation math and wrapping multiplication before IntSqrt."
