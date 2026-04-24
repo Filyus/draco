@@ -491,6 +491,37 @@ fn parse_obj_normals(obj_content: &str) -> Vec<[f32; 3]> {
     normals
 }
 
+fn read_attr_vec3(attr: &PointAttribute, point_index: usize) -> [f32; 3] {
+    let mapped_index = attr.mapped_index(PointIndex(point_index as u32)).0 as usize;
+    let offset = mapped_index * attr.byte_stride() as usize;
+    let data = attr.buffer().data();
+    [
+        f32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()),
+        f32::from_le_bytes(data[offset + 4..offset + 8].try_into().unwrap()),
+        f32::from_le_bytes(data[offset + 8..offset + 12].try_into().unwrap()),
+    ]
+}
+
+fn nearest_position_index(position: [f32; 3], positions: &[f32]) -> usize {
+    positions
+        .chunks(3)
+        .enumerate()
+        .min_by(|(_, a), (_, b)| {
+            let da = squared_distance(position, [a[0], a[1], a[2]]);
+            let db = squared_distance(position, [b[0], b[1], b[2]]);
+            da.partial_cmp(&db).unwrap()
+        })
+        .map(|(i, _)| i)
+        .unwrap()
+}
+
+fn squared_distance(a: [f32; 3], b: [f32; 3]) -> f32 {
+    let dx = a[0] - b[0];
+    let dy = a[1] - b[1];
+    let dz = a[2] - b[2];
+    dx * dx + dy * dy + dz * dz
+}
+
 #[test]
 fn rust_encode_gltf_style_mesh_verify_normals() {
     let Some(decoder) = cpp_decoder() else {
@@ -675,6 +706,10 @@ fn rust_encode_decode_normals_roundtrip() {
         decoded_mesh.num_attributes()
     );
 
+    let pos_attr = decoded_mesh
+        .named_attribute(GeometryAttributeType::Position)
+        .expect("No position attribute found in decoded mesh");
+
     // Find normal attribute
     let norm_att = decoded_mesh.named_attribute(GeometryAttributeType::Normal);
     if let Some(norm_attr) = norm_att {
@@ -684,30 +719,27 @@ fn rust_encode_decode_normals_roundtrip() {
             norm_attr.num_components()
         );
 
-        // Read decoded normals
-        for i in 0..norm_attr.size() {
-            let offset = i * 3 * 4;
-            let buffer = norm_attr.buffer();
-            let data = buffer.data();
-
-            let x = f32::from_le_bytes(data[offset..offset + 4].try_into().unwrap());
-            let y = f32::from_le_bytes(data[offset + 4..offset + 8].try_into().unwrap());
-            let z = f32::from_le_bytes(data[offset + 8..offset + 12].try_into().unwrap());
-
-            let orig = [normals[i * 3], normals[i * 3 + 1], normals[i * 3 + 2]];
-            let decoded = [x, y, z];
+        for point_index in 0..decoded_mesh.num_points() {
+            let decoded_position = read_attr_vec3(pos_attr, point_index);
+            let original_index = nearest_position_index(decoded_position, &positions);
+            let orig = [
+                normals[original_index * 3],
+                normals[original_index * 3 + 1],
+                normals[original_index * 3 + 2],
+            ];
+            let decoded = read_attr_vec3(norm_attr, point_index);
 
             let dot = orig[0] * decoded[0] + orig[1] * decoded[1] + orig[2] * decoded[2];
 
             println!(
-                "Normal {}: orig {:?} -> decoded {:?}, dot={:.4}",
-                i, orig, decoded, dot
+                "Point {}: position {:?}, original vertex {}, normal {:?} -> decoded {:?}, dot={:.4}",
+                point_index, decoded_position, original_index, orig, decoded, dot
             );
 
             assert!(
                 dot > 0.98,
-                "Normal {} mismatch: orig {:?}, decoded {:?}, dot={}",
-                i,
+                "Point {} normal mismatch: orig {:?}, decoded {:?}, dot={}",
+                point_index,
                 orig,
                 decoded,
                 dot

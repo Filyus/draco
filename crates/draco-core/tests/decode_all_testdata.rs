@@ -33,7 +33,6 @@ fn decode_file(path: &std::path::Path) -> Result<(usize, usize), String> {
 }
 
 /// Expected (num_points, num_faces) for each test file.
-/// lamp_mesh.drc is excluded — it's a known-bad file (C++ decoder also fails).
 const EXPECTED: &[(&str, usize, usize)] = &[
     ("annulus_eb.drc", 8, 8),
     ("annulus.drc", 8, 8),
