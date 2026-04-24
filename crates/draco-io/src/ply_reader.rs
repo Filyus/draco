@@ -2,7 +2,7 @@
 //!
 //! Provides both a struct-based API (`PlyReader`) and convenience functions.
 
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
 use std::fs;
 use std::io::{self, Cursor, Write};
 use std::path::Path;
@@ -11,6 +11,7 @@ use draco_core::draco_types::DataType;
 use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
 use draco_core::mesh::Mesh;
 
+pub use crate::ply_format::PlyFormat;
 use crate::traits::{PointCloudReader, Reader};
 
 #[derive(Debug)]
@@ -52,13 +53,6 @@ impl ParsedPlyPositionData {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PlyFormat {
-    Ascii,
-    BinaryLittleEndian,
-    BinaryBigEndian,
-}
-
 #[derive(Debug, Clone)]
 enum PlyPropertyKind {
     Scalar(DataType),
@@ -85,8 +79,16 @@ struct PlyHeader {
     format: PlyFormat,
     vertex_count: usize,
     face_count: usize,
+    elements: Vec<PlyElementDef>,
     vertex_properties: Vec<PlyPropertyDef>,
     face_properties: Vec<PlyPropertyDef>,
+}
+
+#[derive(Debug, Clone)]
+struct PlyElementDef {
+    name: String,
+    count: usize,
+    properties: Vec<PlyPropertyDef>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -115,7 +117,13 @@ fn parse_ply_scalar_type(token: &str) -> Option<DataType> {
 /// Reads vertex positions from ASCII and little-endian binary PLY files.
 #[derive(Debug)]
 pub struct PlyReader {
-    path: std::path::PathBuf,
+    source: PlyReaderSource,
+}
+
+#[derive(Debug, Clone)]
+enum PlyReaderSource {
+    Path(std::path::PathBuf),
+    Bytes(Vec<u8>),
 }
 
 impl PlyReader {
@@ -128,17 +136,32 @@ impl PlyReader {
                 format!("File not found: {}", path.display()),
             ));
         }
-        Ok(Self { path })
+        Ok(Self {
+            source: PlyReaderSource::Path(path),
+        })
+    }
+
+    /// Create a PLY reader from in-memory bytes.
+    pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Self {
+        Self {
+            source: PlyReaderSource::Bytes(bytes.into()),
+        }
+    }
+
+    /// Read a mesh directly from in-memory bytes.
+    pub fn read_from_bytes(bytes: &[u8]) -> io::Result<Mesh> {
+        let mut reader = Self::from_bytes(bytes.to_vec());
+        reader.read_mesh()
     }
 
     /// Read all positions from the PLY file.
     pub fn read_positions(&mut self) -> io::Result<Vec<[f32; 3]>> {
-        Ok(read_ply(&self.path)?.positions.to_f32_positions())
+        Ok(read_ply_source(&self.source)?.positions.to_f32_positions())
     }
 
     /// Read a mesh with positions (and faces if present).
     pub fn read_mesh(&mut self) -> io::Result<Mesh> {
-        let parsed = read_ply(&self.path)?;
+        let parsed = read_ply_source(&self.source)?;
         let mut mesh = Mesh::new();
 
         if parsed.positions.len() == 0 {
@@ -216,7 +239,11 @@ impl crate::traits::SceneReader for PlyReader {
     fn read_scene(&mut self) -> io::Result<crate::traits::Scene> {
         let meshes = self.read_meshes()?;
         let mut parts = Vec::with_capacity(meshes.len());
-        let mut root = crate::traits::SceneNode::new(self.path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()));
+        let scene_name = match &self.source {
+            PlyReaderSource::Path(path) => path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()),
+            PlyReaderSource::Bytes(_) => None,
+        };
+        let mut root = crate::traits::SceneNode::new(scene_name);
         for mesh in meshes {
             let part = crate::traits::SceneObject { name: None, mesh: mesh.clone(), transform: None };
             root.parts.push(part.clone());
@@ -386,9 +413,7 @@ fn parse_ply_header(bytes: &[u8]) -> io::Result<(PlyHeader, usize)> {
     let mut format = None;
     let mut vertex_count = 0usize;
     let mut face_count = 0usize;
-    let mut vertex_properties = Vec::new();
-    let mut face_properties = Vec::new();
-    let mut current_element: Option<&str> = None;
+    let mut elements: Vec<PlyElementDef> = Vec::new();
 
     for line in lines {
         let trimmed = line.trim();
@@ -420,29 +445,41 @@ fn parse_ply_header(bytes: &[u8]) -> io::Result<(PlyHeader, usize)> {
                 if parts.len() < 3 {
                     return Err(invalid_ply("Malformed element declaration"));
                 }
-                current_element = Some(parts[1]);
+                let count = parts[2]
+                    .parse()
+                    .map_err(|_| invalid_ply("Invalid element count"))?;
+                elements.push(PlyElementDef {
+                    name: parts[1].to_string(),
+                    count,
+                    properties: Vec::new(),
+                });
                 match parts[1] {
                     "vertex" => {
-                        vertex_count = parts[2]
-                            .parse()
-                            .map_err(|_| invalid_ply("Invalid vertex count"))?;
+                        vertex_count = count;
                     }
                     "face" => {
-                        face_count = parts[2]
-                            .parse()
-                            .map_err(|_| invalid_ply("Invalid face count"))?;
+                        face_count = count;
                     }
                     _ => {}
                 }
             }
             "property" => {
                 let property = parse_ply_property(&parts)?;
-                match current_element {
-                    Some("vertex") => vertex_properties.push(property),
-                    Some("face") => face_properties.push(property),
-                    _ => {}
-                }
+                let Some(element) = elements.last_mut() else {
+                    return Err(invalid_ply("Property declared before element"));
+                };
+                element.properties.push(property);
             }
+            _ => {}
+        }
+    }
+
+    let mut vertex_properties = Vec::new();
+    let mut face_properties = Vec::new();
+    for element in &elements {
+        match element.name.as_str() {
+            "vertex" => vertex_properties = element.properties.clone(),
+            "face" => face_properties = element.properties.clone(),
             _ => {}
         }
     }
@@ -452,11 +489,56 @@ fn parse_ply_header(bytes: &[u8]) -> io::Result<(PlyHeader, usize)> {
             format: format.ok_or_else(|| invalid_ply("Missing PLY format declaration"))?,
             vertex_count,
             face_count,
+            elements,
             vertex_properties,
             face_properties,
         },
         body_offset,
     ))
+}
+
+fn skip_ascii_element_lines<'a>(
+    lines: &mut std::str::Lines<'a>,
+    count: usize,
+) {
+    for _ in 0..count {
+        let _ = lines.next();
+    }
+}
+
+fn ascii_scalar_token_count(data_type: DataType) -> usize {
+    if data_type == DataType::Invalid { 0 } else { 1 }
+}
+
+fn split_ascii_vertex_lines<'a>(
+    header: &PlyHeader,
+    body_text: &'a str,
+) -> io::Result<(Vec<&'a str>, Vec<&'a str>)> {
+    let mut lines = body_text.lines();
+    let mut vertex_lines = Vec::new();
+    let mut face_lines = Vec::new();
+
+    for element in &header.elements {
+        match element.name.as_str() {
+            "vertex" => {
+                for _ in 0..element.count {
+                    if let Some(line) = lines.next() {
+                        vertex_lines.push(line);
+                    }
+                }
+            }
+            "face" => {
+                for _ in 0..element.count {
+                    if let Some(line) = lines.next() {
+                        face_lines.push(line);
+                    }
+                }
+            }
+            _ => skip_ascii_element_lines(&mut lines, element.count),
+        }
+    }
+
+    Ok((vertex_lines, face_lines))
 }
 
 fn position_data_type_for_scalar(data_type: DataType) -> DataType {
@@ -481,7 +563,7 @@ fn build_read_schema(header: &PlyHeader) -> io::Result<PlyReadSchema> {
 
     for property in &header.vertex_properties {
         let Some(data_type) = property.scalar_type() else {
-            return Err(invalid_ply("List properties in vertex elements are not supported"));
+            continue;
         };
 
         match property.name.as_str() {
@@ -649,7 +731,7 @@ fn read_ply_ascii_body(header: &PlyHeader, body: &[u8]) -> io::Result<ParsedPlyD
     let schema = build_read_schema(header)?;
     let body_text = std::str::from_utf8(body)
         .map_err(|_| invalid_ply("ASCII PLY payload must be valid UTF-8/ASCII"))?;
-    let mut lines = body_text.lines();
+    let (vertex_lines, face_lines) = split_ascii_vertex_lines(header, body_text)?;
 
     let mut float_positions = matches!(schema.position_data_type, DataType::Float32)
         .then(|| Vec::with_capacity(header.vertex_count));
@@ -663,31 +745,38 @@ fn read_ply_ascii_body(header: &PlyHeader, body: &[u8]) -> io::Result<ParsedPlyD
         values: Vec::with_capacity(header.vertex_count),
     });
 
-    for _ in 0..header.vertex_count {
-        let line = match lines.next() {
-            Some(line) => line,
-            None => break,
-        };
+    for line in vertex_lines {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
 
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.len() < header.vertex_properties.len() {
-            continue;
-        }
-
         let mut float_position = [0.0f32; 3];
         let mut int_position = [0i32; 3];
         let mut normal = [0.0f32; 3];
         let mut color = [0u8; 4];
         let mut color_component = 0usize;
+        let mut cursor = 0usize;
 
-        for (property, token) in header.vertex_properties.iter().zip(parts.iter().copied()) {
-            let Some(_) = property.scalar_type() else {
-                return Err(invalid_ply("List properties in vertex elements are not supported"));
+        for property in &header.vertex_properties {
+            let Some(data_type) = property.scalar_type() else {
+                if cursor >= parts.len() {
+                    break;
+                }
+                let count: usize = parts[cursor]
+                    .parse()
+                    .map_err(|_| invalid_ply("Bad vertex list size"))?;
+                cursor = cursor
+                    .checked_add(1 + count)
+                    .ok_or_else(|| invalid_ply("ASCII PLY line is too large"))?;
+                continue;
             };
+            if cursor >= parts.len() {
+                break;
+            }
+            let token = parts[cursor];
+            cursor += ascii_scalar_token_count(data_type);
 
             match property.name.as_str() {
                 "x" => match schema.position_data_type {
@@ -728,11 +817,7 @@ fn read_ply_ascii_body(header: &PlyHeader, body: &[u8]) -> io::Result<ParsedPlyD
     }
 
     let mut faces = Vec::with_capacity(header.face_count);
-    for _ in 0..header.face_count {
-        let line = match lines.next() {
-            Some(line) => line,
-            None => break,
-        };
+    for line in face_lines {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -771,33 +856,83 @@ fn skip_binary_scalar(cursor: &mut Cursor<&[u8]>, data_type: DataType) -> io::Re
     Ok(())
 }
 
-fn read_binary_scalar_as_f32(cursor: &mut Cursor<&[u8]>, data_type: DataType) -> io::Result<f32> {
+#[derive(Debug, Clone, Copy)]
+enum BinaryEndian {
+    Little,
+    Big,
+}
+
+fn read_binary_scalar_as_f32(
+    cursor: &mut Cursor<&[u8]>,
+    data_type: DataType,
+    endian: BinaryEndian,
+) -> io::Result<f32> {
     ensure_remaining(cursor, data_type.byte_length())?;
     match data_type {
         DataType::Int8 => cursor.read_i8().map(|value| value as f32),
         DataType::Uint8 => cursor.read_u8().map(|value| value as f32),
-        DataType::Int16 => cursor.read_i16::<LittleEndian>().map(|value| value as f32),
-        DataType::Uint16 => cursor.read_u16::<LittleEndian>().map(|value| value as f32),
-        DataType::Int32 => cursor.read_i32::<LittleEndian>().map(|value| value as f32),
-        DataType::Uint32 => cursor.read_u32::<LittleEndian>().map(|value| value as f32),
-        DataType::Int64 => cursor.read_i64::<LittleEndian>().map(|value| value as f32),
-        DataType::Uint64 => cursor.read_u64::<LittleEndian>().map(|value| value as f32),
-        DataType::Float32 => cursor.read_f32::<LittleEndian>(),
-        DataType::Float64 => cursor.read_f64::<LittleEndian>().map(|value| value as f32),
+        DataType::Int16 => match endian {
+            BinaryEndian::Little => cursor.read_i16::<LittleEndian>().map(|value| value as f32),
+            BinaryEndian::Big => cursor.read_i16::<BigEndian>().map(|value| value as f32),
+        },
+        DataType::Uint16 => match endian {
+            BinaryEndian::Little => cursor.read_u16::<LittleEndian>().map(|value| value as f32),
+            BinaryEndian::Big => cursor.read_u16::<BigEndian>().map(|value| value as f32),
+        },
+        DataType::Int32 => match endian {
+            BinaryEndian::Little => cursor.read_i32::<LittleEndian>().map(|value| value as f32),
+            BinaryEndian::Big => cursor.read_i32::<BigEndian>().map(|value| value as f32),
+        },
+        DataType::Uint32 => match endian {
+            BinaryEndian::Little => cursor.read_u32::<LittleEndian>().map(|value| value as f32),
+            BinaryEndian::Big => cursor.read_u32::<BigEndian>().map(|value| value as f32),
+        },
+        DataType::Int64 => match endian {
+            BinaryEndian::Little => cursor.read_i64::<LittleEndian>().map(|value| value as f32),
+            BinaryEndian::Big => cursor.read_i64::<BigEndian>().map(|value| value as f32),
+        },
+        DataType::Uint64 => match endian {
+            BinaryEndian::Little => cursor.read_u64::<LittleEndian>().map(|value| value as f32),
+            BinaryEndian::Big => cursor.read_u64::<BigEndian>().map(|value| value as f32),
+        },
+        DataType::Float32 => match endian {
+            BinaryEndian::Little => cursor.read_f32::<LittleEndian>(),
+            BinaryEndian::Big => cursor.read_f32::<BigEndian>(),
+        },
+        DataType::Float64 => match endian {
+            BinaryEndian::Little => cursor.read_f64::<LittleEndian>().map(|value| value as f32),
+            BinaryEndian::Big => cursor.read_f64::<BigEndian>().map(|value| value as f32),
+        },
         _ => Err(invalid_ply("Unsupported binary scalar type")),
     }
 }
 
-fn read_binary_scalar_as_i32(cursor: &mut Cursor<&[u8]>, data_type: DataType) -> io::Result<i32> {
+fn read_binary_scalar_as_i32(
+    cursor: &mut Cursor<&[u8]>,
+    data_type: DataType,
+    endian: BinaryEndian,
+) -> io::Result<i32> {
     ensure_remaining(cursor, data_type.byte_length())?;
     match data_type {
         DataType::Int8 => cursor.read_i8().map(|value| value as i32),
         DataType::Uint8 => cursor.read_u8().map(|value| value as i32),
-        DataType::Int16 => cursor.read_i16::<LittleEndian>().map(|value| value as i32),
-        DataType::Uint16 => cursor.read_u16::<LittleEndian>().map(|value| value as i32),
-        DataType::Int32 => cursor.read_i32::<LittleEndian>(),
+        DataType::Int16 => match endian {
+            BinaryEndian::Little => cursor.read_i16::<LittleEndian>().map(|value| value as i32),
+            BinaryEndian::Big => cursor.read_i16::<BigEndian>().map(|value| value as i32),
+        },
+        DataType::Uint16 => match endian {
+            BinaryEndian::Little => cursor.read_u16::<LittleEndian>().map(|value| value as i32),
+            BinaryEndian::Big => cursor.read_u16::<BigEndian>().map(|value| value as i32),
+        },
+        DataType::Int32 => match endian {
+            BinaryEndian::Little => cursor.read_i32::<LittleEndian>(),
+            BinaryEndian::Big => cursor.read_i32::<BigEndian>(),
+        },
         DataType::Uint32 => {
-            let value = cursor.read_u32::<LittleEndian>()?;
+            let value = match endian {
+                BinaryEndian::Little => cursor.read_u32::<LittleEndian>()?,
+                BinaryEndian::Big => cursor.read_u32::<BigEndian>()?,
+            };
             i32::try_from(value).map_err(|_| invalid_ply("Binary PLY value does not fit in int32"))
         }
         _ => Err(invalid_ply("Unsupported binary int32 scalar type")),
@@ -816,7 +951,11 @@ fn read_binary_scalar_as_u8(cursor: &mut Cursor<&[u8]>, data_type: DataType) -> 
     }
 }
 
-fn read_binary_scalar_as_u32(cursor: &mut Cursor<&[u8]>, data_type: DataType) -> io::Result<u32> {
+fn read_binary_scalar_as_u32(
+    cursor: &mut Cursor<&[u8]>,
+    data_type: DataType,
+    endian: BinaryEndian,
+) -> io::Result<u32> {
     ensure_remaining(cursor, data_type.byte_length())?;
     match data_type {
         DataType::Uint8 => cursor.read_u8().map(|value| value as u32),
@@ -824,14 +963,26 @@ fn read_binary_scalar_as_u32(cursor: &mut Cursor<&[u8]>, data_type: DataType) ->
             let value = cursor.read_i8()?;
             u32::try_from(value).map_err(|_| invalid_ply("Negative face index value"))
         }
-        DataType::Uint16 => cursor.read_u16::<LittleEndian>().map(|value| value as u32),
+        DataType::Uint16 => match endian {
+            BinaryEndian::Little => cursor.read_u16::<LittleEndian>().map(|value| value as u32),
+            BinaryEndian::Big => cursor.read_u16::<BigEndian>().map(|value| value as u32),
+        },
         DataType::Int16 => {
-            let value = cursor.read_i16::<LittleEndian>()?;
+            let value = match endian {
+                BinaryEndian::Little => cursor.read_i16::<LittleEndian>()?,
+                BinaryEndian::Big => cursor.read_i16::<BigEndian>()?,
+            };
             u32::try_from(value).map_err(|_| invalid_ply("Negative face index value"))
         }
-        DataType::Uint32 => cursor.read_u32::<LittleEndian>(),
+        DataType::Uint32 => match endian {
+            BinaryEndian::Little => cursor.read_u32::<LittleEndian>(),
+            BinaryEndian::Big => cursor.read_u32::<BigEndian>(),
+        },
         DataType::Int32 => {
-            let value = cursor.read_i32::<LittleEndian>()?;
+            let value = match endian {
+                BinaryEndian::Little => cursor.read_i32::<LittleEndian>()?,
+                BinaryEndian::Big => cursor.read_i32::<BigEndian>()?,
+            };
             u32::try_from(value).map_err(|_| invalid_ply("Negative face index value"))
         }
         _ => Err(invalid_ply("Unsupported face index scalar type")),
@@ -841,17 +992,51 @@ fn read_binary_scalar_as_u32(cursor: &mut Cursor<&[u8]>, data_type: DataType) ->
 fn read_binary_scalar_as_usize(
     cursor: &mut Cursor<&[u8]>,
     data_type: DataType,
+    endian: BinaryEndian,
 ) -> io::Result<usize> {
-    let value = read_binary_scalar_as_u32(cursor, data_type)?;
+    let value = read_binary_scalar_as_u32(cursor, data_type, endian)?;
     usize::try_from(value).map_err(|_| invalid_ply("Binary list size is too large"))
 }
 
-fn read_ply_binary_little_endian_body(
+fn skip_binary_element(
+    cursor: &mut Cursor<&[u8]>,
+    element: &PlyElementDef,
+    endian: BinaryEndian,
+) -> io::Result<()> {
+    for _ in 0..element.count {
+        for property in &element.properties {
+            match property.kind {
+                PlyPropertyKind::Scalar(data_type) => skip_binary_scalar(cursor, data_type)?,
+                PlyPropertyKind::List {
+                    count_type,
+                    item_type,
+                } => {
+                    let count = read_binary_scalar_as_usize(cursor, count_type, endian)?;
+                    for _ in 0..count {
+                        skip_binary_scalar(cursor, item_type)?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn read_ply_binary_body(
     header: &PlyHeader,
     body: &[u8],
+    endian: BinaryEndian,
 ) -> io::Result<ParsedPlyData> {
     let schema = build_read_schema(header)?;
     let mut cursor = Cursor::new(body);
+    let vertex_element_index = header
+        .elements
+        .iter()
+        .position(|element| element.name == "vertex")
+        .ok_or_else(|| invalid_ply("Missing vertex element"))?;
+    for element in &header.elements[..vertex_element_index] {
+        skip_binary_element(&mut cursor, element, endian)?;
+    }
 
     let mut float_positions = matches!(schema.position_data_type, DataType::Float32)
         .then(|| Vec::with_capacity(header.vertex_count));
@@ -877,36 +1062,36 @@ fn read_ply_binary_little_endian_body(
                 PlyPropertyKind::Scalar(data_type) => match property.name.as_str() {
                     "x" => match schema.position_data_type {
                         DataType::Int32 => {
-                            int_position[0] = read_binary_scalar_as_i32(&mut cursor, data_type)?
+                            int_position[0] = read_binary_scalar_as_i32(&mut cursor, data_type, endian)?
                         }
                         _ => {
-                            float_position[0] = read_binary_scalar_as_f32(&mut cursor, data_type)?
+                            float_position[0] = read_binary_scalar_as_f32(&mut cursor, data_type, endian)?
                         }
                     },
                     "y" => match schema.position_data_type {
                         DataType::Int32 => {
-                            int_position[1] = read_binary_scalar_as_i32(&mut cursor, data_type)?
+                            int_position[1] = read_binary_scalar_as_i32(&mut cursor, data_type, endian)?
                         }
                         _ => {
-                            float_position[1] = read_binary_scalar_as_f32(&mut cursor, data_type)?
+                            float_position[1] = read_binary_scalar_as_f32(&mut cursor, data_type, endian)?
                         }
                     },
                     "z" => match schema.position_data_type {
                         DataType::Int32 => {
-                            int_position[2] = read_binary_scalar_as_i32(&mut cursor, data_type)?
+                            int_position[2] = read_binary_scalar_as_i32(&mut cursor, data_type, endian)?
                         }
                         _ => {
-                            float_position[2] = read_binary_scalar_as_f32(&mut cursor, data_type)?
+                            float_position[2] = read_binary_scalar_as_f32(&mut cursor, data_type, endian)?
                         }
                     },
                     "nx" if schema.has_normals => {
-                        normal[0] = read_binary_scalar_as_f32(&mut cursor, data_type)?
+                        normal[0] = read_binary_scalar_as_f32(&mut cursor, data_type, endian)?
                     }
                     "ny" if schema.has_normals => {
-                        normal[1] = read_binary_scalar_as_f32(&mut cursor, data_type)?
+                        normal[1] = read_binary_scalar_as_f32(&mut cursor, data_type, endian)?
                     }
                     "nz" if schema.has_normals => {
-                        normal[2] = read_binary_scalar_as_f32(&mut cursor, data_type)?
+                        normal[2] = read_binary_scalar_as_f32(&mut cursor, data_type, endian)?
                     }
                     "red" | "green" | "blue" | "alpha" if schema.color_components > 0 => {
                         color[color_component] = read_binary_scalar_as_u8(&mut cursor, data_type)?;
@@ -914,8 +1099,14 @@ fn read_ply_binary_little_endian_body(
                     }
                     _ => skip_binary_scalar(&mut cursor, data_type)?,
                 },
-                PlyPropertyKind::List { .. } => {
-                    return Err(invalid_ply("List properties in vertex elements are not supported"));
+                PlyPropertyKind::List {
+                    count_type,
+                    item_type,
+                } => {
+                    let count = read_binary_scalar_as_usize(&mut cursor, count_type, endian)?;
+                    for _ in 0..count {
+                        skip_binary_scalar(&mut cursor, item_type)?;
+                    }
                 }
             }
         }
@@ -931,6 +1122,19 @@ fn read_ply_binary_little_endian_body(
 
         if let Some(colors) = colors.as_mut() {
             colors.values.push(color);
+        }
+    }
+
+    let face_element_index = header
+        .elements
+        .iter()
+        .position(|element| element.name == "face");
+    if let Some(face_element_index) = face_element_index {
+        if face_element_index < vertex_element_index {
+            return Err(invalid_ply("PLY face element before vertex element is not supported"));
+        }
+        for element in &header.elements[vertex_element_index + 1..face_element_index] {
+            skip_binary_element(&mut cursor, element, endian)?;
         }
     }
 
@@ -951,10 +1155,10 @@ fn read_ply_binary_little_endian_body(
                     count_type,
                     item_type,
                 } => {
-                    let count = read_binary_scalar_as_usize(&mut cursor, count_type)?;
+                    let count = read_binary_scalar_as_usize(&mut cursor, count_type, endian)?;
                     let mut values = Vec::with_capacity(count);
                     for _ in 0..count {
-                        values.push(read_binary_scalar_as_u32(&mut cursor, item_type)?);
+                        values.push(read_binary_scalar_as_u32(&mut cursor, item_type, endian)?);
                     }
 
                     if property.name == "vertex_indices" || polygon_indices.is_none() {
@@ -982,16 +1186,27 @@ fn read_ply_binary_little_endian_body(
 
 fn read_ply<P: AsRef<Path>>(path: P) -> io::Result<ParsedPlyData> {
     let bytes = fs::read(path)?;
+    read_ply_bytes(&bytes)
+}
+
+fn read_ply_source(source: &PlyReaderSource) -> io::Result<ParsedPlyData> {
+    match source {
+        PlyReaderSource::Path(path) => read_ply(path),
+        PlyReaderSource::Bytes(bytes) => read_ply_bytes(bytes),
+    }
+}
+
+fn read_ply_bytes(bytes: &[u8]) -> io::Result<ParsedPlyData> {
     let (header, body_offset) = parse_ply_header(&bytes)?;
 
     match header.format {
         PlyFormat::Ascii => read_ply_ascii_body(&header, &bytes[body_offset..]),
         PlyFormat::BinaryLittleEndian => {
-            read_ply_binary_little_endian_body(&header, &bytes[body_offset..])
+            read_ply_binary_body(&header, &bytes[body_offset..], BinaryEndian::Little)
         }
-        PlyFormat::BinaryBigEndian => Err(invalid_ply(
-            "Binary big-endian PLY files are not currently supported",
-        )),
+        PlyFormat::BinaryBigEndian => {
+            read_ply_binary_body(&header, &bytes[body_offset..], BinaryEndian::Big)
+        }
     }
 }
 
@@ -1333,6 +1548,47 @@ end_header
         assert_eq!(color_att.num_components(), 4);
         assert!(color_att.normalized());
         assert_eq!(color_att.buffer().data(), &[10, 20, 30, 40, 50, 60, 70, 80]);
+    }
+
+    #[test]
+    fn test_read_binary_big_endian_mesh() {
+        let mut ply = Vec::new();
+        ply.extend_from_slice(
+            br#"ply
+format binary_big_endian 1.0
+element vertex 4
+property float x
+property float y
+property float z
+element face 1
+property list uchar int vertex_indices
+end_header
+"#,
+        );
+
+        for vertex in [
+            [0.0f32, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ] {
+            for component in vertex {
+                ply.extend_from_slice(&component.to_be_bytes());
+            }
+        }
+
+        ply.push(4);
+        for index in [0i32, 1, 2, 3] {
+            ply.extend_from_slice(&index.to_be_bytes());
+        }
+
+        let mesh = PlyReader::read_from_bytes(&ply).unwrap();
+        assert_eq!(mesh.num_points(), 4);
+        assert_eq!(mesh.num_faces(), 2);
+        assert_eq!(
+            mesh.face(draco_core::geometry_indices::FaceIndex(1)),
+            [0u32.into(), 2u32.into(), 3u32.into()]
+        );
     }
 }
 

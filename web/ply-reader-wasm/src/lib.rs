@@ -5,6 +5,11 @@
 
 use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
+use draco_core::draco_types::DataType;
+use draco_core::geometry_attribute::GeometryAttributeType;
+use draco_core::geometry_indices::FaceIndex;
+use draco_core::mesh::Mesh;
+use draco_io::ply_reader::PlyReader;
 
 #[wasm_bindgen]
 extern "C" {
@@ -81,7 +86,8 @@ fn to_js_value(result: &ParseResult) -> JsValue {
 /// Parse PLY file content from a string (ASCII PLY).
 #[wasm_bindgen]
 pub fn parse_ply(content: &str) -> JsValue {
-    let result = parse_ply_internal(content);
+    let result = parse_ply_with_core(content.as_bytes())
+        .unwrap_or_else(|_| parse_ply_internal(content));
     to_js_value(&result)
 }
 
@@ -90,14 +96,10 @@ pub fn parse_ply(content: &str) -> JsValue {
 pub fn parse_ply_bytes(data: &[u8]) -> JsValue {
     // Catch any panics
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        // Try to detect if it's ASCII or binary
-        match std::str::from_utf8(data) {
+        parse_ply_with_core(data).unwrap_or_else(|_| match std::str::from_utf8(data) {
             Ok(content) => parse_ply_internal(content),
-            Err(_) => {
-                // Could be binary PLY - try to parse header and detect format
-                parse_binary_ply(data)
-            }
-        }
+            Err(_) => parse_binary_ply(data),
+        })
     }));
     
     let result = match result {
@@ -121,6 +123,106 @@ pub fn parse_ply_bytes(data: &[u8]) -> JsValue {
     };
     
     to_js_value(&result)
+}
+
+fn parse_ply_with_core(data: &[u8]) -> Result<ParseResult, String> {
+    let mesh = PlyReader::read_from_bytes(data).map_err(|error| error.to_string())?;
+    let mesh_data = mesh_to_js_data(&mesh);
+    Ok(ParseResult {
+        success: true,
+        meshes: vec![mesh_data],
+        error: None,
+        warnings: vec![],
+        header: parse_header_info(data),
+    })
+}
+
+fn parse_header_info(data: &[u8]) -> Option<PlyHeader> {
+    let header_end = data
+        .windows(b"end_header".len())
+        .position(|window| window == b"end_header")?;
+    let text = std::str::from_utf8(&data[..header_end]).ok()?;
+    let mut format = String::new();
+    let mut vertex_count = 0usize;
+    let mut face_count = 0usize;
+    let mut properties = Vec::new();
+    for line in text.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        match parts.as_slice() {
+            ["format", value, ..] => format = (*value).to_string(),
+            ["element", "vertex", count, ..] => vertex_count = count.parse().unwrap_or(0),
+            ["element", "face", count, ..] => face_count = count.parse().unwrap_or(0),
+            ["property", "list", _, _, name, ..] => properties.push((*name).to_string()),
+            ["property", _, name, ..] => properties.push((*name).to_string()),
+            _ => {}
+        }
+    }
+    Some(PlyHeader {
+        format,
+        vertex_count,
+        face_count,
+        properties,
+    })
+}
+
+fn mesh_to_js_data(mesh: &Mesh) -> MeshData {
+    let positions = read_attribute_as_f32(mesh, GeometryAttributeType::Position, 3);
+    let normals = read_attribute_as_f32(mesh, GeometryAttributeType::Normal, 3);
+    let colors = read_color_attribute(mesh);
+    let mut indices = Vec::with_capacity(mesh.num_faces() * 3);
+    for i in 0..mesh.num_faces() {
+        let face = mesh.face(FaceIndex(i as u32));
+        indices.extend([face[0].0, face[1].0, face[2].0]);
+    }
+    MeshData {
+        positions,
+        indices,
+        normals,
+        colors,
+    }
+}
+
+fn read_attribute_as_f32(mesh: &Mesh, attribute_type: GeometryAttributeType, components: usize) -> Vec<f32> {
+    let att_id = mesh.named_attribute_id(attribute_type);
+    if att_id < 0 {
+        return Vec::new();
+    }
+    let att = mesh.attribute(att_id);
+    let stride = att.byte_stride() as usize;
+    let count = mesh.num_points();
+    let mut out = Vec::with_capacity(count * components);
+    for point in 0..count {
+        let base = point * stride;
+        for component in 0..components.min(att.num_components() as usize) {
+            let offset = base + component * att.data_type().byte_length();
+            let data = att.buffer().data();
+            let value = match att.data_type() {
+                DataType::Float32 => f32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()),
+                DataType::Float64 => f64::from_le_bytes(data[offset..offset + 8].try_into().unwrap()) as f32,
+                DataType::Int32 => i32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()) as f32,
+                DataType::Uint32 => u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()) as f32,
+                DataType::Int16 => i16::from_le_bytes(data[offset..offset + 2].try_into().unwrap()) as f32,
+                DataType::Uint16 => u16::from_le_bytes(data[offset..offset + 2].try_into().unwrap()) as f32,
+                DataType::Int8 => data[offset] as i8 as f32,
+                DataType::Uint8 => data[offset] as f32,
+                _ => 0.0,
+            };
+            out.push(value);
+        }
+    }
+    out
+}
+
+fn read_color_attribute(mesh: &Mesh) -> Vec<u8> {
+    let att_id = mesh.named_attribute_id(GeometryAttributeType::Color);
+    if att_id < 0 {
+        return Vec::new();
+    }
+    let att = mesh.attribute(att_id);
+    if att.data_type() == DataType::Uint8 {
+        return att.buffer().data().to_vec();
+    }
+    Vec::new()
 }
 
 #[derive(Debug, Clone)]

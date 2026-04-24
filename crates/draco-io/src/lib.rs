@@ -124,6 +124,7 @@ pub mod obj_writer;
 pub mod ply_writer;
 
 // Traits module is always available
+pub mod ply_format;
 pub mod traits;
 
 // Re-export main types for convenience
@@ -143,4 +144,5 @@ pub use obj_writer::ObjWriter;
 pub use ply_reader::PlyReader;
 #[cfg(feature = "encoder")]
 pub use ply_writer::PlyWriter;
+pub use ply_format::PlyFormat;
 pub use traits::{PointCloudReader, PointCloudWriter, Reader, Writer, Scene, SceneObject, SceneReader, SceneWriter, Transform, SceneNode};
