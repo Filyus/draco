@@ -69,7 +69,7 @@ use std::path::Path;
 
 use draco_core::encoder_buffer::EncoderBuffer;
 use draco_core::encoder_options::EncoderOptions;
-use draco_core::geometry_attribute::GeometryAttributeType;
+use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
 use draco_core::mesh::Mesh;
 use draco_core::mesh_encoder::MeshEncoder;
 use serde::Serialize;
@@ -418,98 +418,8 @@ impl GltfWriter {
         quantization: &QuantizationBits,
     ) -> Result<usize> {
         let draco_data = encode_draco_mesh_bytes(mesh, quantization)?;
-
-        // Align to 4 bytes
-        while !self.binary_data.len().is_multiple_of(4) {
-            self.binary_data.push(0);
-        }
-        let aligned_offset = self.binary_data.len();
-
-        self.binary_data.extend_from_slice(&draco_data);
-        let draco_buffer_view_idx = self.buffer_views.len();
-        self.buffer_views.push(BufferViewOut {
-            buffer: 0,
-            byte_offset: Some(aligned_offset),
-            byte_length: draco_data.len(),
-        });
-
-        // Build accessor indices and attribute mapping
-        let mut attributes = HashMap::new();
-        let mut draco_attributes: HashMap<String, usize> = HashMap::new();
-
-        for i in 0..mesh.num_attributes() {
-            let att = mesh.attribute(i);
-            let accessor_idx = self.accessors.len();
-
-            let (semantic, gltf_type) = match att.attribute_type() {
-                GeometryAttributeType::Position => ("POSITION", "VEC3"),
-                GeometryAttributeType::Normal => ("NORMAL", "VEC3"),
-                GeometryAttributeType::Color => ("COLOR_0", "VEC4"),
-                GeometryAttributeType::TexCoord => ("TEXCOORD_0", "VEC2"),
-                GeometryAttributeType::Generic => {
-                    let name = format!("_GENERIC_{}", i);
-                    let gltf_type = match att.num_components() {
-                        1 => "SCALAR",
-                        2 => "VEC2",
-                        3 => "VEC3",
-                        4 => "VEC4",
-                        _ => "SCALAR",
-                    };
-                    attributes.insert(name.clone(), accessor_idx);
-                    draco_attributes.insert(name, i as usize);
-
-                    self.accessors.push(AccessorOut {
-                        buffer_view: None,
-                        byte_offset: None,
-                        component_type: component_type_for_data_type(att.data_type()),
-                        count: att.size(),
-                        accessor_type: gltf_type.to_string(),
-                        min: Vec::new(),
-                        max: Vec::new(),
-                    });
-                    continue;
-                }
-                GeometryAttributeType::Invalid => continue,
-            };
-
-            attributes.insert(semantic.to_string(), accessor_idx);
-            draco_attributes.insert(semantic.to_string(), i as usize);
-
-            self.accessors.push(AccessorOut {
-                buffer_view: None,
-                byte_offset: None,
-                component_type: component_type_for_data_type(att.data_type()),
-                count: att.size(),
-                accessor_type: gltf_type.to_string(),
-                min: Vec::new(),
-                max: Vec::new(),
-            });
-        }
-
-        // Add indices accessor
-        let indices_accessor_idx = self.accessors.len();
-        self.accessors.push(AccessorOut {
-            buffer_view: None,
-            byte_offset: None,
-            component_type: 5125, // UNSIGNED_INT
-            count: mesh.num_faces() * 3,
-            accessor_type: "SCALAR".to_string(),
-            min: Vec::new(),
-            max: Vec::new(),
-        });
-
-        // Create mesh primitive
-        let primitive = PrimitiveOut {
-            attributes,
-            indices: Some(indices_accessor_idx),
-            mode: Some(4), // TRIANGLES
-            extensions: Some(PrimitiveExtensionsOut {
-                khr_draco_mesh_compression: DracoExtensionOut {
-                    buffer_view: draco_buffer_view_idx,
-                    attributes: draco_attributes,
-                },
-            }),
-        };
+        let draco_buffer_view_idx = self.append_buffer_view(&draco_data);
+        let primitive = self.build_draco_primitive(mesh, draco_buffer_view_idx);
 
         let mesh_idx = self.meshes.len();
         self.meshes.push(MeshOut {
@@ -519,6 +429,91 @@ impl GltfWriter {
 
         self.has_draco = true;
         Ok(mesh_idx)
+    }
+
+    fn append_buffer_view(&mut self, data: &[u8]) -> usize {
+        while !self.binary_data.len().is_multiple_of(4) {
+            self.binary_data.push(0);
+        }
+        let aligned_offset = self.binary_data.len();
+
+        self.binary_data.extend_from_slice(data);
+        let buffer_view_idx = self.buffer_views.len();
+        self.buffer_views.push(BufferViewOut {
+            buffer: 0,
+            byte_offset: Some(aligned_offset),
+            byte_length: data.len(),
+        });
+
+        buffer_view_idx
+    }
+
+    fn build_draco_primitive(&mut self, mesh: &Mesh, draco_buffer_view_idx: usize) -> PrimitiveOut {
+        let (attributes, draco_attributes) = self.add_mesh_attribute_accessors(mesh);
+        let indices_accessor_idx = self.add_indices_accessor(mesh.num_faces() * 3);
+
+        PrimitiveOut {
+            attributes,
+            indices: Some(indices_accessor_idx),
+            mode: Some(4), // TRIANGLES
+            extensions: Some(PrimitiveExtensionsOut {
+                khr_draco_mesh_compression: DracoExtensionOut {
+                    buffer_view: draco_buffer_view_idx,
+                    attributes: draco_attributes,
+                },
+            }),
+        }
+    }
+
+    fn add_mesh_attribute_accessors(
+        &mut self,
+        mesh: &Mesh,
+    ) -> (HashMap<String, usize>, HashMap<String, usize>) {
+        let mut attributes = HashMap::new();
+        let mut draco_attributes: HashMap<String, usize> = HashMap::new();
+
+        for i in 0..mesh.num_attributes() {
+            let att = mesh.attribute(i);
+            let Some((semantic, accessor_type)) =
+                gltf_attribute_info(att.attribute_type(), att.num_components(), i as usize)
+            else {
+                continue;
+            };
+
+            let accessor_idx = self.add_attribute_accessor(att, accessor_type);
+            attributes.insert(semantic.clone(), accessor_idx);
+            draco_attributes.insert(semantic, i as usize);
+        }
+
+        (attributes, draco_attributes)
+    }
+
+    fn add_attribute_accessor(&mut self, att: &PointAttribute, accessor_type: &str) -> usize {
+        let accessor_idx = self.accessors.len();
+        self.accessors.push(AccessorOut {
+            buffer_view: None,
+            byte_offset: None,
+            component_type: component_type_for_data_type(att.data_type()),
+            count: att.size(),
+            accessor_type: accessor_type.to_string(),
+            min: Vec::new(),
+            max: Vec::new(),
+        });
+        accessor_idx
+    }
+
+    fn add_indices_accessor(&mut self, count: usize) -> usize {
+        let accessor_idx = self.accessors.len();
+        self.accessors.push(AccessorOut {
+            buffer_view: None,
+            byte_offset: None,
+            component_type: 5125, // UNSIGNED_INT
+            count,
+            accessor_type: "SCALAR".to_string(),
+            min: Vec::new(),
+            max: Vec::new(),
+        });
+        accessor_idx
     }
 
     /// Add a mesh with Draco compression.
@@ -735,6 +730,34 @@ fn component_type_for_data_type(dt: draco_core::draco_types::DataType) -> u32 {
         DataType::Uint32 => 5125,
         DataType::Float32 => 5126,
         _ => 5126, // Default to float
+    }
+}
+
+fn gltf_attribute_info(
+    attribute_type: GeometryAttributeType,
+    num_components: u8,
+    attribute_index: usize,
+) -> Option<(String, &'static str)> {
+    match attribute_type {
+        GeometryAttributeType::Position => Some(("POSITION".to_string(), "VEC3")),
+        GeometryAttributeType::Normal => Some(("NORMAL".to_string(), "VEC3")),
+        GeometryAttributeType::Color => Some(("COLOR_0".to_string(), "VEC4")),
+        GeometryAttributeType::TexCoord => Some(("TEXCOORD_0".to_string(), "VEC2")),
+        GeometryAttributeType::Generic => Some((
+            format!("_GENERIC_{}", attribute_index),
+            gltf_type_for_num_components(num_components),
+        )),
+        GeometryAttributeType::Invalid => None,
+    }
+}
+
+fn gltf_type_for_num_components(num_components: u8) -> &'static str {
+    match num_components {
+        1 => "SCALAR",
+        2 => "VEC2",
+        3 => "VEC3",
+        4 => "VEC4",
+        _ => "SCALAR",
     }
 }
 
