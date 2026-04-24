@@ -140,8 +140,8 @@ pub struct DynamicIntegerPointsKdTreeEncoder {
     deviations: Vec<u32>,
     num_remaining_bits: Vec<u32>,
     axes: Vec<u32>,
-    base_stack: Vec<Vec<u32>>,
-    levels_stack: Vec<Vec<u32>>,
+    base_stack: Vec<u32>,
+    levels_stack: Vec<u32>,
     numbers_encoder: NumbersEncoder,
     remaining_bits_encoder: DirectBitEncoder,
     axis_encoder: DirectBitEncoder,
@@ -168,8 +168,8 @@ impl DynamicIntegerPointsKdTreeEncoder {
             deviations: vec![0; dimension as usize],
             num_remaining_bits: vec![0; dimension as usize],
             axes: vec![0; dimension as usize],
-            base_stack: vec![vec![0; dimension as usize]; stack_len],
-            levels_stack: vec![vec![0; dimension as usize]; stack_len],
+            base_stack: vec![0; stack_len * dimension as usize],
+            levels_stack: vec![0; stack_len * dimension as usize],
             numbers_encoder,
             remaining_bits_encoder: DirectBitEncoder::new(),
             axis_encoder: DirectBitEncoder::new(),
@@ -273,8 +273,11 @@ impl DynamicIntegerPointsKdTreeEncoder {
             stack_pos: usize,
         }
 
-        self.base_stack[0].fill(0);
-        self.levels_stack[0].fill(0);
+        let dimension = self.dimension as usize;
+        self.base_stack[0..dimension].fill(0);
+        self.levels_stack[0..dimension].fill(0);
+        let mut old_base = vec![0; dimension];
+        let mut levels = vec![0; dimension];
 
         let mut stack: Vec<Status> = Vec::new();
         stack.push(Status {
@@ -290,8 +293,9 @@ impl DynamicIntegerPointsKdTreeEncoder {
             let last_axis = status.last_axis;
             let stack_pos = status.stack_pos;
 
-            let old_base = self.base_stack[stack_pos].clone();
-            let levels = self.levels_stack[stack_pos].clone();
+            let row_start = stack_pos * dimension;
+            old_base.copy_from_slice(&self.base_stack[row_start..row_start + dimension]);
+            levels.copy_from_slice(&self.levels_stack[row_start..row_start + dimension]);
 
             let axis = self.get_and_encode_axis(points, begin, end, &old_base, &levels, last_axis);
             let level = levels[axis as usize];
@@ -323,9 +327,10 @@ impl DynamicIntegerPointsKdTreeEncoder {
 
             let num_remaining_bits = self.bit_length - level;
             let modifier = 1u32 << (num_remaining_bits - 1);
-            self.base_stack[stack_pos + 1] = old_base.clone();
-            self.base_stack[stack_pos + 1][axis as usize] += modifier;
-            let new_base_axis_value = self.base_stack[stack_pos + 1][axis as usize];
+            let child_start = (stack_pos + 1) * dimension;
+            self.base_stack[child_start..child_start + dimension].copy_from_slice(&old_base);
+            self.base_stack[child_start + axis as usize] += modifier;
+            let new_base_axis_value = self.base_stack[child_start + axis as usize];
 
             let split = points.partition(begin, end, axis as usize, new_base_axis_value);
 
@@ -344,8 +349,9 @@ impl DynamicIntegerPointsKdTreeEncoder {
                 self.encode_number(required_bits, num_remaining_points / 2 - second_half);
             }
 
-            self.levels_stack[stack_pos][axis as usize] += 1;
-            self.levels_stack[stack_pos + 1] = self.levels_stack[stack_pos].clone();
+            levels[axis as usize] += 1;
+            self.levels_stack[row_start..row_start + dimension].copy_from_slice(&levels);
+            self.levels_stack[child_start..child_start + dimension].copy_from_slice(&levels);
 
             if split != begin {
                 stack.push(Status {
@@ -416,8 +422,8 @@ pub struct DynamicIntegerPointsKdTreeDecoder<'a> {
     dimension: u32,
     p: Vec<u32>,
     axes: Vec<u32>,
-    base_stack: Vec<Vec<u32>>,
-    levels_stack: Vec<Vec<u32>>,
+    base_stack: Vec<u32>,
+    levels_stack: Vec<u32>,
     numbers_decoder: NumbersDecoder<'a>,
     remaining_bits_decoder: DirectBitDecoder,
     axis_decoder: DirectBitDecoder,
@@ -443,8 +449,8 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
             dimension,
             p: vec![0; dimension as usize],
             axes: vec![0; dimension as usize],
-            base_stack: vec![vec![0; dimension as usize]; stack_len],
-            levels_stack: vec![vec![0; dimension as usize]; stack_len],
+            base_stack: vec![0; stack_len * dimension as usize],
+            levels_stack: vec![0; stack_len * dimension as usize],
             numbers_decoder,
             remaining_bits_decoder: DirectBitDecoder::new(),
             axis_decoder: DirectBitDecoder::new(),
@@ -537,8 +543,11 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
             stack_pos: usize,
         }
 
-        self.base_stack[0].fill(0);
-        self.levels_stack[0].fill(0);
+        let dimension = self.dimension as usize;
+        self.base_stack[0..dimension].fill(0);
+        self.levels_stack[0..dimension].fill(0);
+        let mut old_base = vec![0; dimension];
+        let mut levels = vec![0; dimension];
 
         let mut stack: Vec<Status> = Vec::new();
         stack.push(Status {
@@ -552,8 +561,9 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
             let last_axis = status.last_axis;
             let stack_pos = status.stack_pos;
 
-            let old_base = self.base_stack[stack_pos].clone();
-            let levels = self.levels_stack[stack_pos].clone();
+            let row_start = stack_pos * dimension;
+            old_base.copy_from_slice(&self.base_stack[row_start..row_start + dimension]);
+            levels.copy_from_slice(&self.levels_stack[row_start..row_start + dimension]);
 
             if num_remaining_points > num_points {
                 return false;
@@ -607,8 +617,9 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
 
             let num_remaining_bits = self.bit_length - level;
             let modifier = 1u32 << (num_remaining_bits - 1);
-            self.base_stack[stack_pos + 1] = old_base.clone();
-            self.base_stack[stack_pos + 1][axis as usize] += modifier;
+            let child_start = (stack_pos + 1) * dimension;
+            self.base_stack[child_start..child_start + dimension].copy_from_slice(&old_base);
+            self.base_stack[child_start + axis as usize] += modifier;
 
             let incoming_bits = most_significant_bit(num_remaining_points);
             let mut number = 0u32;
@@ -627,8 +638,9 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
                 std::mem::swap(&mut first_half, &mut second_half);
             }
 
-            self.levels_stack[stack_pos][axis as usize] += 1;
-            self.levels_stack[stack_pos + 1] = self.levels_stack[stack_pos].clone();
+            levels[axis as usize] += 1;
+            self.levels_stack[row_start..row_start + dimension].copy_from_slice(&levels);
+            self.levels_stack[child_start..child_start + dimension].copy_from_slice(&levels);
 
             if first_half != 0 {
                 stack.push(Status {

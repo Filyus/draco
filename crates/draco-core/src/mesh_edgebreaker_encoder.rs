@@ -112,7 +112,6 @@ pub struct MeshEdgebreakerEncoder {
     visited_faces: Vec<bool>,
     visited_vertices: Vec<bool>,
     face_to_symbol_id: Vec<u32>,
-    point_ids: Vec<PointIndex>,
     symbols: Vec<u32>,
     topology_split_event_data: Vec<TopologySplitEventData>,
     face_to_split_symbol_map: HashMap<usize, i32>,
@@ -149,7 +148,6 @@ impl MeshEdgebreakerEncoder {
             visited_faces: vec![false; num_faces],
             visited_vertices: vec![false; num_vertices],
             face_to_symbol_id: vec![u32::MAX; num_faces],
-            point_ids: Vec::new(),
             symbols: Vec::new(),
             topology_split_event_data: Vec::new(),
             face_to_split_symbol_map: HashMap::new(),
@@ -263,8 +261,6 @@ impl MeshEdgebreakerEncoder {
         // Reset hole tracking
         self.vertex_hole_id = vec![-1; corner_table.num_vertices()];
         self.visited_holes.clear();
-
-        self.point_ids.clear();
 
         // Find all holes (boundary loops) in the mesh before encoding
         self.find_holes(corner_table);
@@ -462,7 +458,6 @@ impl MeshEdgebreakerEncoder {
             );
         }
 
-        self.point_ids = point_ids.clone();
         Ok((point_ids, data_to_corner_map, vertex_to_data_map))
     }
 
