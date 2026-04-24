@@ -10,21 +10,6 @@ version: 1
 last_reviewed: "2026-04-24"
 
 items:
-  - id: rust-edgebreaker-attribute-seams-encode
-    area: draco-core
-    priority: high
-    status: open
-    summary: "Rust Edgebreaker encoder does not emit attribute seam data."
-    evidence:
-      - path: "crates/draco-core/src/mesh_edgebreaker_encoder.rs"
-        note: "Module header says attribute_seam_data is not emitted by Rust yet."
-      - path: "crates/draco-core/src/mesh_edgebreaker_encoder.rs"
-        note: "encode_traversal_buffer contains a Not implemented yet placeholder for Attribute Seams."
-    impact: "Edgebreaker output is incomplete for meshes that need separate attribute connectivity/seams."
-    next_steps:
-      - "Port/implement Draco-compatible attribute seam encoding in traversal buffer order."
-      - "Add Rust roundtrip and C++ decoder interop coverage for seam-bearing meshes."
-
   - id: rust-edgebreaker-multi-attribute-wip
     area: draco-core
     priority: high
