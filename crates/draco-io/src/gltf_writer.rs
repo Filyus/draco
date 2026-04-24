@@ -631,39 +631,7 @@ impl GltfWriter {
     pub fn to_glb(&self) -> Result<Vec<u8>> {
         let root = self.build_gltf_root(None);
         let json = serde_json::to_string(&root)?;
-        let json_bytes = json.as_bytes();
-
-        // Pad JSON to 4-byte alignment
-        let json_padding = (4 - (json_bytes.len() % 4)) % 4;
-        let padded_json_len = json_bytes.len() + json_padding;
-
-        // Pad binary to 4-byte alignment
-        let bin_padding = (4 - (self.binary_data.len() % 4)) % 4;
-        let padded_bin_len = self.binary_data.len() + bin_padding;
-
-        // Calculate total length
-        let total_len = 12 + 8 + padded_json_len + 8 + padded_bin_len;
-
-        let mut output = Vec::with_capacity(total_len);
-
-        // Header
-        output.extend_from_slice(&GLB_MAGIC.to_le_bytes());
-        output.extend_from_slice(&GLB_VERSION.to_le_bytes());
-        output.extend_from_slice(&(total_len as u32).to_le_bytes());
-
-        // JSON chunk
-        output.extend_from_slice(&(padded_json_len as u32).to_le_bytes());
-        output.extend_from_slice(&GLB_CHUNK_JSON.to_le_bytes());
-        output.extend_from_slice(json_bytes);
-        output.extend(std::iter::repeat_n(b' ', json_padding)); // Pad with spaces (valid JSON whitespace)
-
-        // Binary chunk
-        output.extend_from_slice(&(padded_bin_len as u32).to_le_bytes());
-        output.extend_from_slice(&GLB_CHUNK_BIN.to_le_bytes());
-        output.extend_from_slice(&self.binary_data);
-        output.extend(std::iter::repeat_n(0u8, bin_padding));
-
-        Ok(output)
+        Ok(build_glb(json.as_bytes(), &self.binary_data))
     }
 
     fn encode_data_uri(data: &[u8]) -> String {
@@ -768,6 +736,38 @@ fn component_type_for_data_type(dt: draco_core::draco_types::DataType) -> u32 {
         DataType::Float32 => 5126,
         _ => 5126, // Default to float
     }
+}
+
+fn build_glb(json_bytes: &[u8], bin_bytes: &[u8]) -> Vec<u8> {
+    let json_padding = padding_len(json_bytes.len());
+    let bin_padding = padding_len(bin_bytes.len());
+    let padded_json_len = json_bytes.len() + json_padding;
+    let padded_bin_len = bin_bytes.len() + bin_padding;
+    let total_len = 12 + 8 + padded_json_len + 8 + padded_bin_len;
+
+    let mut output = Vec::with_capacity(total_len);
+    output.extend_from_slice(&GLB_MAGIC.to_le_bytes());
+    output.extend_from_slice(&GLB_VERSION.to_le_bytes());
+    output.extend_from_slice(&(total_len as u32).to_le_bytes());
+
+    append_glb_chunk(&mut output, GLB_CHUNK_JSON, json_bytes, b' ');
+    append_glb_chunk(&mut output, GLB_CHUNK_BIN, bin_bytes, 0);
+
+    output
+}
+
+fn append_glb_chunk(output: &mut Vec<u8>, chunk_type: u32, data: &[u8], padding_byte: u8) {
+    let padding = padding_len(data.len());
+    let padded_len = data.len() + padding;
+
+    output.extend_from_slice(&(padded_len as u32).to_le_bytes());
+    output.extend_from_slice(&chunk_type.to_le_bytes());
+    output.extend_from_slice(data);
+    output.extend(std::iter::repeat_n(padding_byte, padding));
+}
+
+fn padding_len(len: usize) -> usize {
+    (4 - (len % 4)) % 4
 }
 
 // ============================================================================
