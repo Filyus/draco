@@ -253,6 +253,209 @@ impl DecodedAccessor {
     }
 }
 
+struct GltfAccessorReader<'a> {
+    accessors: &'a [Accessor],
+    buffer_views: &'a [BufferView],
+    buffers: &'a [Vec<u8>],
+}
+
+impl<'a> GltfAccessorReader<'a> {
+    fn new(root: &'a GltfRoot, buffers: &'a [Vec<u8>]) -> Self {
+        Self {
+            accessors: &root.accessors,
+            buffer_views: &root.buffer_views,
+            buffers,
+        }
+    }
+
+    fn read_attribute(
+        &self,
+        accessor_idx: usize,
+        expected_types: &[&str],
+        allowed_component_types: &[u32],
+    ) -> Result<DecodedAccessor> {
+        let accessor = self.accessor(accessor_idx)?;
+
+        if !expected_types
+            .iter()
+            .any(|expected| accessor.accessor_type == *expected)
+        {
+            return Err(GltfError::InvalidGltf(format!(
+                "Expected one of {:?} accessor, got {}",
+                expected_types, accessor.accessor_type
+            )));
+        }
+
+        if !allowed_component_types.contains(&accessor.component_type) {
+            return Err(GltfError::Unsupported(format!(
+                "Unsupported {} component type: {}",
+                accessor.accessor_type, accessor.component_type
+            )));
+        }
+
+        let num_components = accessor_num_components(&accessor.accessor_type)?;
+        let data_type = data_type_for_component_type(accessor.component_type)?;
+        let component_size = data_type.byte_length();
+        let row_size = num_components as usize * component_size;
+        let layout = self.accessor_layout(accessor, row_size, "Accessor")?;
+
+        let mut bytes = Vec::with_capacity(accessor.count * row_size);
+        for i in 0..accessor.count {
+            let offset = layout
+                .start
+                .checked_add(i * layout.stride)
+                .ok_or_else(|| GltfError::InvalidGltf("Accessor range overflow".into()))?;
+            if offset + row_size > layout.view_end {
+                return Err(GltfError::InvalidGltf(format!(
+                    "{} accessor out of bounds",
+                    accessor.accessor_type
+                )));
+            }
+            bytes.extend_from_slice(&layout.buffer[offset..offset + row_size]);
+        }
+
+        Ok(DecodedAccessor {
+            count: accessor.count,
+            num_components,
+            data_type,
+            normalized: accessor.normalized,
+            bytes,
+        })
+    }
+
+    fn read_indices(&self, accessor_idx: usize) -> Result<Vec<u32>> {
+        let accessor = self.accessor(accessor_idx)?;
+
+        if accessor.accessor_type != "SCALAR" {
+            return Err(GltfError::InvalidGltf(format!(
+                "Expected SCALAR accessor for indices, got {}",
+                accessor.accessor_type
+            )));
+        }
+
+        let component_size = match accessor.component_type {
+            GLTF_COMPONENT_UNSIGNED_BYTE => 1,
+            GLTF_COMPONENT_UNSIGNED_SHORT => 2,
+            GLTF_COMPONENT_UNSIGNED_INT => 4,
+            _ => {
+                return Err(GltfError::Unsupported(format!(
+                    "Unsupported index component type: {}",
+                    accessor.component_type
+                )));
+            }
+        };
+        let layout = self.accessor_layout(accessor, component_size, "Index accessor")?;
+        let mut result = Vec::with_capacity(accessor.count);
+
+        match accessor.component_type {
+            GLTF_COMPONENT_UNSIGNED_BYTE => {
+                for i in 0..accessor.count {
+                    let offset = layout.start + i * layout.stride;
+                    if offset + component_size > layout.view_end {
+                        return Err(GltfError::InvalidGltf(
+                            "Index accessor out of bounds".into(),
+                        ));
+                    }
+                    result.push(layout.buffer[offset] as u32);
+                }
+            }
+            GLTF_COMPONENT_UNSIGNED_SHORT => {
+                for i in 0..accessor.count {
+                    let offset = layout.start + i * layout.stride;
+                    if offset + component_size > layout.view_end {
+                        return Err(GltfError::InvalidGltf(
+                            "Index accessor out of bounds".into(),
+                        ));
+                    }
+                    let val =
+                        u16::from_le_bytes([layout.buffer[offset], layout.buffer[offset + 1]]);
+                    result.push(val as u32);
+                }
+            }
+            GLTF_COMPONENT_UNSIGNED_INT => {
+                for i in 0..accessor.count {
+                    let offset = layout.start + i * layout.stride;
+                    if offset + component_size > layout.view_end {
+                        return Err(GltfError::InvalidGltf(
+                            "Index accessor out of bounds".into(),
+                        ));
+                    }
+                    let val = u32::from_le_bytes([
+                        layout.buffer[offset],
+                        layout.buffer[offset + 1],
+                        layout.buffer[offset + 2],
+                        layout.buffer[offset + 3],
+                    ]);
+                    result.push(val);
+                }
+            }
+            _ => unreachable!(),
+        }
+
+        Ok(result)
+    }
+
+    fn accessor(&self, accessor_idx: usize) -> Result<&Accessor> {
+        self.accessors.get(accessor_idx).ok_or_else(|| {
+            GltfError::InvalidGltf(format!("Invalid accessor index: {}", accessor_idx))
+        })
+    }
+
+    fn accessor_layout(
+        &self,
+        accessor: &Accessor,
+        element_size: usize,
+        label: &str,
+    ) -> Result<AccessorLayout<'a>> {
+        let buffer_view_idx = accessor
+            .buffer_view
+            .ok_or_else(|| GltfError::InvalidGltf(format!("{} has no bufferView", label)))?;
+
+        let buffer_view = self.buffer_views.get(buffer_view_idx).ok_or_else(|| {
+            GltfError::InvalidGltf(format!("Invalid bufferView index: {}", buffer_view_idx))
+        })?;
+
+        let buffer = self.buffers.get(buffer_view.buffer).ok_or_else(|| {
+            GltfError::InvalidGltf(format!("Invalid buffer index: {}", buffer_view.buffer))
+        })?;
+
+        let view_offset = buffer_view.byte_offset.unwrap_or(0);
+        let accessor_offset = accessor.byte_offset.unwrap_or(0);
+        let start = view_offset + accessor_offset;
+        let stride = buffer_view.byte_stride.unwrap_or(element_size);
+
+        if stride < element_size {
+            return Err(GltfError::InvalidGltf(format!(
+                "{} byteStride {} is smaller than element size {}",
+                label, stride, element_size
+            )));
+        }
+
+        let view_end = view_offset
+            .checked_add(buffer_view.byte_length)
+            .ok_or_else(|| GltfError::InvalidGltf("Buffer view range overflow".into()))?;
+        if view_end > buffer.len() {
+            return Err(GltfError::InvalidGltf(
+                "Buffer view extends past buffer end".into(),
+            ));
+        }
+
+        Ok(AccessorLayout {
+            buffer,
+            start,
+            stride,
+            view_end,
+        })
+    }
+}
+
+struct AccessorLayout<'a> {
+    buffer: &'a [u8],
+    start: usize,
+    stride: usize,
+    view_end: usize,
+}
+
 /// Information about a Draco-compressed primitive within a glTF mesh.
 #[derive(Debug, Clone)]
 pub struct DracoPrimitiveInfo {
@@ -526,14 +729,18 @@ impl GltfReader {
             ))
         })?;
 
-        let positions =
-            self.read_accessor_attribute(*pos_accessor_idx, &["VEC3"], &[GLTF_COMPONENT_FLOAT])?;
+        let accessor_reader = self.accessor_reader();
+        let positions = accessor_reader.read_attribute(
+            *pos_accessor_idx,
+            &["VEC3"],
+            &[GLTF_COMPONENT_FLOAT],
+        )?;
 
         let mut mesh = Mesh::new();
         let point_indices = if mode == GLTF_MODE_POINTS {
             primitive
                 .indices
-                .map(|indices_accessor_idx| self.read_accessor_indices(indices_accessor_idx))
+                .map(|indices_accessor_idx| accessor_reader.read_indices(indices_accessor_idx))
                 .transpose()?
         } else {
             None
@@ -549,7 +756,7 @@ impl GltfReader {
 
         if mode == GLTF_MODE_TRIANGLES {
             if let Some(indices_accessor_idx) = primitive.indices {
-                let indices = self.read_accessor_indices(indices_accessor_idx)?;
+                let indices = accessor_reader.read_indices(indices_accessor_idx)?;
                 if indices.len() % 3 != 0 {
                     return Err(GltfError::InvalidGltf(
                         "Index count not divisible by 3 for triangles".into(),
@@ -581,7 +788,7 @@ impl GltfReader {
         // Optionally read NORMAL
         if let Some(&normal_idx) = primitive.attributes.get("NORMAL") {
             let normals =
-                self.read_accessor_attribute(normal_idx, &["VEC3"], &[GLTF_COMPONENT_FLOAT])?;
+                accessor_reader.read_attribute(normal_idx, &["VEC3"], &[GLTF_COMPONENT_FLOAT])?;
             let normals = if let Some(indices) = &point_indices {
                 normals.gather(indices)?
             } else {
@@ -592,7 +799,7 @@ impl GltfReader {
 
         // Optionally read TEXCOORD_0
         if let Some(&tex_idx) = primitive.attributes.get("TEXCOORD_0") {
-            let texcoords = self.read_accessor_attribute(
+            let texcoords = accessor_reader.read_attribute(
                 tex_idx,
                 &["VEC2"],
                 &[
@@ -611,7 +818,7 @@ impl GltfReader {
 
         // Optionally read COLOR_0.
         if let Some(&color_idx) = primitive.attributes.get("COLOR_0") {
-            let colors = self.read_accessor_attribute(
+            let colors = accessor_reader.read_attribute(
                 color_idx,
                 &["VEC3", "VEC4"],
                 &[
@@ -663,204 +870,8 @@ impl GltfReader {
         Ok(())
     }
 
-    fn read_accessor_attribute(
-        &self,
-        accessor_idx: usize,
-        expected_types: &[&str],
-        allowed_component_types: &[u32],
-    ) -> Result<DecodedAccessor> {
-        let accessor = self.root.accessors.get(accessor_idx).ok_or_else(|| {
-            GltfError::InvalidGltf(format!("Invalid accessor index: {}", accessor_idx))
-        })?;
-
-        if !expected_types
-            .iter()
-            .any(|expected| accessor.accessor_type == *expected)
-        {
-            return Err(GltfError::InvalidGltf(format!(
-                "Expected one of {:?} accessor, got {}",
-                expected_types, accessor.accessor_type
-            )));
-        }
-
-        if !allowed_component_types.contains(&accessor.component_type) {
-            return Err(GltfError::Unsupported(format!(
-                "Unsupported {} component type: {}",
-                accessor.accessor_type, accessor.component_type
-            )));
-        }
-
-        let num_components = accessor_num_components(&accessor.accessor_type)?;
-        let data_type = data_type_for_component_type(accessor.component_type)?;
-        let component_size = data_type.byte_length();
-        let row_size = num_components as usize * component_size;
-        let buffer_view_idx = accessor
-            .buffer_view
-            .ok_or_else(|| GltfError::InvalidGltf("Accessor has no bufferView".into()))?;
-
-        let buffer_view = self.root.buffer_views.get(buffer_view_idx).ok_or_else(|| {
-            GltfError::InvalidGltf(format!("Invalid bufferView index: {}", buffer_view_idx))
-        })?;
-
-        let buffer = self.buffers.get(buffer_view.buffer).ok_or_else(|| {
-            GltfError::InvalidGltf(format!("Invalid buffer index: {}", buffer_view.buffer))
-        })?;
-
-        let view_offset = buffer_view.byte_offset.unwrap_or(0);
-        let accessor_offset = accessor.byte_offset.unwrap_or(0);
-        let start = view_offset + accessor_offset;
-        let stride = buffer_view.byte_stride.unwrap_or(row_size);
-
-        if stride < row_size {
-            return Err(GltfError::InvalidGltf(format!(
-                "Accessor byteStride {} is smaller than element size {}",
-                stride, row_size
-            )));
-        }
-
-        let view_end = view_offset
-            .checked_add(buffer_view.byte_length)
-            .ok_or_else(|| GltfError::InvalidGltf("Buffer view range overflow".into()))?;
-        if view_end > buffer.len() {
-            return Err(GltfError::InvalidGltf(
-                "Buffer view extends past buffer end".into(),
-            ));
-        }
-
-        let mut bytes = Vec::with_capacity(accessor.count * row_size);
-        for i in 0..accessor.count {
-            let offset = start
-                .checked_add(i * stride)
-                .ok_or_else(|| GltfError::InvalidGltf("Accessor range overflow".into()))?;
-            if offset + row_size > view_end {
-                return Err(GltfError::InvalidGltf(format!(
-                    "{} accessor out of bounds",
-                    accessor.accessor_type
-                )));
-            }
-            bytes.extend_from_slice(&buffer[offset..offset + row_size]);
-        }
-
-        Ok(DecodedAccessor {
-            count: accessor.count,
-            num_components,
-            data_type,
-            normalized: accessor.normalized,
-            bytes,
-        })
-    }
-
-    /// Read an index accessor as Vec<u32>.
-    fn read_accessor_indices(&self, accessor_idx: usize) -> Result<Vec<u32>> {
-        let accessor = self.root.accessors.get(accessor_idx).ok_or_else(|| {
-            GltfError::InvalidGltf(format!("Invalid accessor index: {}", accessor_idx))
-        })?;
-
-        if accessor.accessor_type != "SCALAR" {
-            return Err(GltfError::InvalidGltf(format!(
-                "Expected SCALAR accessor for indices, got {}",
-                accessor.accessor_type
-            )));
-        }
-
-        let buffer_view_idx = accessor
-            .buffer_view
-            .ok_or_else(|| GltfError::InvalidGltf("Index accessor has no bufferView".into()))?;
-
-        let buffer_view = self.root.buffer_views.get(buffer_view_idx).ok_or_else(|| {
-            GltfError::InvalidGltf(format!("Invalid bufferView index: {}", buffer_view_idx))
-        })?;
-
-        let buffer = self.buffers.get(buffer_view.buffer).ok_or_else(|| {
-            GltfError::InvalidGltf(format!("Invalid buffer index: {}", buffer_view.buffer))
-        })?;
-
-        let view_offset = buffer_view.byte_offset.unwrap_or(0);
-        let accessor_offset = accessor.byte_offset.unwrap_or(0);
-        let start = view_offset + accessor_offset;
-        let component_size = match accessor.component_type {
-            GLTF_COMPONENT_UNSIGNED_BYTE => 1,
-            GLTF_COMPONENT_UNSIGNED_SHORT => 2,
-            GLTF_COMPONENT_UNSIGNED_INT => 4,
-            _ => {
-                return Err(GltfError::Unsupported(format!(
-                    "Unsupported index component type: {}",
-                    accessor.component_type
-                )));
-            }
-        };
-        let stride = buffer_view.byte_stride.unwrap_or(component_size);
-        if stride < component_size {
-            return Err(GltfError::InvalidGltf(format!(
-                "Index accessor byteStride {} is smaller than component size {}",
-                stride, component_size
-            )));
-        }
-
-        let view_end = view_offset
-            .checked_add(buffer_view.byte_length)
-            .ok_or_else(|| GltfError::InvalidGltf("Buffer view range overflow".into()))?;
-        if view_end > buffer.len() {
-            return Err(GltfError::InvalidGltf(
-                "Buffer view extends past buffer end".into(),
-            ));
-        }
-
-        let mut result = Vec::with_capacity(accessor.count);
-
-        match accessor.component_type {
-            GLTF_COMPONENT_UNSIGNED_BYTE => {
-                // UNSIGNED_BYTE
-                for i in 0..accessor.count {
-                    let offset = start + i * stride;
-                    if offset + component_size > view_end {
-                        return Err(GltfError::InvalidGltf(
-                            "Index accessor out of bounds".into(),
-                        ));
-                    }
-                    result.push(buffer[offset] as u32);
-                }
-            }
-            GLTF_COMPONENT_UNSIGNED_SHORT => {
-                // UNSIGNED_SHORT
-                for i in 0..accessor.count {
-                    let offset = start + i * stride;
-                    if offset + component_size > view_end {
-                        return Err(GltfError::InvalidGltf(
-                            "Index accessor out of bounds".into(),
-                        ));
-                    }
-                    let val = u16::from_le_bytes([buffer[offset], buffer[offset + 1]]);
-                    result.push(val as u32);
-                }
-            }
-            GLTF_COMPONENT_UNSIGNED_INT => {
-                // UNSIGNED_INT
-                for i in 0..accessor.count {
-                    let offset = start + i * stride;
-                    if offset + component_size > view_end {
-                        return Err(GltfError::InvalidGltf(
-                            "Index accessor out of bounds".into(),
-                        ));
-                    }
-                    let val = u32::from_le_bytes([
-                        buffer[offset],
-                        buffer[offset + 1],
-                        buffer[offset + 2],
-                        buffer[offset + 3],
-                    ]);
-                    result.push(val);
-                }
-            }
-            _ => {
-                return Err(GltfError::Unsupported(format!(
-                    "Unsupported index component type: {}",
-                    accessor.component_type
-                )));
-            }
-        }
-
-        Ok(result)
+    fn accessor_reader(&self) -> GltfAccessorReader<'_> {
+        GltfAccessorReader::new(&self.root, &self.buffers)
     }
 
     /// Get the number of meshes in the glTF file.
