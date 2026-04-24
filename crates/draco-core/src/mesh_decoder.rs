@@ -30,6 +30,7 @@ pub struct MeshDecoder {
     corner_table: Option<Box<CornerTable>>,
     edgebreaker_data_to_corner_map: Option<Vec<u32>>,
     edgebreaker_attribute_seam_corners: Vec<Vec<u32>>,
+    edgebreaker_attribute_corner_tables: Vec<CornerTable>,
     edgebreaker_processed_connectivity_corners: Vec<u32>,
     edgebreaker_vertex_to_corner_map: Vec<u32>,
     traversal_method: u8,
@@ -52,6 +53,7 @@ impl MeshDecoder {
             corner_table: None,
             edgebreaker_data_to_corner_map: None,
             edgebreaker_attribute_seam_corners: Vec::new(),
+            edgebreaker_attribute_corner_tables: Vec::new(),
             edgebreaker_processed_connectivity_corners: Vec::new(),
             edgebreaker_vertex_to_corner_map: Vec::new(),
             traversal_method: 0,
@@ -231,6 +233,8 @@ impl MeshDecoder {
                     "Edgebreaker decoder did not provide corner table".to_string(),
                 ));
             }
+            self.rebuild_edgebreaker_attribute_corner_tables()?;
+            self.assign_edgebreaker_points_to_corners(mesh)?;
         } else {
             // Sequential connectivity encoding
             // C++ MeshSequentialDecoder uses raw u32 for v < 2.2, varint for v >= 2.2
@@ -340,6 +344,198 @@ impl MeshDecoder {
                 // self.corner_table remains None for sequential decoding.
             }
         }
+
+        Ok(())
+    }
+
+    fn make_attribute_corner_table(
+        base_ct: &CornerTable,
+        seam_corners: &[u32],
+    ) -> Result<CornerTable, DracoError> {
+        let mut ct = base_ct.clone();
+        let mut is_edge_on_seam = vec![false; base_ct.num_corners()];
+        let mut is_vertex_on_seam = vec![false; base_ct.num_vertices()];
+
+        for &c_u32 in seam_corners {
+            let c = CornerIndex(c_u32);
+            if c == INVALID_CORNER_INDEX {
+                continue;
+            }
+            is_edge_on_seam[c.0 as usize] = true;
+            ct.set_opposite(c, INVALID_CORNER_INDEX);
+
+            let next_vertex = base_ct.vertex(base_ct.next(c));
+            if next_vertex != crate::geometry_indices::INVALID_VERTEX_INDEX {
+                is_vertex_on_seam[next_vertex.0 as usize] = true;
+            }
+            let previous_vertex = base_ct.vertex(base_ct.previous(c));
+            if previous_vertex != crate::geometry_indices::INVALID_VERTEX_INDEX {
+                is_vertex_on_seam[previous_vertex.0 as usize] = true;
+            }
+
+            let opp = base_ct.opposite(c);
+            if opp != INVALID_CORNER_INDEX {
+                is_edge_on_seam[opp.0 as usize] = true;
+                ct.set_opposite(opp, INVALID_CORNER_INDEX);
+
+                let next_vertex = base_ct.vertex(base_ct.next(opp));
+                if next_vertex != crate::geometry_indices::INVALID_VERTEX_INDEX {
+                    is_vertex_on_seam[next_vertex.0 as usize] = true;
+                }
+                let previous_vertex = base_ct.vertex(base_ct.previous(opp));
+                if previous_vertex != crate::geometry_indices::INVALID_VERTEX_INDEX {
+                    is_vertex_on_seam[previous_vertex.0 as usize] = true;
+                }
+            }
+        }
+
+        let seam_opposite = |corner: CornerIndex| -> CornerIndex {
+            if corner == INVALID_CORNER_INDEX {
+                return INVALID_CORNER_INDEX;
+            }
+            if is_edge_on_seam[corner.0 as usize] {
+                INVALID_CORNER_INDEX
+            } else {
+                base_ct.opposite(corner)
+            }
+        };
+        let seam_swing_left = |corner: CornerIndex| -> CornerIndex {
+            base_ct.next(seam_opposite(base_ct.next(corner)))
+        };
+
+        ct.corner_to_vertex_map
+            .fill(crate::geometry_indices::INVALID_VERTEX_INDEX);
+        ct.vertex_corners.clear();
+
+        let mut num_new_vertices = 0usize;
+        for v in 0..base_ct.num_vertices() {
+            let c = base_ct.left_most_corner(VertexIndex(v as u32));
+            if c == INVALID_CORNER_INDEX {
+                continue;
+            }
+
+            let mut first_vertex_id = VertexIndex(num_new_vertices as u32);
+            num_new_vertices += 1;
+
+            let mut first_c = c;
+            if is_vertex_on_seam[v] {
+                let mut act_c = seam_swing_left(first_c);
+                while act_c != INVALID_CORNER_INDEX {
+                    first_c = act_c;
+                    act_c = seam_swing_left(act_c);
+                }
+            }
+
+            ct.corner_to_vertex_map[first_c.0 as usize] = first_vertex_id;
+            ct.vertex_corners.push(first_c);
+
+            let mut act_c = base_ct.swing_right(first_c);
+            while act_c != INVALID_CORNER_INDEX && act_c != first_c {
+                if is_edge_on_seam[base_ct.next(act_c).0 as usize] {
+                    first_vertex_id = VertexIndex(num_new_vertices as u32);
+                    num_new_vertices += 1;
+                    ct.vertex_corners.push(act_c);
+                }
+                ct.corner_to_vertex_map[act_c.0 as usize] = first_vertex_id;
+                act_c = base_ct.swing_right(act_c);
+            }
+        }
+
+        ct.num_original_vertices = ct.vertex_corners.len();
+        ct.num_isolated_vertices = 0;
+        ct.num_degenerated_faces = base_ct.num_degenerated_faces;
+
+        Ok(ct)
+    }
+
+    fn rebuild_edgebreaker_attribute_corner_tables(&mut self) -> Status {
+        self.edgebreaker_attribute_corner_tables.clear();
+        let Some(base_ct) = self.corner_table.as_deref() else {
+            return Ok(());
+        };
+        for seam_corners in &self.edgebreaker_attribute_seam_corners {
+            self.edgebreaker_attribute_corner_tables
+                .push(Self::make_attribute_corner_table(base_ct, seam_corners)?);
+        }
+        Ok(())
+    }
+
+    fn assign_edgebreaker_points_to_corners(&self, mesh: &mut Mesh) -> Status {
+        if self.edgebreaker_attribute_corner_tables.is_empty() {
+            return Ok(());
+        }
+        let Some(base_ct) = self.corner_table.as_deref() else {
+            return Ok(());
+        };
+
+        let num_corners = base_ct.num_corners();
+        let mut point_to_corner_map: Vec<u32> = Vec::new();
+        let mut corner_to_point_map = vec![u32::MAX; num_corners];
+
+        for v in 0..base_ct.num_vertices() {
+            let mut c = base_ct.left_most_corner(VertexIndex(v as u32));
+            if c == INVALID_CORNER_INDEX {
+                continue;
+            }
+
+            let mut first_corner = c;
+            if !Self::is_vertex_on_boundary_impl(base_ct, VertexIndex(v as u32)) {
+                for attr_ct in &self.edgebreaker_attribute_corner_tables {
+                    let vertex_at_first = attr_ct.vertex(c);
+                    let mut act_c = base_ct.swing_right(c);
+                    let mut seam_found = false;
+                    while act_c != INVALID_CORNER_INDEX && act_c != c {
+                        if attr_ct.vertex(act_c) != vertex_at_first {
+                            first_corner = act_c;
+                            seam_found = true;
+                            break;
+                        }
+                        act_c = base_ct.swing_right(act_c);
+                    }
+                    if seam_found {
+                        break;
+                    }
+                }
+            }
+
+            c = first_corner;
+            corner_to_point_map[c.0 as usize] = point_to_corner_map.len() as u32;
+            point_to_corner_map.push(c.0);
+
+            let mut prev_c = c;
+            c = base_ct.swing_right(c);
+            while c != INVALID_CORNER_INDEX && c != first_corner {
+                let attribute_seam = self
+                    .edgebreaker_attribute_corner_tables
+                    .iter()
+                    .any(|attr_ct| attr_ct.vertex(c) != attr_ct.vertex(prev_c));
+                if attribute_seam {
+                    corner_to_point_map[c.0 as usize] = point_to_corner_map.len() as u32;
+                    point_to_corner_map.push(c.0);
+                } else {
+                    corner_to_point_map[c.0 as usize] = corner_to_point_map[prev_c.0 as usize];
+                }
+                prev_c = c;
+                c = base_ct.swing_right(c);
+            }
+        }
+
+        for face_id in 0..mesh.num_faces() {
+            let base = face_id * 3;
+            let p0 = corner_to_point_map[base];
+            let p1 = corner_to_point_map[base + 1];
+            let p2 = corner_to_point_map[base + 2];
+            if p0 == u32::MAX || p1 == u32::MAX || p2 == u32::MAX {
+                return Err(DracoError::DracoError(
+                    "Failed to assign Edgebreaker corner point".to_string(),
+                ));
+            }
+            mesh.set_face(
+                FaceIndex(face_id as u32),
+                [PointIndex(p0), PointIndex(p1), PointIndex(p2)],
+            );
+        }
+        mesh.set_num_points(point_to_corner_map.len());
 
         Ok(())
     }
@@ -482,23 +678,8 @@ impl MeshDecoder {
                 if uses_attribute_connectivity
                     && att_data_id < self.edgebreaker_attribute_seam_corners.len()
                 {
-                    let seam_corners = &self.edgebreaker_attribute_seam_corners[att_data_id];
-                    if !seam_corners.is_empty() {
-                        if let Some(base_ct) = self.corner_table.as_deref() {
-                            let mut ct = base_ct.clone();
-                            for &c_u32 in seam_corners {
-                                let c = CornerIndex(c_u32);
-                                if c == INVALID_CORNER_INDEX {
-                                    continue;
-                                }
-                                let opp = ct.opposite(c);
-                                if opp != INVALID_CORNER_INDEX {
-                                    ct.set_opposite(c, INVALID_CORNER_INDEX);
-                                    ct.set_opposite(opp, INVALID_CORNER_INDEX);
-                                }
-                            }
-                            attr_corner_table = Some(ct);
-                        }
+                    if let Some(ct) = self.edgebreaker_attribute_corner_tables.get(att_data_id) {
+                        attr_corner_table = Some(ct.clone());
                     }
                 }
             }
@@ -508,37 +689,17 @@ impl MeshDecoder {
             // traversal sequence used by predictors.
             let mut point_ids_for_decoder: Option<Vec<PointIndex>> = None;
             let mut data_to_corner_map_for_decoder: Option<Vec<u32>> = None;
+            let mut vertex_to_data_map_for_decoder: Option<Vec<i32>> = None;
             if self.method == 1 {
                 // If we have an attribute-specific seam corner table, recompute vertex
                 // corners after breaking opposites so we can derive the correct number
                 // of entries for this decoder.
-                if let Some(ref mut ct) = attr_corner_table {
-                    // Recompute vertex_corners (and potentially split vertices).
-                    // Note: compute_vertex_corners may append new vertices.
-                    let base_num_vertices = ct.num_vertices();
-                    if !ct.compute_vertex_corners(base_num_vertices) {
-                        return Err(DracoError::DracoError(
-                            "Failed to compute vertex corners for attribute seam table".to_string(),
-                        ));
-                    }
-
-                    // Build entry->corner and entry->point mappings.
-                    let mut map: Vec<u32> = Vec::with_capacity(ct.vertex_corners.len());
-                    let mut ids: Vec<PointIndex> = Vec::with_capacity(ct.vertex_corners.len());
-                    for &corner in &ct.vertex_corners {
-                        if corner == INVALID_CORNER_INDEX {
-                            map.push(INVALID_CORNER_INDEX.0);
-                            ids.push(PointIndex(0));
-                            continue;
-                        }
-                        map.push(corner.0);
-                        let f = (corner.0 / 3) as usize;
-                        let k = (corner.0 % 3) as usize;
-                        let face = mesh.face(FaceIndex(f as u32));
-                        ids.push(face[k]);
-                    }
+                if let Some(ref ct) = attr_corner_table {
+                    let (ids, map, v_map) =
+                        Self::generate_point_ids_and_corners_dfs_for_table(mesh, ct, &[])?;
                     point_ids_for_decoder = Some(ids);
                     data_to_corner_map_for_decoder = Some(map);
+                    vertex_to_data_map_for_decoder = Some(v_map);
                 } else if att_data_id_by_decoder[dec_i] != u8::MAX {
                     if let (Some(base_ct), Some(base_map)) = (
                         self.corner_table.as_deref(),
@@ -694,9 +855,7 @@ impl MeshDecoder {
                 };
             let vertex_to_data_map_override_for_values: Option<&[i32]> =
                 if point_ids_for_decoder.is_some() {
-                    // Seam-expanded corner table: don't reuse the main vertex_to_data_map
-                    // (wrong size). decode_values will build one from data_to_corner_map.
-                    None
+                    vertex_to_data_map_for_decoder.as_deref()
                 } else {
                     sequenced_vertex_to_data_map.as_deref()
                 };
@@ -706,6 +865,12 @@ impl MeshDecoder {
 
             for (local_i, &att_id) in att_ids.iter().enumerate() {
                 let decoder_type = decoder_types[local_i];
+                {
+                    let att = mesh.attribute_mut(att_id);
+                    if att.size() != point_ids_for_values.len() {
+                        att.resize_unique_entries(point_ids_for_values.len())?;
+                    }
+                }
                 match decoder_type {
                     0 => {
                         let mut att_decoder = SequentialGenericAttributeDecoder::new();
@@ -951,6 +1116,9 @@ impl MeshDecoder {
             // Apply inverse transforms.
             for q in pending_quant {
                 let dst = mesh.attribute_mut(q.att_id);
+                if dst.size() != q.portable.size() {
+                    dst.resize_unique_entries(q.portable.size())?;
+                }
                 if !q.transform.inverse_transform_attribute(&q.portable, dst) {
                     return Err(DracoError::DracoError(
                         "Failed to dequantize attribute".to_string(),
@@ -961,6 +1129,9 @@ impl MeshDecoder {
                 let mut oct = AttributeOctahedronTransform::new(-1);
                 oct.set_parameters(n.quantization_bits as i32);
                 let dst = mesh.attribute_mut(n.att_id);
+                if dst.size() != n.portable.size() {
+                    dst.resize_unique_entries(n.portable.size())?;
+                }
                 if !oct.inverse_transform_attribute(&n.portable, dst) {
                     return Err(DracoError::DracoError(
                         "Failed to decode normals".to_string(),
@@ -977,18 +1148,44 @@ impl MeshDecoder {
             // In the decoder, mesh point == corner table vertex (since faces are built from CT).
             // So point p should get value from data_id = vertex_to_data_map[p].
             if self.method == 1 {
-                if let Some(ref v_map) = sequenced_vertex_to_data_map {
+                let mapping_v_map = vertex_to_data_map_for_decoder
+                    .as_deref()
+                    .or(sequenced_vertex_to_data_map.as_deref());
+                if let Some(v_map) = mapping_v_map {
                     let num_points = mesh.num_points();
+                    let mut point_to_value: Vec<Option<AttributeValueIndex>> =
+                        vec![None; num_points];
+                    if let Some(ct) = corner_table_for_decoder {
+                        for face_id in 0..mesh.num_faces() {
+                            let face = mesh.face(FaceIndex(face_id as u32));
+                            for corner_offset in 0..3 {
+                                let corner = CornerIndex((face_id * 3 + corner_offset) as u32);
+                                let vertex = ct.vertex(corner);
+                                let point = face[corner_offset].0 as usize;
+                                if point < point_to_value.len()
+                                    && vertex != INVALID_VERTEX_INDEX
+                                    && (vertex.0 as usize) < v_map.len()
+                                    && v_map[vertex.0 as usize] >= 0
+                                {
+                                    point_to_value[point] =
+                                        Some(AttributeValueIndex(v_map[vertex.0 as usize] as u32));
+                                }
+                            }
+                        }
+                    } else {
+                        for p in 0..num_points {
+                            if p < v_map.len() && v_map[p] >= 0 {
+                                point_to_value[p] = Some(AttributeValueIndex(v_map[p] as u32));
+                            }
+                        }
+                    }
+
                     for &att_id in att_ids {
                         let att = mesh.attribute_mut(att_id);
                         att.set_explicit_mapping(num_points);
-                        for p in 0..num_points {
-                            // In decoder, point p == vertex p (since mesh.face[corner] = corner_table.vertex[corner])
-                            if p < v_map.len() && v_map[p] >= 0 {
-                                att.set_point_map_entry(
-                                    PointIndex(p as u32),
-                                    AttributeValueIndex(v_map[p] as u32),
-                                );
+                        for (point, value) in point_to_value.iter().enumerate() {
+                            if let Some(value) = value {
+                                att.set_point_map_entry(PointIndex(point as u32), *value);
                             }
                         }
                     }
@@ -1030,6 +1227,18 @@ impl MeshDecoder {
             .corner_table
             .as_ref()
             .expect("corner_table must be set before generating point IDs");
+        Self::generate_point_ids_and_corners_dfs_for_table(
+            mesh,
+            corner_table,
+            processed_connectivity_corners,
+        )
+    }
+
+    fn generate_point_ids_and_corners_dfs_for_table(
+        mesh: &Mesh,
+        corner_table: &CornerTable,
+        processed_connectivity_corners: &[u32],
+    ) -> Result<(Vec<PointIndex>, Vec<u32>, Vec<i32>), DracoError> {
         let num_vertices = corner_table.num_vertices();
         let num_faces = corner_table.num_faces();
 
@@ -1245,25 +1454,22 @@ impl MeshDecoder {
         }
 
         // Add any remaining isolated vertices to match the expected point count.
-        let total_points_expected = mesh.num_points();
         for i in 0..num_vertices {
-            if !visited_vertices[i] && point_ids.len() < total_points_expected {
+            if !visited_vertices[i] {
                 let data_id = point_ids.len() as i32;
                 vertex_to_data_map[i] = data_id;
                 let c = corner_table.left_most_corner(VertexIndex(i as u32));
                 test_event_log::record_event(format!("MAP:{}->v{}", c.0, i));
                 test_event_log::record_event(format!("MAP_POINT:{}->p{}", c.0, i));
-                point_ids.push(PointIndex(i as u32));
+                point_ids.push(corner_to_point_id(c));
                 data_to_corner_map.push(if c != INVALID_CORNER_INDEX { c.0 } else { 0 });
             }
         }
 
-        if point_ids.len() != total_points_expected
-            || data_to_corner_map.len() != total_points_expected
-        {
+        if point_ids.len() != num_vertices || data_to_corner_map.len() != num_vertices {
             return Err(DracoError::DracoError(format!(
                 "DFS attribute mapping produced incomplete point sequence: expected {} points, got {} point_ids and {} data_to_corner entries",
-                total_points_expected,
+                num_vertices,
                 point_ids.len(),
                 data_to_corner_map.len()
             )));

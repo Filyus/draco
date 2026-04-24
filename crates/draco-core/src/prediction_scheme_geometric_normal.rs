@@ -233,21 +233,21 @@ impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
             let pos_prev = self.get_position_for_corner(c_prev);
             let pos_next = self.get_position_for_corner(c_next);
 
-            let v_prev = [
-                pos_prev[0] as i64 - pos_cent[0] as i64,
-                pos_prev[1] as i64 - pos_cent[1] as i64,
-                pos_prev[2] as i64 - pos_cent[2] as i64,
-            ];
             let v_next = [
                 pos_next[0] as i64 - pos_cent[0] as i64,
                 pos_next[1] as i64 - pos_cent[1] as i64,
                 pos_next[2] as i64 - pos_cent[2] as i64,
             ];
+            let v_prev = [
+                pos_prev[0] as i64 - pos_cent[0] as i64,
+                pos_prev[1] as i64 - pos_cent[1] as i64,
+                pos_prev[2] as i64 - pos_cent[2] as i64,
+            ];
 
             let cross = [
-                v_prev[1] as i128 * v_next[2] as i128 - v_prev[2] as i128 * v_next[1] as i128,
-                v_prev[2] as i128 * v_next[0] as i128 - v_prev[0] as i128 * v_next[2] as i128,
-                v_prev[0] as i128 * v_next[1] as i128 - v_prev[1] as i128 * v_next[0] as i128,
+                v_next[1] as i128 * v_prev[2] as i128 - v_next[2] as i128 * v_prev[1] as i128,
+                v_next[2] as i128 * v_prev[0] as i128 - v_next[0] as i128 * v_prev[2] as i128,
+                v_next[0] as i128 * v_prev[1] as i128 - v_next[1] as i128 * v_prev[0] as i128,
             ];
             normal[0] += cross[0];
             normal[1] += cross[1];
@@ -267,15 +267,18 @@ impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
             return;
         }
 
-        // Normalize to 32-bit integer vector.
-        let nx = normal[0] as f64;
-        let ny = normal[1] as f64;
-        let nz = normal[2] as f64;
-        let len = (nx * nx + ny * ny + nz * nz).sqrt();
-        let center = self.octahedron_tool_box.center_value() as f64;
-        prediction[0] = ((nx / len) * center) as i32;
-        prediction[1] = ((ny / len) * center) as i32;
-        prediction[2] = ((nz / len) * center) as i32;
+        let upper_bound = 1i128 << 29;
+        let abs_sum = normal[0].abs() + normal[1].abs() + normal[2].abs();
+        if abs_sum > upper_bound {
+            let quotient = abs_sum / upper_bound;
+            normal[0] /= quotient;
+            normal[1] /= quotient;
+            normal[2] /= quotient;
+        }
+
+        prediction[0] = normal[0] as i32;
+        prediction[1] = normal[1] as i32;
+        prediction[2] = normal[2] as i32;
     }
 }
 

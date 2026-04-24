@@ -205,6 +205,23 @@ impl PointAttribute {
         self.num_unique_entries
     }
 
+    pub fn resize_unique_entries(&mut self, num_attribute_values: usize) -> Result<(), DracoError> {
+        let byte_stride = self.byte_stride() as usize;
+        let buffer_size = num_attribute_values
+            .checked_mul(byte_stride)
+            .ok_or_else(|| {
+                DracoError::DracoError("Point attribute buffer size overflow".to_string())
+            })?;
+        self.buffer.try_resize(buffer_size).map_err(|_| {
+            DracoError::DracoError("Failed to allocate point attribute buffer".to_string())
+        })?;
+        self.num_unique_entries = num_attribute_values;
+        if self.identity_mapping {
+            self.indices_map.clear();
+        }
+        Ok(())
+    }
+
     pub fn buffer(&self) -> &DataBuffer {
         &self.buffer
     }

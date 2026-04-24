@@ -593,10 +593,12 @@ fn decode_generated_legacy_draco_smoke_fixtures() {
 }
 
 #[test]
-fn generated_legacy_sequential_cube_attributes_match_cpp_decoder() {
+fn generated_legacy_cube_attributes_match_cpp_decoder() {
     let fixtures = [
         ("legacy_draco/cube_att.mesh_seq.1.0.0.drc", "1.0.0-b756664"),
+        ("legacy_draco/cube_att.mesh_eb.1.0.0.drc", "1.0.0-b756664"),
         ("legacy_draco/cube_att.mesh_seq.1.1.0.drc", "1.1.0-dc28e6a"),
+        ("legacy_draco/cube_att.mesh_eb.1.1.0.drc", "1.1.0-dc28e6a"),
     ];
 
     for (fixture, decoder_version) in fixtures {
