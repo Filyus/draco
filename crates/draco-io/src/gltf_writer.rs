@@ -863,6 +863,7 @@ mod tests {
         mesh
     }
 
+    #[cfg(feature = "decoder")]
     fn make_translation_transform(x: f32, y: f32, z: f32) -> crate::traits::Transform {
         crate::traits::Transform {
             matrix: [
@@ -890,6 +891,7 @@ mod tests {
         assert!(glb.len() > 12);
     }
 
+    #[cfg(feature = "decoder")]
     #[test]
     fn test_roundtrip() {
         use crate::gltf_reader::GltfReader;
@@ -922,6 +924,7 @@ mod tests {
         assert_eq!(encoded[8], 1, "default mesh encoding method should match C++ ExpertEncoder selection");
     }
 
+    #[cfg(feature = "decoder")]
     #[test]
     fn test_scene_graph_roundtrip() {
         use crate::gltf_reader::GltfReader;
@@ -978,6 +981,7 @@ mod tests {
         assert_eq!(child_m[2][3], 6.0);
     }
 
+    #[cfg(feature = "decoder")]
     #[test]
     fn test_embedded_gltf() {
         use crate::gltf_reader::GltfReader;
