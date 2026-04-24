@@ -1885,7 +1885,7 @@ files:
       - name: "GltfReader"
         type: "struct"
         progress: "fully implemented"
-        note: "Reads .gltf/.glb, parses scenes/nodes/hierarchy and transforms, and decodes Draco plus common standard primitives. Coverage is practical rather than exhaustive: common FLOAT VEC2/VEC3 attributes and standard index component types are supported, not every glTF accessor variation."
+        note: "Reads .gltf/.glb, parses scenes/nodes/hierarchy and transforms, and decodes Draco plus common standard primitives. Coverage follows glTF 2.0 validity, mirrors Rust GltfWriter output, and tracks C++ behavior for supported cases: filesystem-opened GLB can load relative external buffers; standard TRIANGLES and POINTS primitives are accepted; POSITION/NORMAL use FLOAT VEC3; TEXCOORD_0 supports FLOAT/UNSIGNED_BYTE/UNSIGNED_SHORT VEC2; COLOR_0 supports FLOAT/UNSIGNED_BYTE/UNSIGNED_SHORT VEC3/VEC4 with normalized metadata preserved."
       - name: "GltfError"
         type: "enum"
         progress: "fully implemented"
@@ -1897,7 +1897,7 @@ files:
     functions:
       - name: "open"
         progress: "fully implemented"
-        note: "Detects GLB vs glTF JSON and loads buffers."
+        note: "Detects GLB vs glTF JSON and loads data URI, embedded BIN chunk, and filesystem-relative external buffers when opened from a path."
       - name: "read_meshes"
         progress: "fully implemented"
         note: "Implements Reader; decodes all primitives (Draco and standard) into draco-core Mesh." 

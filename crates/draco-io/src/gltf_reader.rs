@@ -30,6 +30,8 @@ use std::io;
 use std::path::Path;
 
 use draco_core::decoder_buffer::DecoderBuffer;
+use draco_core::draco_types::DataType;
+use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
 use draco_core::mesh::Mesh;
 use draco_core::mesh_decoder::MeshDecoder;
 use draco_core::point_cloud::PointCloud;
@@ -127,6 +129,8 @@ struct Accessor {
     buffer_view: Option<usize>,
     byte_offset: Option<usize>,
     component_type: u32,
+    #[serde(default)]
+    normalized: bool,
     count: usize,
     #[serde(rename = "type")]
     accessor_type: String,
@@ -197,6 +201,12 @@ const GLB_MAGIC: u32 = 0x46546C67; // "glTF" in little-endian
 const GLB_VERSION: u32 = 2;
 const GLB_CHUNK_JSON: u32 = 0x4E4F534A; // "JSON"
 const GLB_CHUNK_BIN: u32 = 0x004E4942; // "BIN\0"
+const GLTF_MODE_POINTS: u32 = 0;
+const GLTF_MODE_TRIANGLES: u32 = 4;
+const GLTF_COMPONENT_UNSIGNED_BYTE: u32 = 5121;
+const GLTF_COMPONENT_UNSIGNED_SHORT: u32 = 5123;
+const GLTF_COMPONENT_UNSIGNED_INT: u32 = 5125;
+const GLTF_COMPONENT_FLOAT: u32 = 5126;
 
 // ============================================================================
 // GltfReader
@@ -206,6 +216,41 @@ const GLB_CHUNK_BIN: u32 = 0x004E4942; // "BIN\0"
 pub struct GltfReader {
     root: GltfRoot,
     buffers: Vec<Vec<u8>>,
+}
+
+struct DecodedAccessor {
+    count: usize,
+    num_components: u8,
+    data_type: DataType,
+    normalized: bool,
+    bytes: Vec<u8>,
+}
+
+impl DecodedAccessor {
+    fn gather(&self, indices: &[u32]) -> Result<Self> {
+        let stride = self.num_components as usize * self.data_type.byte_length();
+        let mut bytes = Vec::with_capacity(indices.len() * stride);
+
+        for &index in indices {
+            let index = index as usize;
+            if index >= self.count {
+                return Err(GltfError::InvalidGltf(format!(
+                    "Accessor index {} out of bounds for {} values",
+                    index, self.count
+                )));
+            }
+            let offset = index * stride;
+            bytes.extend_from_slice(&self.bytes[offset..offset + stride]);
+        }
+
+        Ok(Self {
+            count: indices.len(),
+            num_components: self.num_components,
+            data_type: self.data_type,
+            normalized: self.normalized,
+            bytes,
+        })
+    }
 }
 
 /// Information about a Draco-compressed primitive within a glTF mesh.
@@ -232,7 +277,7 @@ impl GltfReader {
         let data = fs::read(path)?;
 
         if data.len() >= 4 && read_u32_le(&data[0..4]) == GLB_MAGIC {
-            Self::from_glb(&data)
+            Self::from_glb_with_base_path(&data, path.parent())
         } else {
             let base_path = path.parent();
             Self::from_gltf(&data, base_path)
@@ -241,6 +286,10 @@ impl GltfReader {
 
     /// Parse from GLB binary data.
     pub fn from_glb(data: &[u8]) -> Result<Self> {
+        Self::from_glb_with_base_path(data, None)
+    }
+
+    fn from_glb_with_base_path(data: &[u8], base_path: Option<&Path>) -> Result<Self> {
         if data.len() < 12 {
             return Err(GltfError::InvalidGlb(
                 "File too small for GLB header".into(),
@@ -303,9 +352,11 @@ impl GltfReader {
             } else if let Some(uri) = &buffer.uri {
                 if uri.starts_with("data:") {
                     buffers.push(decode_data_uri(uri)?);
+                } else if let Some(base) = base_path {
+                    buffers.push(fs::read(base.join(uri))?);
                 } else {
                     return Err(GltfError::Unsupported(
-                        "External buffer URIs not supported in GLB".into(),
+                        "External buffer URIs require opening GLB from a filesystem path".into(),
                     ));
                 }
             } else {
@@ -457,9 +508,15 @@ impl GltfReader {
         prim_idx: usize,
         primitive: &Primitive,
     ) -> Result<Mesh> {
-        use draco_core::draco_types::DataType;
-        use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
         use draco_core::geometry_indices::PointIndex;
+
+        let mode = primitive.mode.unwrap_or(GLTF_MODE_TRIANGLES);
+        if mode != GLTF_MODE_TRIANGLES && mode != GLTF_MODE_POINTS {
+            return Err(GltfError::Unsupported(format!(
+                "Primitive mode {} not supported (only POINTS=0 and TRIANGLES=4)",
+                mode
+            )));
+        }
 
         // Get POSITION accessor (required for mesh)
         let pos_accessor_idx = primitive.attributes.get("POSITION").ok_or_else(|| {
@@ -469,105 +526,106 @@ impl GltfReader {
             ))
         })?;
 
-        let positions = self.read_accessor_vec3(*pos_accessor_idx)?;
-        let num_points = positions.len();
+        let positions =
+            self.read_accessor_attribute(*pos_accessor_idx, &["VEC3"], &[GLTF_COMPONENT_FLOAT])?;
 
         let mut mesh = Mesh::new();
-        mesh.set_num_points(num_points);
-
-        // Add position attribute
-        let mut pos_att = PointAttribute::new();
-        pos_att.init(
-            GeometryAttributeType::Position,
-            3,
-            DataType::Float32,
-            false,
-            num_points,
-        );
-
-        let buffer = pos_att.buffer_mut();
-        for (i, pos) in positions.iter().enumerate() {
-            let bytes: Vec<u8> = pos.iter().flat_map(|v| v.to_le_bytes()).collect();
-            buffer.write(i * 12, &bytes);
-        }
-        mesh.add_attribute(pos_att);
-
-        // Read indices if present (triangles mode = 4 is default)
-        let mode = primitive.mode.unwrap_or(4);
-        if mode != 4 {
-            return Err(GltfError::Unsupported(format!(
-                "Primitive mode {} not supported (only TRIANGLES=4)",
-                mode
-            )));
-        }
-
-        if let Some(indices_accessor_idx) = primitive.indices {
-            let indices = self.read_accessor_indices(indices_accessor_idx)?;
-            if indices.len() % 3 != 0 {
-                return Err(GltfError::InvalidGltf(
-                    "Index count not divisible by 3 for triangles".into(),
-                ));
-            }
-            let num_faces = indices.len() / 3;
-            for i in 0..num_faces {
-                let face = [
-                    PointIndex(indices[i * 3]),
-                    PointIndex(indices[i * 3 + 1]),
-                    PointIndex(indices[i * 3 + 2]),
-                ];
-                mesh.add_face(face);
-            }
+        let point_indices = if mode == GLTF_MODE_POINTS {
+            primitive
+                .indices
+                .map(|indices_accessor_idx| self.read_accessor_indices(indices_accessor_idx))
+                .transpose()?
         } else {
-            // Non-indexed: generate sequential triangle faces
-            if num_points % 3 != 0 {
-                return Err(GltfError::InvalidGltf(
-                    "Non-indexed primitive point count not divisible by 3".into(),
-                ));
-            }
-            for i in 0..(num_points / 3) {
-                let base = (i * 3) as u32;
-                mesh.add_face([PointIndex(base), PointIndex(base + 1), PointIndex(base + 2)]);
+            None
+        };
+        let positions = if let Some(indices) = &point_indices {
+            positions.gather(indices)?
+        } else {
+            positions
+        };
+        mesh.set_num_points(positions.count);
+
+        Self::add_decoded_attribute(&mut mesh, GeometryAttributeType::Position, positions)?;
+
+        if mode == GLTF_MODE_TRIANGLES {
+            if let Some(indices_accessor_idx) = primitive.indices {
+                let indices = self.read_accessor_indices(indices_accessor_idx)?;
+                if indices.len() % 3 != 0 {
+                    return Err(GltfError::InvalidGltf(
+                        "Index count not divisible by 3 for triangles".into(),
+                    ));
+                }
+                let num_faces = indices.len() / 3;
+                for i in 0..num_faces {
+                    let face = [
+                        PointIndex(indices[i * 3]),
+                        PointIndex(indices[i * 3 + 1]),
+                        PointIndex(indices[i * 3 + 2]),
+                    ];
+                    mesh.add_face(face);
+                }
+            } else {
+                // Non-indexed: generate sequential triangle faces
+                if mesh.num_points() % 3 != 0 {
+                    return Err(GltfError::InvalidGltf(
+                        "Non-indexed primitive point count not divisible by 3".into(),
+                    ));
+                }
+                for i in 0..(mesh.num_points() / 3) {
+                    let base = (i * 3) as u32;
+                    mesh.add_face([PointIndex(base), PointIndex(base + 1), PointIndex(base + 2)]);
+                }
             }
         }
 
         // Optionally read NORMAL
         if let Some(&normal_idx) = primitive.attributes.get("NORMAL") {
-            if let Ok(normals) = self.read_accessor_vec3(normal_idx) {
-                let mut norm_att = PointAttribute::new();
-                norm_att.init(
-                    GeometryAttributeType::Normal,
-                    3,
-                    DataType::Float32,
-                    false,
-                    normals.len(),
-                );
-                let buffer = norm_att.buffer_mut();
-                for (i, n) in normals.iter().enumerate() {
-                    let bytes: Vec<u8> = n.iter().flat_map(|v| v.to_le_bytes()).collect();
-                    buffer.write(i * 12, &bytes);
-                }
-                mesh.add_attribute(norm_att);
-            }
+            let normals =
+                self.read_accessor_attribute(normal_idx, &["VEC3"], &[GLTF_COMPONENT_FLOAT])?;
+            let normals = if let Some(indices) = &point_indices {
+                normals.gather(indices)?
+            } else {
+                normals
+            };
+            Self::add_decoded_attribute(&mut mesh, GeometryAttributeType::Normal, normals)?;
         }
 
         // Optionally read TEXCOORD_0
         if let Some(&tex_idx) = primitive.attributes.get("TEXCOORD_0") {
-            if let Ok(texcoords) = self.read_accessor_vec2(tex_idx) {
-                let mut tex_att = PointAttribute::new();
-                tex_att.init(
-                    GeometryAttributeType::TexCoord,
-                    2,
-                    DataType::Float32,
-                    false,
-                    texcoords.len(),
-                );
-                let buffer = tex_att.buffer_mut();
-                for (i, t) in texcoords.iter().enumerate() {
-                    let bytes: Vec<u8> = t.iter().flat_map(|v| v.to_le_bytes()).collect();
-                    buffer.write(i * 8, &bytes);
-                }
-                mesh.add_attribute(tex_att);
-            }
+            let texcoords = self.read_accessor_attribute(
+                tex_idx,
+                &["VEC2"],
+                &[
+                    GLTF_COMPONENT_FLOAT,
+                    GLTF_COMPONENT_UNSIGNED_BYTE,
+                    GLTF_COMPONENT_UNSIGNED_SHORT,
+                ],
+            )?;
+            let texcoords = if let Some(indices) = &point_indices {
+                texcoords.gather(indices)?
+            } else {
+                texcoords
+            };
+            Self::add_decoded_attribute(&mut mesh, GeometryAttributeType::TexCoord, texcoords)?;
+        }
+
+        // Optionally read COLOR_0.
+        if let Some(&color_idx) = primitive.attributes.get("COLOR_0") {
+            let colors = self.read_accessor_attribute(
+                color_idx,
+                &["VEC3", "VEC4"],
+                &[
+                    GLTF_COMPONENT_FLOAT,
+                    GLTF_COMPONENT_UNSIGNED_BYTE,
+                    GLTF_COMPONENT_UNSIGNED_SHORT,
+                ],
+            )?;
+            let colors = if let Some(indices) = &point_indices {
+                colors.gather(indices)?
+            } else {
+                colors
+            };
+            Self::add_decoded_attribute(&mut mesh, GeometryAttributeType::Color, colors)?;
         }
 
         // Match C++ Draco behavior: deduplicate point IDs in face-traversal order.
@@ -578,97 +636,67 @@ impl GltfReader {
         Ok(mesh)
     }
 
-    /// Read a VEC3 accessor as Vec<[f32; 3]>.
-    fn read_accessor_vec3(&self, accessor_idx: usize) -> Result<Vec<[f32; 3]>> {
-        let accessor = self.root.accessors.get(accessor_idx).ok_or_else(|| {
-            GltfError::InvalidGltf(format!("Invalid accessor index: {}", accessor_idx))
-        })?;
-
-        if accessor.accessor_type != "VEC3" {
+    fn add_decoded_attribute(
+        mesh: &mut Mesh,
+        attribute_type: GeometryAttributeType,
+        decoded: DecodedAccessor,
+    ) -> Result<()> {
+        if decoded.count != mesh.num_points() {
             return Err(GltfError::InvalidGltf(format!(
-                "Expected VEC3 accessor, got {}",
-                accessor.accessor_type
+                "Attribute {:?} has {} values but primitive has {} points",
+                attribute_type,
+                decoded.count,
+                mesh.num_points()
             )));
         }
 
-        // Component type 5126 = FLOAT
-        if accessor.component_type != 5126 {
-            return Err(GltfError::Unsupported(format!(
-                "Unsupported VEC3 component type: {} (only FLOAT=5126 supported)",
-                accessor.component_type
-            )));
-        }
-
-        let buffer_view_idx = accessor
-            .buffer_view
-            .ok_or_else(|| GltfError::InvalidGltf("VEC3 accessor has no bufferView".into()))?;
-
-        let buffer_view = self.root.buffer_views.get(buffer_view_idx).ok_or_else(|| {
-            GltfError::InvalidGltf(format!("Invalid bufferView index: {}", buffer_view_idx))
-        })?;
-
-        let buffer = self.buffers.get(buffer_view.buffer).ok_or_else(|| {
-            GltfError::InvalidGltf(format!("Invalid buffer index: {}", buffer_view.buffer))
-        })?;
-
-        let view_offset = buffer_view.byte_offset.unwrap_or(0);
-        let accessor_offset = accessor.byte_offset.unwrap_or(0);
-        let start = view_offset + accessor_offset;
-        let stride = buffer_view.byte_stride.unwrap_or(12); // 3 floats * 4 bytes
-
-        let mut result = Vec::with_capacity(accessor.count);
-        for i in 0..accessor.count {
-            let offset = start + i * stride;
-            if offset + 12 > buffer.len() {
-                return Err(GltfError::InvalidGltf("VEC3 accessor out of bounds".into()));
-            }
-            let x = f32::from_le_bytes([
-                buffer[offset],
-                buffer[offset + 1],
-                buffer[offset + 2],
-                buffer[offset + 3],
-            ]);
-            let y = f32::from_le_bytes([
-                buffer[offset + 4],
-                buffer[offset + 5],
-                buffer[offset + 6],
-                buffer[offset + 7],
-            ]);
-            let z = f32::from_le_bytes([
-                buffer[offset + 8],
-                buffer[offset + 9],
-                buffer[offset + 10],
-                buffer[offset + 11],
-            ]);
-            result.push([x, y, z]);
-        }
-
-        Ok(result)
+        let mut attribute = PointAttribute::new();
+        attribute.init(
+            attribute_type,
+            decoded.num_components,
+            decoded.data_type,
+            decoded.normalized,
+            decoded.count,
+        );
+        attribute.buffer_mut().write(0, &decoded.bytes);
+        mesh.add_attribute(attribute);
+        Ok(())
     }
 
-    /// Read a VEC2 accessor as Vec<[f32; 2]>.
-    fn read_accessor_vec2(&self, accessor_idx: usize) -> Result<Vec<[f32; 2]>> {
+    fn read_accessor_attribute(
+        &self,
+        accessor_idx: usize,
+        expected_types: &[&str],
+        allowed_component_types: &[u32],
+    ) -> Result<DecodedAccessor> {
         let accessor = self.root.accessors.get(accessor_idx).ok_or_else(|| {
             GltfError::InvalidGltf(format!("Invalid accessor index: {}", accessor_idx))
         })?;
 
-        if accessor.accessor_type != "VEC2" {
+        if !expected_types
+            .iter()
+            .any(|expected| accessor.accessor_type == *expected)
+        {
             return Err(GltfError::InvalidGltf(format!(
-                "Expected VEC2 accessor, got {}",
-                accessor.accessor_type
+                "Expected one of {:?} accessor, got {}",
+                expected_types, accessor.accessor_type
             )));
         }
 
-        if accessor.component_type != 5126 {
+        if !allowed_component_types.contains(&accessor.component_type) {
             return Err(GltfError::Unsupported(format!(
-                "Unsupported VEC2 component type: {} (only FLOAT=5126 supported)",
-                accessor.component_type
+                "Unsupported {} component type: {}",
+                accessor.accessor_type, accessor.component_type
             )));
         }
 
+        let num_components = accessor_num_components(&accessor.accessor_type)?;
+        let data_type = data_type_for_component_type(accessor.component_type)?;
+        let component_size = data_type.byte_length();
+        let row_size = num_components as usize * component_size;
         let buffer_view_idx = accessor
             .buffer_view
-            .ok_or_else(|| GltfError::InvalidGltf("VEC2 accessor has no bufferView".into()))?;
+            .ok_or_else(|| GltfError::InvalidGltf("Accessor has no bufferView".into()))?;
 
         let buffer_view = self.root.buffer_views.get(buffer_view_idx).ok_or_else(|| {
             GltfError::InvalidGltf(format!("Invalid bufferView index: {}", buffer_view_idx))
@@ -681,30 +709,45 @@ impl GltfReader {
         let view_offset = buffer_view.byte_offset.unwrap_or(0);
         let accessor_offset = accessor.byte_offset.unwrap_or(0);
         let start = view_offset + accessor_offset;
-        let stride = buffer_view.byte_stride.unwrap_or(8); // 2 floats * 4 bytes
+        let stride = buffer_view.byte_stride.unwrap_or(row_size);
 
-        let mut result = Vec::with_capacity(accessor.count);
-        for i in 0..accessor.count {
-            let offset = start + i * stride;
-            if offset + 8 > buffer.len() {
-                return Err(GltfError::InvalidGltf("VEC2 accessor out of bounds".into()));
-            }
-            let u = f32::from_le_bytes([
-                buffer[offset],
-                buffer[offset + 1],
-                buffer[offset + 2],
-                buffer[offset + 3],
-            ]);
-            let v = f32::from_le_bytes([
-                buffer[offset + 4],
-                buffer[offset + 5],
-                buffer[offset + 6],
-                buffer[offset + 7],
-            ]);
-            result.push([u, v]);
+        if stride < row_size {
+            return Err(GltfError::InvalidGltf(format!(
+                "Accessor byteStride {} is smaller than element size {}",
+                stride, row_size
+            )));
         }
 
-        Ok(result)
+        let view_end = view_offset
+            .checked_add(buffer_view.byte_length)
+            .ok_or_else(|| GltfError::InvalidGltf("Buffer view range overflow".into()))?;
+        if view_end > buffer.len() {
+            return Err(GltfError::InvalidGltf(
+                "Buffer view extends past buffer end".into(),
+            ));
+        }
+
+        let mut bytes = Vec::with_capacity(accessor.count * row_size);
+        for i in 0..accessor.count {
+            let offset = start
+                .checked_add(i * stride)
+                .ok_or_else(|| GltfError::InvalidGltf("Accessor range overflow".into()))?;
+            if offset + row_size > view_end {
+                return Err(GltfError::InvalidGltf(format!(
+                    "{} accessor out of bounds",
+                    accessor.accessor_type
+                )));
+            }
+            bytes.extend_from_slice(&buffer[offset..offset + row_size]);
+        }
+
+        Ok(DecodedAccessor {
+            count: accessor.count,
+            num_components,
+            data_type,
+            normalized: accessor.normalized,
+            bytes,
+        })
     }
 
     /// Read an index accessor as Vec<u32>.
@@ -735,15 +778,42 @@ impl GltfReader {
         let view_offset = buffer_view.byte_offset.unwrap_or(0);
         let accessor_offset = accessor.byte_offset.unwrap_or(0);
         let start = view_offset + accessor_offset;
+        let component_size = match accessor.component_type {
+            GLTF_COMPONENT_UNSIGNED_BYTE => 1,
+            GLTF_COMPONENT_UNSIGNED_SHORT => 2,
+            GLTF_COMPONENT_UNSIGNED_INT => 4,
+            _ => {
+                return Err(GltfError::Unsupported(format!(
+                    "Unsupported index component type: {}",
+                    accessor.component_type
+                )));
+            }
+        };
+        let stride = buffer_view.byte_stride.unwrap_or(component_size);
+        if stride < component_size {
+            return Err(GltfError::InvalidGltf(format!(
+                "Index accessor byteStride {} is smaller than component size {}",
+                stride, component_size
+            )));
+        }
+
+        let view_end = view_offset
+            .checked_add(buffer_view.byte_length)
+            .ok_or_else(|| GltfError::InvalidGltf("Buffer view range overflow".into()))?;
+        if view_end > buffer.len() {
+            return Err(GltfError::InvalidGltf(
+                "Buffer view extends past buffer end".into(),
+            ));
+        }
 
         let mut result = Vec::with_capacity(accessor.count);
 
         match accessor.component_type {
-            5121 => {
+            GLTF_COMPONENT_UNSIGNED_BYTE => {
                 // UNSIGNED_BYTE
                 for i in 0..accessor.count {
-                    let offset = start + i;
-                    if offset >= buffer.len() {
+                    let offset = start + i * stride;
+                    if offset + component_size > view_end {
                         return Err(GltfError::InvalidGltf(
                             "Index accessor out of bounds".into(),
                         ));
@@ -751,11 +821,11 @@ impl GltfReader {
                     result.push(buffer[offset] as u32);
                 }
             }
-            5123 => {
+            GLTF_COMPONENT_UNSIGNED_SHORT => {
                 // UNSIGNED_SHORT
                 for i in 0..accessor.count {
-                    let offset = start + i * 2;
-                    if offset + 2 > buffer.len() {
+                    let offset = start + i * stride;
+                    if offset + component_size > view_end {
                         return Err(GltfError::InvalidGltf(
                             "Index accessor out of bounds".into(),
                         ));
@@ -764,11 +834,11 @@ impl GltfReader {
                     result.push(val as u32);
                 }
             }
-            5125 => {
+            GLTF_COMPONENT_UNSIGNED_INT => {
                 // UNSIGNED_INT
                 for i in 0..accessor.count {
-                    let offset = start + i * 4;
-                    if offset + 4 > buffer.len() {
+                    let offset = start + i * stride;
+                    if offset + component_size > view_end {
                         return Err(GltfError::InvalidGltf(
                             "Index accessor out of bounds".into(),
                         ));
@@ -820,6 +890,32 @@ impl GltfReader {
 
 fn read_u32_le(data: &[u8]) -> u32 {
     u32::from_le_bytes([data[0], data[1], data[2], data[3]])
+}
+
+fn accessor_num_components(accessor_type: &str) -> Result<u8> {
+    match accessor_type {
+        "SCALAR" => Ok(1),
+        "VEC2" => Ok(2),
+        "VEC3" => Ok(3),
+        "VEC4" => Ok(4),
+        _ => Err(GltfError::Unsupported(format!(
+            "Unsupported accessor type: {}",
+            accessor_type
+        ))),
+    }
+}
+
+fn data_type_for_component_type(component_type: u32) -> Result<DataType> {
+    match component_type {
+        GLTF_COMPONENT_UNSIGNED_BYTE => Ok(DataType::Uint8),
+        GLTF_COMPONENT_UNSIGNED_SHORT => Ok(DataType::Uint16),
+        GLTF_COMPONENT_UNSIGNED_INT => Ok(DataType::Uint32),
+        GLTF_COMPONENT_FLOAT => Ok(DataType::Float32),
+        _ => Err(GltfError::Unsupported(format!(
+            "Unsupported component type: {}",
+            component_type
+        ))),
+    }
 }
 
 fn decode_data_uri(uri: &str) -> Result<Vec<u8>> {
@@ -1182,6 +1278,46 @@ fn hex_digit(b: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use draco_core::draco_types::DataType;
+    use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
+    use draco_core::mesh::Mesh;
+    use tempfile::tempdir;
+
+    fn build_glb(json: &str) -> Vec<u8> {
+        let mut json_bytes = json.as_bytes().to_vec();
+        while !json_bytes.len().is_multiple_of(4) {
+            json_bytes.push(b' ');
+        }
+
+        let total_len = 12 + 8 + json_bytes.len();
+        let mut glb = Vec::with_capacity(total_len);
+        glb.extend_from_slice(&GLB_MAGIC.to_le_bytes());
+        glb.extend_from_slice(&GLB_VERSION.to_le_bytes());
+        glb.extend_from_slice(&(total_len as u32).to_le_bytes());
+        glb.extend_from_slice(&(json_bytes.len() as u32).to_le_bytes());
+        glb.extend_from_slice(&GLB_CHUNK_JSON.to_le_bytes());
+        glb.extend_from_slice(&json_bytes);
+        glb
+    }
+
+    fn triangle_positions() -> Vec<u8> {
+        [
+            0.0f32, 0.0, 0.0, //
+            1.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0,
+        ]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect()
+    }
+
+    fn read_attribute_bytes(mesh: &Mesh, attribute_type: GeometryAttributeType) -> Vec<u8> {
+        mesh.named_attribute(attribute_type)
+            .expect("missing attribute")
+            .buffer()
+            .data()
+            .to_vec()
+    }
 
     #[test]
     fn test_base64_decode() {
@@ -1253,5 +1389,285 @@ mod tests {
         assert_eq!(primitives.len(), 1);
         assert_eq!(primitives[0].mesh_name, Some("TestMesh".to_string()));
         assert_eq!(primitives[0].buffer_view, 0);
+    }
+
+    #[test]
+    fn test_glb_open_loads_relative_external_buffer() {
+        let dir = tempdir().unwrap();
+        let bin_path = dir.path().join("mesh.bin");
+        std::fs::write(&bin_path, triangle_positions()).unwrap();
+
+        let json = r#"{
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 36, "uri": "mesh.bin"}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 36}],
+            "accessors": [{
+                "bufferView": 0,
+                "componentType": 5126,
+                "count": 3,
+                "type": "VEC3"
+            }],
+            "meshes": [{
+                "primitives": [{
+                    "attributes": {"POSITION": 0},
+                    "mode": 4
+                }]
+            }]
+        }"#;
+        let glb = build_glb(json);
+        let glb_path = dir.path().join("external.glb");
+        std::fs::write(&glb_path, &glb).unwrap();
+
+        let reader = GltfReader::open(&glb_path).unwrap();
+        let meshes = reader.decode_all_meshes().unwrap();
+
+        assert_eq!(meshes.len(), 1);
+        assert_eq!(meshes[0].num_points(), 3);
+        assert_eq!(meshes[0].num_faces(), 1);
+        assert_eq!(
+            read_attribute_bytes(&meshes[0], GeometryAttributeType::Position),
+            triangle_positions()
+        );
+    }
+
+    #[test]
+    fn test_from_glb_rejects_external_buffer_without_base_path() {
+        let json = r#"{
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 36, "uri": "mesh.bin"}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 36}],
+            "accessors": [],
+            "meshes": []
+        }"#;
+
+        let err = match GltfReader::from_glb(&build_glb(json)) {
+            Ok(_) => panic!("external buffer unexpectedly loaded without a base path"),
+            Err(err) => err,
+        };
+        assert!(matches!(err, GltfError::Unsupported(_)));
+    }
+
+    #[test]
+    fn test_texcoord_unsigned_short_normalized_vec2() {
+        let mut bytes = triangle_positions();
+        let texcoords = [0u16, 0, 65535, 0, 0, 65535];
+        bytes.extend(texcoords.into_iter().flat_map(u16::to_le_bytes));
+        let data_uri = format!(
+            "data:application/octet-stream;base64,{}",
+            base64_for_test(&bytes)
+        );
+        let json = format!(
+            r#"{{
+                "asset": {{"version": "2.0"}},
+                "buffers": [{{"byteLength": {}, "uri": "{}"}}],
+                "bufferViews": [
+                    {{"buffer": 0, "byteOffset": 0, "byteLength": 36}},
+                    {{"buffer": 0, "byteOffset": 36, "byteLength": 12}}
+                ],
+                "accessors": [
+                    {{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}},
+                    {{
+                        "bufferView": 1,
+                        "componentType": 5123,
+                        "normalized": true,
+                        "count": 3,
+                        "type": "VEC2"
+                    }}
+                ],
+                "meshes": [{{
+                    "primitives": [{{
+                        "attributes": {{"POSITION": 0, "TEXCOORD_0": 1}},
+                        "mode": 4
+                    }}]
+                }}]
+            }}"#,
+            bytes.len(),
+            data_uri
+        );
+
+        let mesh = GltfReader::from_gltf(json.as_bytes(), None)
+            .unwrap()
+            .decode_all_meshes()
+            .unwrap()
+            .remove(0);
+        let texcoord = mesh
+            .named_attribute(GeometryAttributeType::TexCoord)
+            .expect("missing texcoord");
+
+        assert_eq!(texcoord.data_type(), DataType::Uint16);
+        assert!(texcoord.normalized());
+        assert_eq!(texcoord.num_components(), 2);
+        assert_eq!(texcoord.buffer().data(), &bytes[36..48]);
+    }
+
+    #[test]
+    fn test_color_unsigned_byte_normalized_vec3() {
+        let mut bytes = triangle_positions();
+        let colors = [255u8, 0, 0, 0, 255, 0, 0, 0, 255];
+        bytes.extend(colors);
+        let data_uri = format!(
+            "data:application/octet-stream;base64,{}",
+            base64_for_test(&bytes)
+        );
+        let json = format!(
+            r#"{{
+                "asset": {{"version": "2.0"}},
+                "buffers": [{{"byteLength": {}, "uri": "{}"}}],
+                "bufferViews": [
+                    {{"buffer": 0, "byteOffset": 0, "byteLength": 36}},
+                    {{"buffer": 0, "byteOffset": 36, "byteLength": 9}}
+                ],
+                "accessors": [
+                    {{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}},
+                    {{
+                        "bufferView": 1,
+                        "componentType": 5121,
+                        "normalized": true,
+                        "count": 3,
+                        "type": "VEC3"
+                    }}
+                ],
+                "meshes": [{{
+                    "primitives": [{{
+                        "attributes": {{"POSITION": 0, "COLOR_0": 1}},
+                        "mode": 4
+                    }}]
+                }}]
+            }}"#,
+            bytes.len(),
+            data_uri
+        );
+
+        let mesh = GltfReader::from_gltf(json.as_bytes(), None)
+            .unwrap()
+            .decode_all_meshes()
+            .unwrap()
+            .remove(0);
+        let color = mesh
+            .named_attribute(GeometryAttributeType::Color)
+            .expect("missing color");
+
+        assert_eq!(color.data_type(), DataType::Uint8);
+        assert!(color.normalized());
+        assert_eq!(color.num_components(), 3);
+        assert_eq!(color.buffer().data(), &bytes[36..45]);
+    }
+
+    #[test]
+    fn test_points_primitive_decodes_without_faces() {
+        let indices = [2u16, 0];
+        let mut bytes = triangle_positions();
+        bytes.extend(indices.into_iter().flat_map(u16::to_le_bytes));
+        let data_uri = format!(
+            "data:application/octet-stream;base64,{}",
+            base64_for_test(&bytes)
+        );
+        let json = format!(
+            r#"{{
+                "asset": {{"version": "2.0"}},
+                "buffers": [{{"byteLength": {}, "uri": "{}"}}],
+                "bufferViews": [
+                    {{"buffer": 0, "byteOffset": 0, "byteLength": 36}},
+                    {{"buffer": 0, "byteOffset": 36, "byteLength": 4}}
+                ],
+                "accessors": [
+                    {{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}},
+                    {{"bufferView": 1, "componentType": 5123, "count": 2, "type": "SCALAR"}}
+                ],
+                "meshes": [{{
+                    "primitives": [{{
+                        "attributes": {{"POSITION": 0}},
+                        "indices": 1,
+                        "mode": 0
+                    }}]
+                }}]
+            }}"#,
+            bytes.len(),
+            data_uri
+        );
+
+        let mesh = GltfReader::from_gltf(json.as_bytes(), None)
+            .unwrap()
+            .decode_all_meshes()
+            .unwrap()
+            .remove(0);
+
+        assert_eq!(mesh.num_points(), 2);
+        assert_eq!(mesh.num_faces(), 0);
+        let positions = read_attribute_bytes(&mesh, GeometryAttributeType::Position);
+        assert_eq!(&positions[0..12], &triangle_positions()[24..36]);
+        assert_eq!(&positions[12..24], &triangle_positions()[0..12]);
+    }
+
+    #[test]
+    fn test_writer_glb_roundtrips_through_reader() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("roundtrip.glb");
+
+        let mut mesh = Mesh::new();
+        mesh.set_num_points(3);
+        mesh.add_face([
+            draco_core::geometry_indices::PointIndex(0),
+            draco_core::geometry_indices::PointIndex(1),
+            draco_core::geometry_indices::PointIndex(2),
+        ]);
+
+        let mut positions = PointAttribute::new();
+        positions.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Float32,
+            false,
+            3,
+        );
+        positions.buffer_mut().write(0, &triangle_positions());
+        mesh.add_attribute(positions);
+
+        let mut writer = crate::gltf_writer::GltfWriter::new();
+        writer
+            .add_draco_mesh(&mesh, Some("triangle"), None)
+            .unwrap();
+        writer.write_glb(&path).unwrap();
+
+        let reader = GltfReader::open(&path).unwrap();
+        let primitives = reader.draco_primitives();
+        assert_eq!(primitives.len(), 1);
+        assert_eq!(primitives[0].attributes.get("POSITION"), Some(&0));
+
+        let decoded = reader.decode_all_meshes().unwrap().remove(0);
+        let position = decoded
+            .named_attribute(GeometryAttributeType::Position)
+            .expect("missing position");
+        assert_eq!(position.data_type(), DataType::Float32);
+        assert_eq!(position.num_components(), 3);
+        assert_eq!(decoded.num_faces(), 1);
+    }
+
+    fn base64_for_test(bytes: &[u8]) -> String {
+        const TABLE: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = String::new();
+
+        for chunk in bytes.chunks(3) {
+            let b0 = chunk[0];
+            let b1 = *chunk.get(1).unwrap_or(&0);
+            let b2 = *chunk.get(2).unwrap_or(&0);
+            let n = ((b0 as u32) << 16) | ((b1 as u32) << 8) | b2 as u32;
+
+            out.push(TABLE[((n >> 18) & 0x3f) as usize] as char);
+            out.push(TABLE[((n >> 12) & 0x3f) as usize] as char);
+            if chunk.len() > 1 {
+                out.push(TABLE[((n >> 6) & 0x3f) as usize] as char);
+            } else {
+                out.push('=');
+            }
+            if chunk.len() > 2 {
+                out.push(TABLE[(n & 0x3f) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+
+        out
     }
 }
