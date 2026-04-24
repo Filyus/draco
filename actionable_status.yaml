@@ -14,13 +14,16 @@ items:
     area: draco-core
     priority: medium
     status: open
-    summary: "DRC decoder supports only selected bitstream variants."
+    summary: "Rust DRC decoder needs a deliberate legacy bitstream support policy and implementation."
     evidence:
       - path: "crates/draco-core/tests/drc_existing_files_test.rs"
-        note: "Test filters mesh support to v2.2+ and point cloud support to v2.3 KD-tree or Rust v1.3 sequential."
+        note: "Current supported fixture decode path is effectively modern mesh v2.2+, point-cloud v2.3 KD-tree, and Rust-produced v1.3 sequential."
       - path: "crates/draco-core/tests/drc_existing_files_test.rs"
-        note: "Test skips files that hit Unsupported Edgebreaker traversal decoder type."
-    impact: "Some shipped/legacy .drc assets remain intentionally outside the supported Rust decoder surface."
+        note: "inventory_skipped_testdata_drc_fixtures snapshots 13 skipped fixtures by path, header version, geometry type, method, and reason; all current skips are UnsupportedBitstream."
+      - path: "draco-version-tools/"
+        note: "Local C++ encoder/decoder binaries exist for 0.10.0, 1.0.0, 1.1.0, 1.2.5, 1.3.0, 1.5.7, and current main for compatibility fixture generation and parity checks."
+    impact: "Shipped/legacy .drc assets from older Draco releases remain outside the Rust decoder surface until we choose how far back compatibility should go and implement those layouts."
     next_steps:
-      - "Inventory skipped .drc fixtures by header version, geometry type, method, and failure reason."
-      - "Implement the highest-value missing legacy layout or traversal variant first."
+      - "Decide the oldest Draco/bitstream version worth supporting for Rust decode; candidates in current fixtures include mesh v1.1/v1.2/v2.0/v2.1 and point-cloud sequential v1.1/v2.2/v2.3."
+      - "Use the compiled C++ version tools to generate or inspect compatibility fixtures for candidate boundaries before committing to implementation scope."
+      - "Implement the first selected legacy bitstream family and shrink inventory_skipped_testdata_drc_fixtures accordingly."

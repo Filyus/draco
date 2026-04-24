@@ -78,6 +78,115 @@ fn supports_point_cloud_bitstream(major: u8, minor: u8, method: u8) -> bool {
     (major == 2 && minor == 3 && method == 1) || (major == 1 && minor == 3 && method == 0)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GeometryKind {
+    Mesh,
+    PointCloud,
+}
+
+impl From<EncodedGeometryType> for GeometryKind {
+    fn from(value: EncodedGeometryType) -> Self {
+        match value {
+            EncodedGeometryType::TriangularMesh => Self::Mesh,
+            EncodedGeometryType::PointCloud => Self::PointCloud,
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SkipReason {
+    UnsupportedBitstream,
+    UnsupportedTraversal,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct SkippedFixture {
+    path: String,
+    major: u8,
+    minor: u8,
+    geometry: GeometryKind,
+    method: u8,
+    reason: SkipReason,
+}
+
+fn skipped(
+    path: &str,
+    major: u8,
+    minor: u8,
+    geometry: GeometryKind,
+    method: u8,
+    reason: SkipReason,
+) -> SkippedFixture {
+    SkippedFixture {
+        path: path.to_string(),
+        major,
+        minor,
+        geometry,
+        method,
+        reason,
+    }
+}
+
+fn relative_testdata_path(path: &Path) -> String {
+    path.strip_prefix(repo_testdata_dir())
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn skipped_fixture_for_current_decoder(path: &Path, bytes: &[u8]) -> Option<SkippedFixture> {
+    let (major, minor, geometry_type, method) = parse_header(bytes);
+    let path = relative_testdata_path(path);
+    let geometry = GeometryKind::from(geometry_type);
+
+    match geometry_type {
+        EncodedGeometryType::TriangularMesh => {
+            if !supports_mesh_bitstream(major, minor) {
+                return Some(skipped(
+                    &path,
+                    major,
+                    minor,
+                    geometry,
+                    method,
+                    SkipReason::UnsupportedBitstream,
+                ));
+            }
+
+            let mut buffer = DecoderBuffer::new(bytes);
+            let mut mesh = Mesh::new();
+            let mut decoder = MeshDecoder::new();
+            if let Err(DracoError::DracoError(msg)) = decoder.decode(&mut buffer, &mut mesh) {
+                if msg.starts_with("Unsupported Edgebreaker traversal decoder type") {
+                    return Some(skipped(
+                        &path,
+                        major,
+                        minor,
+                        geometry,
+                        method,
+                        SkipReason::UnsupportedTraversal,
+                    ));
+                }
+            }
+        }
+        EncodedGeometryType::PointCloud => {
+            if !supports_point_cloud_bitstream(major, minor, method) {
+                return Some(skipped(
+                    &path,
+                    major,
+                    minor,
+                    geometry,
+                    method,
+                    SkipReason::UnsupportedBitstream,
+                ));
+            }
+        }
+        _ => unreachable!(),
+    }
+
+    None
+}
+
 fn decode_drc(bytes: &[u8]) -> (EncodedGeometryType, Option<Mesh>, Option<PointCloud>) {
     let (_major, _minor, geometry_type, _method) = parse_header(bytes);
 
@@ -104,6 +213,131 @@ fn decode_drc(bytes: &[u8]) -> (EncodedGeometryType, Option<Mesh>, Option<PointC
         }
         _ => unreachable!(),
     }
+}
+
+#[test]
+fn inventory_skipped_testdata_drc_fixtures() {
+    let dir = repo_testdata_dir();
+    let mut drc_files = collect_drc_files_recursive(&dir);
+    drc_files.sort();
+    assert!(!drc_files.is_empty(), "no .drc files found in testdata");
+
+    let actual: Vec<_> = drc_files
+        .iter()
+        .filter_map(|path| {
+            let bytes = read_file_bytes(path);
+            skipped_fixture_for_current_decoder(path, &bytes)
+        })
+        .collect();
+
+    let expected = vec![
+        skipped(
+            "cube_att.drc",
+            1,
+            1,
+            GeometryKind::Mesh,
+            1,
+            SkipReason::UnsupportedBitstream,
+        ),
+        skipped(
+            "cube_pc.drc",
+            1,
+            1,
+            GeometryKind::PointCloud,
+            0,
+            SkipReason::UnsupportedBitstream,
+        ),
+        skipped(
+            "pc_color.drc",
+            2,
+            2,
+            GeometryKind::PointCloud,
+            0,
+            SkipReason::UnsupportedBitstream,
+        ),
+        skipped(
+            "point_cloud_no_qp.drc",
+            2,
+            3,
+            GeometryKind::PointCloud,
+            0,
+            SkipReason::UnsupportedBitstream,
+        ),
+        skipped(
+            "test_nm.obj.edgebreaker.0.10.0.drc",
+            1,
+            2,
+            GeometryKind::Mesh,
+            1,
+            SkipReason::UnsupportedBitstream,
+        ),
+        skipped(
+            "test_nm.obj.edgebreaker.0.9.1.drc",
+            1,
+            1,
+            GeometryKind::Mesh,
+            1,
+            SkipReason::UnsupportedBitstream,
+        ),
+        skipped(
+            "test_nm.obj.edgebreaker.1.0.0.drc",
+            2,
+            0,
+            GeometryKind::Mesh,
+            1,
+            SkipReason::UnsupportedBitstream,
+        ),
+        skipped(
+            "test_nm.obj.edgebreaker.1.1.0.drc",
+            2,
+            1,
+            GeometryKind::Mesh,
+            1,
+            SkipReason::UnsupportedBitstream,
+        ),
+        skipped(
+            "test_nm.obj.sequential.0.10.0.drc",
+            1,
+            2,
+            GeometryKind::Mesh,
+            0,
+            SkipReason::UnsupportedBitstream,
+        ),
+        skipped(
+            "test_nm.obj.sequential.0.9.1.drc",
+            1,
+            1,
+            GeometryKind::Mesh,
+            0,
+            SkipReason::UnsupportedBitstream,
+        ),
+        skipped(
+            "test_nm.obj.sequential.1.0.0.drc",
+            2,
+            0,
+            GeometryKind::Mesh,
+            0,
+            SkipReason::UnsupportedBitstream,
+        ),
+        skipped(
+            "test_nm.obj.sequential.1.1.0.drc",
+            2,
+            1,
+            GeometryKind::Mesh,
+            0,
+            SkipReason::UnsupportedBitstream,
+        ),
+        skipped(
+            "test_nm_quant.0.9.0.drc",
+            1,
+            2,
+            GeometryKind::Mesh,
+            1,
+            SkipReason::UnsupportedBitstream,
+        ),
+    ];
+
+    assert_eq!(actual, expected);
 }
 
 #[test]

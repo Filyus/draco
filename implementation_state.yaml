@@ -2104,3 +2104,9 @@ files:
       - name: "cpp_decoder_accepts_rust_edgebreaker_attribute_seam_stream_when_available"
         progress: "added"
         note: "Optional C++ decoder interop coverage for the same Rust-produced seam-bearing Edgebreaker stream."
+
+  - path: "crates/draco-core/tests/drc_existing_files_test.rs"
+    functions:
+      - name: "inventory_skipped_testdata_drc_fixtures"
+        progress: "added"
+        note: "Snapshots the current skipped .drc testdata inventory by relative path, header version, geometry type, method, and skip reason. The current inventory contains 13 UnsupportedBitstream fixtures and no UnsupportedTraversal fixtures."
