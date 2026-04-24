@@ -244,18 +244,17 @@ impl MeshDecoder {
                 let np = buffer.decode_varint()? as usize;
                 (nf, np)
             };
-
-            mesh.set_num_faces(num_faces);
+            let num_indices = validate_mesh_index_count(num_faces)?;
             mesh.set_num_points(num_points);
 
             if num_faces > 0 && num_points > 0 {
                 let connectivity_method = buffer.decode_u8()?;
-                let mut indices = vec![0u32; num_faces * 3];
                 if connectivity_method == 0 {
                     // Compressed
+                    let mut indices = make_zeroed_indices(num_indices)?;
                     let options = crate::symbol_encoding::SymbolEncodingOptions::default();
                     if !crate::symbol_encoding::decode_symbols(
-                        num_faces * 3,
+                        num_indices,
                         1,
                         &options,
                         buffer,
@@ -265,42 +264,53 @@ impl MeshDecoder {
                             "Failed to decode compressed sequential connectivity".to_string(),
                         ));
                     }
+                    mesh.try_set_num_faces(num_faces)?;
+                    mesh.set_faces_from_flat_indices(&indices);
                 } else if connectivity_method == 1 {
+                    let data = buffer.remaining_data();
                     // Raw - bulk read indices from buffer
                     if num_points < 256 {
-                        let bytes_needed = num_faces * 3;
-                        let data = buffer.remaining_data();
+                        let bytes_needed = num_indices;
                         if data.len() < bytes_needed {
                             return Err(DracoError::DracoError(
                                 "Not enough data for u8 indices".to_string(),
                             ));
                         }
-                        for i in 0..num_faces * 3 {
+                        let mut indices = make_zeroed_indices(num_indices)?;
+                        for i in 0..num_indices {
                             indices[i] = data[i] as u32;
                         }
                         buffer.advance(bytes_needed);
+                        mesh.try_set_num_faces(num_faces)?;
+                        mesh.set_faces_from_flat_indices(&indices);
                     } else if num_points < 65536 {
-                        let bytes_needed = num_faces * 3 * 2;
-                        let data = buffer.remaining_data();
+                        let bytes_needed = num_indices.checked_mul(2).ok_or_else(|| {
+                            DracoError::DracoError("Mesh u16 index byte count overflow".to_string())
+                        })?;
                         if data.len() < bytes_needed {
                             return Err(DracoError::DracoError(
                                 "Not enough data for u16 indices".to_string(),
                             ));
                         }
-                        for i in 0..num_faces * 3 {
+                        let mut indices = make_zeroed_indices(num_indices)?;
+                        for i in 0..num_indices {
                             let off = i * 2;
                             indices[i] = u16::from_le_bytes([data[off], data[off + 1]]) as u32;
                         }
                         buffer.advance(bytes_needed);
+                        mesh.try_set_num_faces(num_faces)?;
+                        mesh.set_faces_from_flat_indices(&indices);
                     } else {
-                        let bytes_needed = num_faces * 3 * 4;
-                        let data = buffer.remaining_data();
+                        let bytes_needed = num_indices.checked_mul(4).ok_or_else(|| {
+                            DracoError::DracoError("Mesh u32 index byte count overflow".to_string())
+                        })?;
                         if data.len() < bytes_needed {
                             return Err(DracoError::DracoError(
                                 "Not enough data for u32 indices".to_string(),
                             ));
                         }
-                        for i in 0..num_faces * 3 {
+                        let mut indices = make_zeroed_indices(num_indices)?;
+                        for i in 0..num_indices {
                             let off = i * 4;
                             indices[i] = u32::from_le_bytes([
                                 data[off],
@@ -310,6 +320,8 @@ impl MeshDecoder {
                             ]);
                         }
                         buffer.advance(bytes_needed);
+                        mesh.try_set_num_faces(num_faces)?;
+                        mesh.set_faces_from_flat_indices(&indices);
                     }
                 } else {
                     return Err(DracoError::DracoError(format!(
@@ -317,8 +329,6 @@ impl MeshDecoder {
                         connectivity_method
                     )));
                 }
-
-                mesh.set_faces_from_flat_indices(&indices);
                 // If sequential mode uses compressed connectivity, we may need
                 // to remap indices for deduplication. For raw mode above,
                 // face indices match the flat array.
@@ -343,10 +353,8 @@ impl MeshDecoder {
         // For Edgebreaker, traversal sequencing is controlled per attribute decoder.
         // We'll derive the correct (point_ids, data_to_corner_map) later for each decoder payload
         // based on its traversal_method.
-        let (point_ids, data_to_corner_map): (Vec<PointIndex>, Option<Vec<u32>>) = (
-            (0..num_points).map(|i| PointIndex(i as u32)).collect(),
-            None,
-        );
+        let (point_ids, data_to_corner_map): (Vec<PointIndex>, Option<Vec<u32>>) =
+            (make_point_ids(num_points)?, None);
 
         let pc_decoder = PointCloudDecoder::new();
         let bitstream_version: u16 =
@@ -437,7 +445,7 @@ impl MeshDecoder {
                 };
 
                 let mut att = PointAttribute::new();
-                att.init(att_type, num_components, data_type, normalized, num_points);
+                att.try_init(att_type, num_components, data_type, normalized, num_points)?;
                 att.set_unique_id(unique_id);
                 let att_id = mesh.add_attribute(att);
                 att_ids.push(att_id);
@@ -607,9 +615,7 @@ impl MeshDecoder {
                     // identity mapping [0, 1, 2, ..., num_points-1] and calls
                     // SetIdentityMapping() for attributes. No corner table or
                     // data_to_corner_map is needed.
-                    let ids: Vec<PointIndex> = (0..mesh.num_points())
-                        .map(|i| PointIndex(i as u32))
-                        .collect();
+                    let ids = make_point_ids(mesh.num_points())?;
                     sequenced_point_ids = Some(ids);
                     // sequenced_data_to_corner_map remains None - not needed for sequential
                 } else {
@@ -730,13 +736,13 @@ impl MeshDecoder {
                             let original = mesh.attribute(att_id);
                             (original.attribute_type(), original.num_components())
                         };
-                        portable.init(
+                        portable.try_init(
                             original_type,
                             original_num_components,
                             DataType::Uint32,
                             false,
                             point_ids_for_values.len(),
-                        );
+                        )?;
                         let mut transform = AttributeQuantizationTransform::new();
                         // Legacy compatibility shim: C++ bitstreams with version < 2.0 store
                         // quantization params before the integer values, while v2.0+ stores
@@ -810,13 +816,13 @@ impl MeshDecoder {
                     }
                     3 => {
                         let mut portable = PointAttribute::default();
-                        portable.init(
+                        portable.try_init(
                             GeometryAttributeType::Generic,
                             2,
                             DataType::Uint32,
                             false,
                             point_ids_for_values.len(),
-                        );
+                        )?;
                         // Legacy compatibility shim: C++ bitstreams with version < 2.0 store
                         // normal octahedron quantization bits after the prediction header but
                         // before integer values. Rust-generated files never use this layout.
@@ -1603,4 +1609,30 @@ impl MeshDecoder {
         }
         false
     }
+}
+
+fn validate_mesh_index_count(num_faces: usize) -> Result<usize, DracoError> {
+    num_faces
+        .checked_mul(3)
+        .ok_or_else(|| DracoError::DracoError("Mesh face index count overflow".to_string()))
+}
+
+fn make_zeroed_indices(num_indices: usize) -> Result<Vec<u32>, DracoError> {
+    let mut indices = Vec::new();
+    indices
+        .try_reserve_exact(num_indices)
+        .map_err(|_| DracoError::DracoError("Failed to allocate mesh indices".to_string()))?;
+    indices.resize(num_indices, 0);
+    Ok(indices)
+}
+
+fn make_point_ids(num_points: usize) -> Result<Vec<PointIndex>, DracoError> {
+    let mut point_ids = Vec::new();
+    point_ids
+        .try_reserve_exact(num_points)
+        .map_err(|_| DracoError::DracoError("Failed to allocate point ids".to_string()))?;
+    for i in 0..num_points {
+        point_ids.push(PointIndex(i as u32));
+    }
+    Ok(point_ids)
 }

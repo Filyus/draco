@@ -151,6 +151,45 @@ fn malformed_drc_inputs_fail_without_panic() {
 }
 
 #[test]
+fn oversized_drc_counts_fail_before_large_allocation() {
+    let mut oversized_mesh_faces = draco_header(2, 0, 1, 0);
+    oversized_mesh_faces.extend_from_slice(&u32::MAX.to_le_bytes());
+    oversized_mesh_faces.extend_from_slice(&8u32.to_le_bytes());
+    oversized_mesh_faces.push(1); // raw connectivity, but no index payload
+
+    let mut oversized_point_cloud_points = draco_header(2, 0, 0, 0);
+    oversized_point_cloud_points.extend_from_slice(&u32::MAX.to_le_bytes());
+    oversized_point_cloud_points.push(1); // one attribute decoder
+    oversized_point_cloud_points.push(1); // one attribute in decoder (varint)
+    oversized_point_cloud_points.push(0); // POSITION
+    oversized_point_cloud_points.push(9); // FLOAT32
+    oversized_point_cloud_points.push(3); // 3 components
+    oversized_point_cloud_points.push(0); // not normalized
+    oversized_point_cloud_points.push(0); // unique id (varint)
+    oversized_point_cloud_points.push(0); // raw decoder type
+
+    let cases = [
+        (
+            "oversized mesh face count",
+            DecoderKind::Mesh,
+            oversized_mesh_faces,
+        ),
+        (
+            "oversized point-cloud point count",
+            DecoderKind::PointCloud,
+            oversized_point_cloud_points,
+        ),
+    ];
+
+    for (name, kind, bytes) in cases {
+        assert!(
+            decode_malformed_without_panic(kind, &bytes).is_err(),
+            "{name} unexpectedly decoded successfully"
+        );
+    }
+}
+
+#[test]
 fn decode_rejects_truncated_file() {
     let path = repo_testdata_dir().join("cube_att.drc");
     let bytes = std::fs::read(&path).expect("failed to read cube_att.drc");

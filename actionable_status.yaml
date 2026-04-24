@@ -36,12 +36,12 @@ items:
       - path: "crates/draco-core/tests/drc_existing_files_test.rs"
         note: "Current coverage is positive-path decode of known-good fixtures, including legacy Draco 1.0.0+ smoke fixtures."
       - path: "crates/draco-core/tests/drc_edge_cases_test.rs"
-        note: "malformed_drc_inputs_fail_without_panic covers empty/short/bad-magic streams, invalid geometry type, truncated mesh and point-cloud payloads, corrupt point-cloud varints, and truncated point-cloud attribute metadata."
+        note: "malformed_drc_inputs_fail_without_panic covers empty/short/bad-magic streams, invalid geometry type, truncated mesh and point-cloud payloads, corrupt point-cloud varints, and truncated point-cloud attribute metadata. oversized_drc_counts_fail_before_large_allocation covers oversized mesh face counts and point-cloud point counts."
       - path: "crates/draco-core/src/decoder_buffer.rs"
-        note: "DecoderBuffer has bounds-aware APIs, but there is not yet fuzz/property coverage or explicit resource-limit coverage for oversized or internally inconsistent streams."
+        note: "DecoderBuffer has bounds-aware APIs, and decode paths now use fallible allocation for key mesh/point-cloud buffers, but there is not yet fuzz/property coverage for internally inconsistent streams."
     impact: "Controlled Draco 1.0.0+ assets have good practical coverage, but accepting arbitrary external .drc input still carries crash, panic, timeout, and memory-growth risk."
     next_steps:
-      - "Extend negative decoder coverage to resource-risk cases such as impossible counts, oversized attribute declarations, and inconsistent mesh connectivity sizes without allowing unbounded allocation."
+      - "Extend negative decoder coverage to internally inconsistent mesh connectivity and attribute payloads that are syntactically complete but semantically invalid."
       - "Add fuzz or property-test entrypoints for MeshDecoder and PointCloudDecoder that assert no panic and bounded failure behavior."
       - "Document any explicit input-size or resource assumptions enforced by callers or decoder code."
 

@@ -2,6 +2,7 @@ use crate::attribute_transform_data::AttributeTransformData;
 use crate::data_buffer::DataBuffer;
 use crate::draco_types::DataType;
 use crate::geometry_indices::{AttributeValueIndex, PointIndex, INVALID_ATTRIBUTE_VALUE_INDEX};
+use crate::status::DracoError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeometryAttributeType {
@@ -157,6 +158,37 @@ impl PointAttribute {
             .resize(num_attribute_values * byte_stride as usize);
         self.num_unique_entries = num_attribute_values;
         self.identity_mapping = true;
+    }
+
+    pub fn try_init(
+        &mut self,
+        attribute_type: GeometryAttributeType,
+        num_components: u8,
+        data_type: DataType,
+        normalized: bool,
+        num_attribute_values: usize,
+    ) -> Result<(), DracoError> {
+        let byte_stride = num_components as usize * data_type.byte_length();
+        let buffer_size = num_attribute_values
+            .checked_mul(byte_stride)
+            .ok_or_else(|| {
+                DracoError::DracoError("Point attribute buffer size overflow".to_string())
+            })?;
+        self.base.init(
+            attribute_type,
+            None,
+            num_components,
+            data_type,
+            normalized,
+            byte_stride as i64,
+            0,
+        );
+        self.buffer.try_resize(buffer_size).map_err(|_| {
+            DracoError::DracoError("Failed to allocate point attribute buffer".to_string())
+        })?;
+        self.num_unique_entries = num_attribute_values;
+        self.identity_mapping = true;
+        Ok(())
     }
 
     pub fn mapped_index(&self, point_index: PointIndex) -> AttributeValueIndex {

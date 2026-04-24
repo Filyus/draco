@@ -1,5 +1,6 @@
 use crate::geometry_indices::{FaceIndex, PointIndex};
 use crate::point_cloud::PointCloud;
+use crate::status::{DracoError, Status};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
@@ -53,6 +54,16 @@ impl Mesh {
 
     pub fn set_num_faces(&mut self, num_faces: usize) {
         self.faces.resize(num_faces, [PointIndex(0); 3]);
+    }
+
+    pub fn try_set_num_faces(&mut self, num_faces: usize) -> Status {
+        if num_faces > self.faces.len() {
+            self.faces
+                .try_reserve_exact(num_faces - self.faces.len())
+                .map_err(|_| DracoError::DracoError("Failed to allocate mesh faces".to_string()))?;
+        }
+        self.faces.resize(num_faces, [PointIndex(0); 3]);
+        Ok(())
     }
 
     /// Deduplicate point IDs to match C++ Draco behavior.

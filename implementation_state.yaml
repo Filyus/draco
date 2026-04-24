@@ -2110,6 +2110,9 @@ files:
       - name: "malformed_drc_inputs_fail_without_panic"
         progress: "added"
         note: "Negative decode hardening coverage for malformed DRC inputs. Verifies MeshDecoder and PointCloudDecoder return errors without panicking for empty/short/bad-magic streams, invalid geometry type, truncated mesh and point-cloud payloads, corrupt point-cloud varints, and truncated point-cloud attribute metadata."
+      - name: "oversized_drc_counts_fail_before_large_allocation"
+        progress: "added"
+        note: "Resource-hardening regression for oversized declared counts. Verifies mesh sequential raw connectivity with insufficient payload and point-cloud attribute buffers with impossible declared sizes fail without relying on arbitrary Draco format caps."
 
   - path: "crates/draco-core/tests/drc_existing_files_test.rs"
     functions:

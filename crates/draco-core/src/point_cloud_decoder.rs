@@ -59,6 +59,17 @@ impl Default for PointCloudDecoder {
     }
 }
 
+fn make_point_ids(num_points: usize) -> Result<Vec<PointIndex>, DracoError> {
+    let mut point_ids = Vec::new();
+    point_ids
+        .try_reserve_exact(num_points)
+        .map_err(|_| DracoError::DracoError("Failed to allocate point ids".to_string()))?;
+    for i in 0..num_points {
+        point_ids.push(PointIndex(i as u32));
+    }
+    Ok(point_ids)
+}
+
 impl PointCloudDecoder {
     pub fn new() -> Self {
         Self {
@@ -151,9 +162,6 @@ impl PointCloudDecoder {
             }
         } else {
             // Sequential encoding.
-            let point_ids: Vec<PointIndex> =
-                (0..num_points).map(|i| PointIndex(i as u32)).collect();
-
             struct PendingQuant {
                 att_id: i32,
                 portable: PointAttribute,
@@ -164,6 +172,14 @@ impl PointCloudDecoder {
                 att_id: i32,
                 portable: PointAttribute,
                 quantization_bits: u8,
+            }
+
+            struct AttributeSpec {
+                att_type: GeometryAttributeType,
+                data_type: DataType,
+                num_components: u8,
+                normalized: bool,
+                unique_id: u32,
             }
 
             for _ in 0..num_attributes_decoders {
@@ -178,6 +194,8 @@ impl PointCloudDecoder {
                     ));
                 }
 
+                let mut attribute_specs: Vec<AttributeSpec> =
+                    Vec::with_capacity(num_attributes_in_decoder);
                 let mut att_ids: Vec<i32> = Vec::with_capacity(num_attributes_in_decoder);
                 let mut decoder_types: Vec<u8> = Vec::with_capacity(num_attributes_in_decoder);
                 let mut pending_quant: Vec<PendingQuant> = Vec::new();
@@ -218,16 +236,53 @@ impl PointCloudDecoder {
                         buffer.decode_varint()? as u32
                     };
 
-                    let mut att = PointAttribute::new();
-                    att.init(att_type, num_components, data_type, normalized, num_points);
-                    att.set_unique_id(unique_id);
-                    let att_id = pc.add_attribute(att);
-                    att_ids.push(att_id);
+                    attribute_specs.push(AttributeSpec {
+                        att_type,
+                        data_type,
+                        num_components,
+                        normalized,
+                        unique_id,
+                    });
                 }
 
                 for _ in 0..num_attributes_in_decoder {
                     decoder_types.push(buffer.decode_u8()?);
                 }
+
+                for (local_i, spec) in attribute_specs.iter().enumerate() {
+                    if decoder_types[local_i] == 0 {
+                        let entry_size =
+                            spec.num_components as usize * spec.data_type.byte_length();
+                        let bytes_needed = entry_size.checked_mul(num_points).ok_or_else(|| {
+                            DracoError::DracoError(
+                                "Raw point cloud attribute byte count overflow".to_string(),
+                            )
+                        })?;
+                        if buffer.remaining_size() < bytes_needed {
+                            return Err(DracoError::DracoError(
+                                "Not enough data for raw point cloud attribute values".to_string(),
+                            ));
+                        }
+                    }
+
+                    let mut att = PointAttribute::new();
+                    att.try_init(
+                        spec.att_type,
+                        spec.num_components,
+                        spec.data_type,
+                        spec.normalized,
+                        num_points,
+                    )?;
+                    att.set_unique_id(spec.unique_id);
+                    let att_id = pc.add_attribute(att);
+                    att_ids.push(att_id);
+                }
+
+                let point_ids = if decoder_types.iter().any(|&decoder_type| decoder_type != 0) {
+                    Some(make_point_ids(num_points)?)
+                } else {
+                    None
+                };
 
                 for (local_i, &att_id) in att_ids.iter().enumerate() {
                     let decoder_type = decoder_types[local_i];
@@ -235,9 +290,16 @@ impl PointCloudDecoder {
                         1 => {
                             let mut att_decoder = SequentialIntegerAttributeDecoder::new();
                             att_decoder.init(self, att_id);
-                            if !att_decoder
-                                .decode_values(pc, &point_ids, buffer, None, None, None, None, None)
-                            {
+                            if !att_decoder.decode_values(
+                                pc,
+                                point_ids.as_ref().unwrap(),
+                                buffer,
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                            ) {
                                 return Err(DracoError::DracoError(
                                     "Failed to decode integer attribute".to_string(),
                                 ));
@@ -248,13 +310,13 @@ impl PointCloudDecoder {
                             let (original_type, original_num_components) =
                                 (original.attribute_type(), original.num_components());
                             let mut portable = PointAttribute::default();
-                            portable.init(
+                            portable.try_init(
                                 original_type,
                                 original_num_components,
                                 DataType::Uint32,
                                 false,
                                 num_points,
-                            );
+                            )?;
                             let mut transform = AttributeQuantizationTransform::new();
 
                             // Legacy compatibility shim: C++ bitstreams with version <= 1.1
@@ -307,7 +369,7 @@ impl PointCloudDecoder {
                             };
                             if !att_decoder.decode_values(
                                 pc,
-                                &point_ids,
+                                point_ids.as_ref().unwrap(),
                                 buffer,
                                 None,
                                 None,
@@ -327,13 +389,13 @@ impl PointCloudDecoder {
                         }
                         3 => {
                             let mut portable = PointAttribute::default();
-                            portable.init(
+                            portable.try_init(
                                 GeometryAttributeType::Generic,
                                 2,
                                 DataType::Uint32,
                                 false,
                                 num_points,
-                            );
+                            )?;
                             // Legacy compatibility shim: C++ bitstreams with version <= 1.1
                             // store octahedron quantization bits after the prediction header
                             // but before integer values. v1.2+ stores them after.
@@ -381,7 +443,7 @@ impl PointCloudDecoder {
                             };
                             if !att_decoder.decode_values(
                                 pc,
-                                &point_ids,
+                                point_ids.as_ref().unwrap(),
                                 buffer,
                                 None,
                                 None,

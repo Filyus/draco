@@ -33,6 +33,14 @@ impl DataBuffer {
         self.data.resize(new_size, 0);
     }
 
+    pub fn try_resize(&mut self, new_size: usize) -> Result<(), std::collections::TryReserveError> {
+        if new_size > self.data.len() {
+            self.data.try_reserve_exact(new_size - self.data.len())?;
+        }
+        self.data.resize(new_size, 0);
+        Ok(())
+    }
+
     pub fn write_data_to_stream<W: Write>(&self, stream: &mut W) -> io::Result<()> {
         stream.write_all(&self.data)
     }
