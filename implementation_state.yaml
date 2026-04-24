@@ -2120,6 +2120,12 @@ files:
         progress: "added"
         note: "Deterministic mutation smoke over supported mesh sequential, mesh Edgebreaker, point-cloud legacy sequential, and point-cloud v2.3 fixtures. Applies truncations, byte flips, and trailing varint-like garbage and verifies MeshDecoder/PointCloudDecoder do not unwind; this caught and now guards the corrupted-Edgebreaker missing-corner-table panic."
 
+  - path: "crates/draco-core/src/mesh_decoder.rs"
+    functions:
+      - name: "make_attribute_corner_table"
+        progress: "hardened"
+        note: "Rejects out-of-range Edgebreaker attribute seam corners and seam opposite corners with DracoError instead of unchecked vector indexing. Covered by attribute_corner_table_rejects_out_of_range_seam_corner."
+
   - path: "crates/draco-core/tests/drc_existing_files_test.rs"
     functions:
       - name: "inventory_skipped_testdata_drc_fixtures"

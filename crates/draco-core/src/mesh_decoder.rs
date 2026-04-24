@@ -388,6 +388,11 @@ impl MeshDecoder {
             if c == INVALID_CORNER_INDEX {
                 continue;
             }
+            if c.0 as usize >= base_ct.num_corners() {
+                return Err(DracoError::DracoError(
+                    "Invalid Edgebreaker attribute seam corner".to_string(),
+                ));
+            }
             is_edge_on_seam[c.0 as usize] = true;
             ct.set_opposite(c, INVALID_CORNER_INDEX);
 
@@ -402,6 +407,11 @@ impl MeshDecoder {
 
             let opp = base_ct.opposite(c);
             if opp != INVALID_CORNER_INDEX {
+                if opp.0 as usize >= base_ct.num_corners() {
+                    return Err(DracoError::DracoError(
+                        "Invalid Edgebreaker attribute seam opposite corner".to_string(),
+                    ));
+                }
                 is_edge_on_seam[opp.0 as usize] = true;
                 ct.set_opposite(opp, INVALID_CORNER_INDEX);
 
@@ -1829,6 +1839,22 @@ impl MeshDecoder {
             return true;
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attribute_corner_table_rejects_out_of_range_seam_corner() {
+        let mut corner_table = CornerTable::new(1);
+        corner_table.set_face_vertices(FaceIndex(0), PointIndex(0), PointIndex(1), PointIndex(2));
+
+        let invalid_corner = corner_table.num_corners() as u32;
+        let status = MeshDecoder::make_attribute_corner_table(&corner_table, &[invalid_corner]);
+
+        assert!(status.is_err());
     }
 }
 
