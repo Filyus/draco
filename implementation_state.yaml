@@ -2109,4 +2109,10 @@ files:
     functions:
       - name: "inventory_skipped_testdata_drc_fixtures"
         progress: "added"
-        note: "Snapshots the current skipped .drc testdata inventory by relative path, header version, geometry type, method, and skip reason. The current inventory contains 13 UnsupportedBitstream fixtures and no UnsupportedTraversal fixtures."
+        note: "Snapshots the current skipped .drc testdata inventory by relative path, header version, geometry type, method, and skip reason. After enabling mesh v2.0/v2.1 and point-cloud sequential v2.2/v2.3 fixtures, the current inventory contains 7 UnsupportedBitstream fixtures and no UnsupportedTraversal fixtures. The intentional legacy support floor is Draco 1.0.0+, so older v1.1/v1.2 fixture skips remain out of scope."
+      - name: "decode_legacy_mesh_v20_v21_from_testdata"
+        progress: "added"
+        note: "Regression coverage for Draco 1.0.0/1.1.0 mesh bitstreams: edgebreaker and sequential v2.0/v2.1 fixtures decode successfully with nonzero points, faces, and attributes."
+      - name: "decode_point_cloud_sequential_v22_v23_from_testdata"
+        progress: "added"
+        note: "Regression coverage for sequential point-cloud bitstreams v2.2/v2.3: pc_color.drc and point_cloud_no_qp.drc decode successfully with nonzero points and attributes."

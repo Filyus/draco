@@ -65,17 +65,20 @@ fn parse_header(bytes: &[u8]) -> (u8, u8, EncodedGeometryType, u8) {
     (major, minor, geometry_type, method)
 }
 
-fn supports_mesh_bitstream(major: u8, minor: u8) -> bool {
-    // Current Rust MeshEdgebreakerDecoder implementation matches the v2.2+
-    // layout (no legacy encoded_connectivity_size indirection).
-    (major > 2) || (major == 2 && minor >= 2)
+fn supports_mesh_bitstream(major: u8, _minor: u8) -> bool {
+    // Rust MeshDecoder supports the modern v2.2+ layout and the v2.0/v2.1
+    // legacy mesh layout used by Draco 1.0.0/1.1.0 test fixtures.
+    major >= 2
 }
 
 fn supports_point_cloud_bitstream(major: u8, minor: u8, method: u8) -> bool {
     // Current PointCloudDecoder supports:
+    // - v2.2+ sequential (method=0)
     // - v2.3 KD-tree (method=1)
     // - our v1.3 sequential format (method=0)
-    (major == 2 && minor == 3 && method == 1) || (major == 1 && minor == 3 && method == 0)
+    (major == 2 && minor >= 2 && method == 0)
+        || (major == 2 && minor == 3 && method == 1)
+        || (major == 1 && minor == 3 && method == 0)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -216,6 +219,90 @@ fn decode_drc(bytes: &[u8]) -> (EncodedGeometryType, Option<Mesh>, Option<PointC
 }
 
 #[test]
+fn decode_legacy_mesh_v20_v21_from_testdata() {
+    let fixtures = [
+        "test_nm.obj.edgebreaker.1.0.0.drc",
+        "test_nm.obj.edgebreaker.1.1.0.drc",
+        "test_nm.obj.sequential.1.0.0.drc",
+        "test_nm.obj.sequential.1.1.0.drc",
+    ];
+
+    for fixture in fixtures {
+        let path = repo_testdata_dir().join(fixture);
+        let bytes = read_file_bytes(&path);
+        let (major, minor, geometry_type, _method) = parse_header(&bytes);
+
+        assert_eq!(
+            geometry_type,
+            EncodedGeometryType::TriangularMesh,
+            "{fixture} should be a mesh fixture"
+        );
+        assert!(
+            major == 2 && (minor == 0 || minor == 1),
+            "{fixture} should cover mesh bitstream v2.0 or v2.1, got v{major}.{minor}"
+        );
+
+        let mut buffer = DecoderBuffer::new(&bytes);
+        let mut mesh = Mesh::new();
+        let mut decoder = MeshDecoder::new();
+        let status = decoder.decode(&mut buffer, &mut mesh);
+
+        assert!(
+            status.is_ok(),
+            "legacy mesh decode failed for {fixture} (v{major}.{minor}): {:?}",
+            status.err()
+        );
+        assert!(mesh.num_points() > 0, "{fixture} decoded with 0 points");
+        assert!(mesh.num_faces() > 0, "{fixture} decoded with 0 faces");
+        assert!(
+            mesh.num_attributes() > 0,
+            "{fixture} decoded with 0 attributes"
+        );
+    }
+}
+
+#[test]
+fn decode_point_cloud_sequential_v22_v23_from_testdata() {
+    let fixtures = ["pc_color.drc", "point_cloud_no_qp.drc"];
+
+    for fixture in fixtures {
+        let path = repo_testdata_dir().join(fixture);
+        let bytes = read_file_bytes(&path);
+        let (major, minor, geometry_type, method) = parse_header(&bytes);
+
+        assert_eq!(
+            geometry_type,
+            EncodedGeometryType::PointCloud,
+            "{fixture} should be a point-cloud fixture"
+        );
+        assert_eq!(
+            method, 0,
+            "{fixture} should cover sequential point-cloud method"
+        );
+        assert!(
+            major == 2 && (minor == 2 || minor == 3),
+            "{fixture} should cover point-cloud bitstream v2.2 or v2.3, got v{major}.{minor}"
+        );
+
+        let mut buffer = DecoderBuffer::new(&bytes);
+        let mut pc = PointCloud::new();
+        let mut decoder = PointCloudDecoder::new();
+        let status = decoder.decode(&mut buffer, &mut pc);
+
+        assert!(
+            status.is_ok(),
+            "point-cloud sequential decode failed for {fixture} (v{major}.{minor}): {:?}",
+            status.err()
+        );
+        assert!(pc.num_points() > 0, "{fixture} decoded with 0 points");
+        assert!(
+            pc.num_attributes() > 0,
+            "{fixture} decoded with 0 attributes"
+        );
+    }
+}
+
+#[test]
 fn inventory_skipped_testdata_drc_fixtures() {
     let dir = repo_testdata_dir();
     let mut drc_files = collect_drc_files_recursive(&dir);
@@ -248,22 +335,6 @@ fn inventory_skipped_testdata_drc_fixtures() {
             SkipReason::UnsupportedBitstream,
         ),
         skipped(
-            "pc_color.drc",
-            2,
-            2,
-            GeometryKind::PointCloud,
-            0,
-            SkipReason::UnsupportedBitstream,
-        ),
-        skipped(
-            "point_cloud_no_qp.drc",
-            2,
-            3,
-            GeometryKind::PointCloud,
-            0,
-            SkipReason::UnsupportedBitstream,
-        ),
-        skipped(
             "test_nm.obj.edgebreaker.0.10.0.drc",
             1,
             2,
@@ -280,22 +351,6 @@ fn inventory_skipped_testdata_drc_fixtures() {
             SkipReason::UnsupportedBitstream,
         ),
         skipped(
-            "test_nm.obj.edgebreaker.1.0.0.drc",
-            2,
-            0,
-            GeometryKind::Mesh,
-            1,
-            SkipReason::UnsupportedBitstream,
-        ),
-        skipped(
-            "test_nm.obj.edgebreaker.1.1.0.drc",
-            2,
-            1,
-            GeometryKind::Mesh,
-            1,
-            SkipReason::UnsupportedBitstream,
-        ),
-        skipped(
             "test_nm.obj.sequential.0.10.0.drc",
             1,
             2,
@@ -306,22 +361,6 @@ fn inventory_skipped_testdata_drc_fixtures() {
         skipped(
             "test_nm.obj.sequential.0.9.1.drc",
             1,
-            1,
-            GeometryKind::Mesh,
-            0,
-            SkipReason::UnsupportedBitstream,
-        ),
-        skipped(
-            "test_nm.obj.sequential.1.0.0.drc",
-            2,
-            0,
-            GeometryKind::Mesh,
-            0,
-            SkipReason::UnsupportedBitstream,
-        ),
-        skipped(
-            "test_nm.obj.sequential.1.1.0.drc",
-            2,
             1,
             GeometryKind::Mesh,
             0,
@@ -464,8 +503,6 @@ fn roundtrip_encode_decode_mesh_from_testdata() {
 
 #[test]
 fn decode_point_cloud_kdtree_from_testdata() {
-    // pc_color.drc is v2.2 sequential and isn't supported by the current Rust
-    // PointCloudDecoder implementation.
     let path = repo_testdata_dir().join("pc_kd_color.drc");
     let bytes = read_file_bytes(&path);
     let (geometry_type, _, pc) = decode_drc(&bytes);
