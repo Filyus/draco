@@ -748,6 +748,16 @@ files:
       - name: "generate_point_ids_and_corners_max_prediction_degree"
         progress: "fully implemented"
         note: "Implements Draco C++ MaxPredictionDegreeTraverser traversal order over the decoded CornerTable for Edgebreaker attribute decoding (MESH_TRAVERSAL_PREDICTION_DEGREE)."
+  - path: "crates/draco-core/src/edgebreaker_connectivity_decoder.rs"
+    structures:
+      - name: "EdgebreakerConnectivityDecoder"
+        type: "struct"
+        progress: "fully implemented"
+        note: "Reconstructs Edgebreaker connectivity using C++-aligned reverse topology traversal. Active-corner stack access, vertex-hole indexing, and opposite-corner writes are guarded by fallible helpers so malformed topology returns errors instead of panicking."
+    functions:
+      - name: "decode_connectivity"
+        progress: "fully implemented"
+        note: "Decodes CLERS topology symbols into a CornerTable and returns controlled errors for malformed active-corner stack, vertex, and opposite-corner invariants. Covered by invalid_opposite_corner_is_rejected_without_indexing and topology_symbol_that_requires_active_corner_fails_cleanly."
   - path: "crates/draco-core/src/mesh_edgebreaker_decoder.rs"
     structures:
       - name: "MeshEdgebreakerDecoder"
