@@ -41,18 +41,3 @@ items:
     next_steps:
       - "Decide target glTF subset and document it in draco-io."
       - "Add support for the next common accessor case before widening primitive modes."
-
-  - id: fbx-compressed-arrays-default-feature
-    area: draco-io
-    priority: low
-    status: open
-    summary: "FBX compressed arrays are unsupported unless the compression feature is enabled."
-    evidence:
-      - path: "crates/draco-io/src/fbx_reader.rs"
-        note: "Compressed array decoding returns Unsupported without the compression feature."
-      - path: "crates/draco-io/src/fbx_writer.rs"
-        note: "Compressed array writing is feature-gated."
-    impact: "Default draco-io builds may reject common FBX files that use compressed arrays."
-    next_steps:
-      - "Decide whether compression should be part of default features."
-      - "If not, surface this limitation in public docs and examples."

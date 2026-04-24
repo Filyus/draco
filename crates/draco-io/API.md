@@ -478,7 +478,7 @@ let mut writer = FbxWriter::new();
 writer.add_mesh(&mesh, Some("Model"))?;
 writer.write("output.fbx")?;
 
-// With compression (requires "compression" feature)
+// With compression (enabled by the default "compression" feature)
 let mut writer = FbxWriter::new()
     .with_compression(true)
     .with_compression_threshold(1000);

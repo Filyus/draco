@@ -1839,7 +1839,7 @@ files:
       - name: "FbxReader"
         type: "struct"
         progress: "fully implemented"
-        note: "Supports FBX 7.5 binary format (64-bit). Reads vertices, indices, normals. Supports zlib compression via 'compression' feature."
+        note: "Supports FBX 7.5 binary format (64-bit). Reads vertices, indices, normals. Supports zlib-compressed arrays in default draco-io builds via the compression feature, with opt-out available through default-features = false."
       - name: "FbxNode"
         type: "struct"
         progress: "fully implemented"
@@ -1878,7 +1878,7 @@ files:
         note: "Writes Mesh to FBX 7.5 binary format with default options."
       - name: "write_fbx_mesh_with_options"
         progress: "fully implemented"
-        note: "Writes Mesh to FBX 7.5 with compression support via 'compression' feature."
+        note: "Writes Mesh to FBX 7.5 with zlib compression support in default draco-io builds via the compression feature, with opt-out available through default-features = false."
 
   - path: "crates/draco-io/src/gltf_reader.rs"
     structures:

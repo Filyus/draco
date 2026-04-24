@@ -36,7 +36,7 @@ draco-io = { version = "0.1.0", path = "../draco-io" }
 |---------------|---------|------------------------------------------|
 | `encoder`     | ✓       | Writing support (all formats)            |
 | `decoder`     | ✓       | Reading support (all formats)            |
-| `compression` | -       | zlib compression for FBX                 |
+| `compression` | ✓       | zlib compression for FBX                 |
 
 To use only reading (smaller binary):
 
@@ -216,7 +216,7 @@ ply.write("output.ply")?;
 use draco_io::FbxWriter;
 
 let mut fbx = FbxWriter::new()
-    .with_compression(true)           // Enable zlib (requires "compression" feature)
+    .with_compression(true)           // Enable zlib output (default feature)
     .with_compression_threshold(1000); // Min size to compress
 
 fbx.add_mesh(&mesh, Some("Model"))?;
