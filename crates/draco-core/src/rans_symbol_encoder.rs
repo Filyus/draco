@@ -46,8 +46,9 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
         self.num_symbols = num_symbols;
         self.probability_table
             .resize(num_symbols, RAnsSymbol::default());
+        let debug_cmp = std::env::var("DRACO_DEBUG_CMP").is_ok();
 
-        if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+        if debug_cmp {
             eprintln!(
                 "RUST RANS create: num_symbols={} total_freq={}",
                 num_symbols, total_freq
@@ -77,7 +78,7 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
             total_rans_prob += rans_prob;
         }
 
-        if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+        if debug_cmp {
             eprintln!(
                 "RUST RANS initial probs (before norm): {:?}",
                 self.probability_table
@@ -102,7 +103,7 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
                     .cmp(&self.probability_table[b].prob)
             });
 
-            if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+            if debug_cmp {
                 eprintln!("RUST RANS sorted_probabilities: {:?}", sorted_probabilities);
                 eprintln!("RUST RANS total_rans_prob before fix: {}", total_rans_prob);
             }
@@ -156,7 +157,7 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
             total_prob += self.probability_table[i].prob;
         }
 
-        if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+        if debug_cmp {
             eprintln!(
                 "RUST RANS probability_table (probs): {:?}",
                 self.probability_table

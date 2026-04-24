@@ -173,6 +173,7 @@ where
         let mut total_parallelograms: [i64; MAX_NUM_PARALLELOGRAMS] = [0; MAX_NUM_PARALLELOGRAMS];
         let mut total_used_parallelograms: [i64; MAX_NUM_PARALLELOGRAMS] =
             [0; MAX_NUM_PARALLELOGRAMS];
+        let debug_cmp = std::env::var("DRACO_DEBUG_CMP").is_ok();
 
         // C++ encoder processes vertices from the end because this prediction uses
         // data from previous entries that could be overwritten when an entry is processed.
@@ -464,7 +465,7 @@ where
             }
 
             // Diagnostic logging: compare cumulative vs marginal cost choices if requested
-            if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+            if debug_cmp {
                 use std::sync::atomic::AtomicUsize;
                 static _CMP_DIV_COUNT: AtomicUsize = AtomicUsize::new(0);
                 const _MAX_CMP_DIV_PRINT: usize = 200;

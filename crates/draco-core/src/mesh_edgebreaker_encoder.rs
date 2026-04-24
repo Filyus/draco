@@ -499,8 +499,12 @@ impl MeshEdgebreakerEncoder {
             corner_order.push(c);
         }
 
+        let debug_cmp = std::env::var("DRACO_DEBUG_CMP").is_ok();
+        let verbose = Self::verbose_logging_enabled();
+        let event_log_enabled = test_event_log::enabled();
+
         // Debug: compare corner_order with C++
-        if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+        if debug_cmp {
             eprintln!(
                 "RUST init_face_connectivity_corners = {:?}",
                 self.init_face_connectivity_corners
@@ -528,7 +532,7 @@ impl MeshEdgebreakerEncoder {
             eprintln!("RUST corner_order total: {}", corner_order.len());
         }
 
-        if Self::verbose_logging_enabled() {
+        if verbose {
             println!(
                 "Encoder: ACTUAL corner_order (first 10) = {:?}",
                 corner_order
@@ -542,7 +546,7 @@ impl MeshEdgebreakerEncoder {
         // Choose traversal method based on encoding speed
         // Speed 0 uses MaxPredictionDegree traversal for better compression (matches C++)
         if self.encoding_speed == 0 {
-            if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+            if debug_cmp {
                 eprintln!("RUST: Using MaxPredictionDegree traversal (speed 0)");
             }
             Self::max_prediction_degree_visit(
@@ -557,13 +561,22 @@ impl MeshEdgebreakerEncoder {
             );
         } else {
             // DFS traversal for speeds 1-10
-            if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+            if debug_cmp {
                 eprintln!("RUST: Using DFS traversal (speed {})", self.encoding_speed);
             }
             // DFS is seeded from those corners in order.
             for (seed_idx, &corner) in corner_order.iter().enumerate() {
                 let face = FaceIndex(corner.0 / 3);
                 let face_already_visited = visited_faces[face.0 as usize];
+                if face_already_visited {
+                    if verbose && seed_idx < 15 {
+                        eprintln!(
+                            "Encoder: seed[{}] corner={} face={} was_visited=true added 0 points (total now {})",
+                            seed_idx, corner.0, face.0, point_ids.len()
+                        );
+                    }
+                    continue;
+                }
                 let old_point_count = point_ids.len();
 
                 self.dfs_visit_from_corner_cpp(
@@ -575,10 +588,13 @@ impl MeshEdgebreakerEncoder {
                     &mut vertex_to_data_map,
                     &mut visited_vertices,
                     &mut visited_faces,
+                    verbose,
+                    debug_cmp,
+                    event_log_enabled,
                 );
 
                 let new_points = point_ids.len() - old_point_count;
-                if Self::verbose_logging_enabled() && (seed_idx < 15 || new_points > 0) {
+                if verbose && (seed_idx < 15 || new_points > 0) {
                     eprintln!(
                         "Encoder: seed[{}] corner={} face={} was_visited={} added {} points (total now {})",
                         seed_idx, corner.0, face.0, face_already_visited, new_points, point_ids.len()
@@ -609,7 +625,7 @@ impl MeshEdgebreakerEncoder {
         }
 
         // Debug: print specific data_to_corner_map entries
-        if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+        if debug_cmp {
             eprintln!(
                 "RUST data_to_corner_map[0..5] = {:?}",
                 &data_to_corner_map[0..5.min(data_to_corner_map.len())]
@@ -641,6 +657,9 @@ impl MeshEdgebreakerEncoder {
         vertex_to_data_map: &mut [i32],
         visited_vertices: &mut [bool],
         visited_faces: &mut [bool],
+        verbose: bool,
+        debug_cmp: bool,
+        event_log_enabled: bool,
     ) {
         let start_face = corner_table.face(start_corner);
         if start_face == INVALID_FACE_INDEX || visited_faces[start_face.0 as usize] {
@@ -648,30 +667,34 @@ impl MeshEdgebreakerEncoder {
         }
 
         // DEBUG: First DFS call
-        static DFS_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        let count = DFS_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if count < 3 && cfg!(feature = "debug_logs") {
-            eprintln!(
-                "Rust Encoder TraverseFromCorner STARTED: seed_corner={} face={} offset={}",
-                start_corner.0,
-                start_corner.0 / 3,
-                start_corner.0 % 3
-            );
-            // Show corner table structure
-            let opposites: Vec<u32> = (0..12.min(corner_table.num_faces() * 3))
-                .map(|c| corner_table.opposite(CornerIndex(c as u32)).0)
-                .collect();
-            let vertices: Vec<u32> = (0..12.min(corner_table.num_faces() * 3))
-                .map(|c| corner_table.vertex(CornerIndex(c as u32)).0)
-                .collect();
-            eprintln!(
-                "Rust Encoder corner_table opposites (first 12): {:?}",
-                opposites
-            );
-            eprintln!(
-                "Rust Encoder corner_table vertices (first 12): {:?}",
-                vertices
-            );
+        #[cfg(feature = "debug_logs")]
+        {
+            static DFS_COUNT: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
+            let count = DFS_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if count < 3 {
+                eprintln!(
+                    "Rust Encoder TraverseFromCorner STARTED: seed_corner={} face={} offset={}",
+                    start_corner.0,
+                    start_corner.0 / 3,
+                    start_corner.0 % 3
+                );
+                // Show corner table structure
+                let opposites: Vec<u32> = (0..12.min(corner_table.num_faces() * 3))
+                    .map(|c| corner_table.opposite(CornerIndex(c as u32)).0)
+                    .collect();
+                let vertices: Vec<u32> = (0..12.min(corner_table.num_faces() * 3))
+                    .map(|c| corner_table.vertex(CornerIndex(c as u32)).0)
+                    .collect();
+                eprintln!(
+                    "Rust Encoder corner_table opposites (first 12): {:?}",
+                    opposites
+                );
+                eprintln!(
+                    "Rust Encoder corner_table vertices (first 12): {:?}",
+                    vertices
+                );
+            }
         }
 
         let mut corner_stack: Vec<CornerIndex> = Vec::new();
@@ -696,10 +719,11 @@ impl MeshEdgebreakerEncoder {
                 let mesh_point = mesh.face(mesh_face)[corner_offset];
                 let data_id = point_ids.len() as i32;
 
-                // Record parity event for tests: MAP:{corner}->v{vertex}
-                test_event_log::record_event(format!("MAP:{}->v{}", c.0, v.0));
-                // Also record the point index seen at this corner to compare canonical geometry order across implementations
-                test_event_log::record_event(format!("MAP_POINT:{}->p{}", c.0, mesh_point.0));
+                if event_log_enabled {
+                    // Record parity events for tests: vertex mapping and canonical point id.
+                    test_event_log::record_event(format!("MAP:{}->v{}", c.0, v.0));
+                    test_event_log::record_event(format!("MAP_POINT:{}->p{}", c.0, mesh_point.0));
+                }
 
                 vertex_to_data_map[v.0 as usize] = data_id;
                 point_ids.push(mesh_point);
@@ -708,7 +732,7 @@ impl MeshEdgebreakerEncoder {
         };
 
         // Visit Next vertex (before main loop)
-        if Self::verbose_logging_enabled() {
+        if verbose {
             let mesh_face = FaceIndex(next_c.0 / 3);
             let corner_offset = (next_c.0 % 3) as usize;
             let mesh_point = mesh.face(mesh_face)[corner_offset];
@@ -719,7 +743,7 @@ impl MeshEdgebreakerEncoder {
         }
         visit_vertex(next_c, next_vert);
         // Visit Previous vertex (before main loop)
-        if Self::verbose_logging_enabled() {
+        if verbose {
             let mesh_face = FaceIndex(prev_c.0 / 3);
             let corner_offset = (prev_c.0 % 3) as usize;
             let mesh_point = mesh.face(mesh_face)[corner_offset];
@@ -736,7 +760,7 @@ impl MeshEdgebreakerEncoder {
             let mut face_id = corner_table.face(corner_id);
 
             if corner_id == INVALID_CORNER_INDEX || visited_faces[face_id.0 as usize] {
-                if Self::verbose_logging_enabled() && point_ids.len() < 30 {
+                if verbose && point_ids.len() < 30 {
                     eprintln!(
                         "  DFS: popped corner={} face={} - SKIP (invalid or visited)",
                         corner_id.0, face_id.0
@@ -744,7 +768,7 @@ impl MeshEdgebreakerEncoder {
                 }
                 continue;
             }
-            if Self::verbose_logging_enabled() && point_ids.len() < 30 {
+            if verbose && point_ids.len() < 30 {
                 eprintln!(
                     "  DFS: popped corner={} face={} - processing",
                     corner_id.0, face_id.0
@@ -756,7 +780,7 @@ impl MeshEdgebreakerEncoder {
 
                 let vert_id = corner_table.vertex(corner_id);
                 if vert_id == INVALID_VERTEX_INDEX {
-                    if Self::verbose_logging_enabled() && point_ids.len() < 30 {
+                    if verbose && point_ids.len() < 30 {
                         eprintln!("  DFS: corner={} has INVALID vertex - break", corner_id.0);
                     }
                     break;
@@ -766,9 +790,7 @@ impl MeshEdgebreakerEncoder {
                     let on_boundary = self.is_vertex_on_boundary(corner_table, vert_id);
 
                     // Debug boundary check for specific vertices
-                    if Self::verbose_logging_enabled()
-                        && (vert_id.0 == 10 || vert_id.0 == 15 || vert_id.0 == 20)
-                    {
+                    if verbose && (vert_id.0 == 10 || vert_id.0 == 15 || vert_id.0 == 20) {
                         let lmc = corner_table.left_most_corner(vert_id);
                         let sl = corner_table.swing_left(lmc);
                         eprintln!("  DEBUG boundary check: vertex={} left_most_corner={} swing_left={} on_boundary={}",
@@ -784,7 +806,7 @@ impl MeshEdgebreakerEncoder {
                     let data_id = point_ids.len() as i32;
 
                     // DEBUG: Print milestone visits for comparison with C++
-                    if std::env::var("DRACO_DEBUG_CMP").is_ok()
+                    if debug_cmp
                         && (data_id < 10
                             || data_id == 100
                             || data_id == 500
@@ -829,21 +851,25 @@ impl MeshEdgebreakerEncoder {
                     point_ids.push(mesh_point);
                     data_to_corner_map.push(corner_id.0);
 
-                    // Record parity events: both vertex mapping and canonical point id
-                    test_event_log::record_event(format!("MAP:{}->v{}", corner_id.0, vert_id.0));
-                    test_event_log::record_event(format!(
-                        "MAP_POINT:{}->p{}",
-                        corner_id.0, mesh_point.0
-                    ));
+                    if event_log_enabled {
+                        // Record parity events: both vertex mapping and canonical point id.
+                        test_event_log::record_event(format!(
+                            "MAP:{}->v{}",
+                            corner_id.0, vert_id.0
+                        ));
+                        test_event_log::record_event(format!(
+                            "MAP_POINT:{}->p{}",
+                            corner_id.0, mesh_point.0
+                        ));
+                    }
 
                     // DEBUG: Add detailed trace for specific data_id range
-                    let debug_trace = std::env::var("DRACO_DEBUG_CMP").is_ok()
-                        && (data_id >= 1875 && data_id <= 1880);
+                    let debug_trace = debug_cmp && (data_id >= 1875 && data_id <= 1880);
 
                     if !on_boundary {
                         // Continue to right corner (GetRightCorner = Opposite(Next))
                         let right_c = corner_table.opposite(corner_table.next(corner_id));
-                        if Self::verbose_logging_enabled() && point_ids.len() < 30 {
+                        if verbose && point_ids.len() < 30 {
                             eprintln!(
                                 "  DFS: corner={} vertex={} NOT on boundary -> right_corner={}",
                                 corner_id.0, vert_id.0, right_c.0
@@ -860,7 +886,7 @@ impl MeshEdgebreakerEncoder {
                         face_id = corner_table.face(corner_id);
                         continue;
                     } else {
-                        if Self::verbose_logging_enabled() && point_ids.len() < 30 {
+                        if verbose && point_ids.len() < 30 {
                             eprintln!(
                                 "  DFS: corner={} vertex={} ON BOUNDARY",
                                 corner_id.0, vert_id.0
@@ -872,7 +898,7 @@ impl MeshEdgebreakerEncoder {
                     }
                 } else {
                     // Vertex already visited
-                    if Self::verbose_logging_enabled() && point_ids.len() < 30 {
+                    if verbose && point_ids.len() < 30 {
                         eprintln!(
                             "  DFS: corner={} vertex={} ALREADY VISITED - check neighbors",
                             corner_id.0, vert_id.0
@@ -881,8 +907,7 @@ impl MeshEdgebreakerEncoder {
                 }
 
                 // DEBUG: Add detailed trace for specific data_id range
-                let debug_trace = std::env::var("DRACO_DEBUG_CMP").is_ok()
-                    && (point_ids.len() >= 1875 && point_ids.len() <= 1880);
+                let debug_trace = debug_cmp && (point_ids.len() >= 1875 && point_ids.len() <= 1880);
 
                 // Determine which neighboring faces to visit
                 let right_corner_id = corner_table.opposite(corner_table.next(corner_id));
@@ -904,7 +929,7 @@ impl MeshEdgebreakerEncoder {
                 let left_visited =
                     left_face_id == INVALID_FACE_INDEX || visited_faces[left_face_id.0 as usize];
 
-                if Self::verbose_logging_enabled() && point_ids.len() < 30 {
+                if verbose && point_ids.len() < 30 {
                     eprintln!("  DFS: corner={} neighbors: right_c={} right_f={} right_vis={}, left_c={} left_f={} left_vis={}",
                         corner_id.0, right_corner_id.0, right_face_id.0, right_visited, left_corner_id.0, left_face_id.0, left_visited);
                 }
@@ -1226,9 +1251,10 @@ impl MeshEdgebreakerEncoder {
     ) -> Result<(), DracoError> {
         let mut traversal_buffer = EncoderBuffer::new();
         traversal_buffer.set_version(2, 2);
+        let verbose = std::env::var("DRACO_VERBOSE").is_ok();
 
         // DEBUG: Print symbols before encoding
-        if std::env::var("DRACO_VERBOSE").is_ok() {
+        if verbose {
             let sym_names: Vec<&str> = self
                 .symbols
                 .iter()
@@ -1286,7 +1312,7 @@ impl MeshEdgebreakerEncoder {
             // 1. Start Faces
             let mut start_face_encoder = RAnsBitEncoder::new();
             start_face_encoder.start_encoding();
-            if std::env::var("DRACO_VERBOSE").is_ok() {
+            if verbose {
                 println!(
                     "DEBUG: Encoder InitFace Configs: {:?}",
                     self.init_face_configurations
@@ -1327,7 +1353,7 @@ impl MeshEdgebreakerEncoder {
             // 2. Start Faces
             let mut start_face_encoder = RAnsBitEncoder::new();
             start_face_encoder.start_encoding();
-            if std::env::var("DRACO_VERBOSE").is_ok() {
+            if verbose {
                 println!(
                     "DEBUG: Encoder InitFace Configs: {:?}",
                     self.init_face_configurations

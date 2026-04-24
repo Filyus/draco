@@ -401,7 +401,8 @@ fn encode_tagged_symbols(
         return false;
     }
 
-    if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+    let debug_cmp = std::env::var("DRACO_DEBUG_CMP").is_ok();
+    if debug_cmp {
         eprintln!(
             "RUST TAGGED tag frequencies: {:?}",
             &frequencies[..15.min(frequencies.len())]

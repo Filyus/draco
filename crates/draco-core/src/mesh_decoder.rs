@@ -1373,6 +1373,7 @@ impl MeshDecoder {
         let mut vertex_to_data_map = vec![-1i32; num_vertices];
         let mut visited_vertices = vec![false; num_vertices];
         let mut visited_faces = vec![false; num_faces];
+        let event_log_enabled = test_event_log::enabled();
 
         // Helper to get mesh PointIndex from corner (matches C++ Mesh::CornerToPointId)
         let corner_to_point_id = |c: CornerIndex| -> PointIndex {
@@ -1424,14 +1425,16 @@ impl MeshDecoder {
                     let point_id = corner_to_point_id(next_corner);
                     let data_id = point_ids.len() as i32;
                     vertex_to_data_map[next_vert.0 as usize] = data_id;
-                    test_event_log::record_event(format!(
-                        "MAP:{}->v{}",
-                        next_corner.0, next_vert.0
-                    ));
-                    test_event_log::record_event(format!(
-                        "MAP_POINT:{}->p{}",
-                        next_corner.0, point_id.0
-                    ));
+                    if event_log_enabled {
+                        test_event_log::record_event(format!(
+                            "MAP:{}->v{}",
+                            next_corner.0, next_vert.0
+                        ));
+                        test_event_log::record_event(format!(
+                            "MAP_POINT:{}->p{}",
+                            next_corner.0, point_id.0
+                        ));
+                    }
                     point_ids.push(point_id);
                     data_to_corner_map.push(next_corner.0);
                 }
@@ -1442,14 +1445,16 @@ impl MeshDecoder {
                     let point_id = corner_to_point_id(prev_corner);
                     let data_id = point_ids.len() as i32;
                     vertex_to_data_map[prev_vert.0 as usize] = data_id;
-                    test_event_log::record_event(format!(
-                        "MAP:{}->v{}",
-                        prev_corner.0, prev_vert.0
-                    ));
-                    test_event_log::record_event(format!(
-                        "MAP_POINT:{}->p{}",
-                        prev_corner.0, point_id.0
-                    ));
+                    if event_log_enabled {
+                        test_event_log::record_event(format!(
+                            "MAP:{}->v{}",
+                            prev_corner.0, prev_vert.0
+                        ));
+                        test_event_log::record_event(format!(
+                            "MAP_POINT:{}->p{}",
+                            prev_corner.0, point_id.0
+                        ));
+                    }
                     point_ids.push(point_id);
                     data_to_corner_map.push(prev_corner.0);
                 }
@@ -1478,14 +1483,16 @@ impl MeshDecoder {
                             let point_id = corner_to_point_id(corner_id);
                             let data_id = point_ids.len() as i32;
                             vertex_to_data_map[vert_id.0 as usize] = data_id;
-                            test_event_log::record_event(format!(
-                                "MAP:{}->v{}",
-                                corner_id.0, vert_id.0
-                            ));
-                            test_event_log::record_event(format!(
-                                "MAP_POINT:{}->p{}",
-                                corner_id.0, point_id.0
-                            ));
+                            if event_log_enabled {
+                                test_event_log::record_event(format!(
+                                    "MAP:{}->v{}",
+                                    corner_id.0, vert_id.0
+                                ));
+                                test_event_log::record_event(format!(
+                                    "MAP_POINT:{}->p{}",
+                                    corner_id.0, point_id.0
+                                ));
+                            }
                             point_ids.push(point_id);
                             data_to_corner_map.push(corner_id.0);
 
@@ -1606,6 +1613,7 @@ impl MeshDecoder {
         let mut visited_vertices = vec![false; num_vertices];
         let mut visited_faces = vec![false; num_faces];
         let mut prediction_degree: Vec<i32> = vec![0; num_vertices];
+        let event_log_enabled = test_event_log::enabled();
 
         // Buckets (stacks) for priorities 0..2.
         let mut stacks: [Vec<CornerIndex>; 3] = [Vec::new(), Vec::new(), Vec::new()];
@@ -1641,8 +1649,10 @@ impl MeshDecoder {
                 vertex_to_data_map[vi] = point_ids.len() as i32;
                 // Use corner_to_point_id to get mesh PointIndex from corner
                 let point_id = corner_to_point_id(c);
-                test_event_log::record_event(format!("MAP:{}->v{}", c.0, v.0));
-                test_event_log::record_event(format!("MAP_POINT:{}->p{}", c.0, point_id.0));
+                if event_log_enabled {
+                    test_event_log::record_event(format!("MAP:{}->v{}", c.0, v.0));
+                    test_event_log::record_event(format!("MAP_POINT:{}->p{}", c.0, point_id.0));
+                }
                 point_ids.push(point_id);
                 data_to_corner_map.push(c.0);
             }

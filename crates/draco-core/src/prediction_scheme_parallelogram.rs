@@ -46,6 +46,7 @@ pub(crate) fn compute_parallelogram_prediction<DataType: ParallelogramDataType>(
     num_components: usize,
     out_prediction: &mut [DataType],
     label: &str,
+    verbose: bool,
 ) -> bool {
     let oci = table.opposite(ci);
     if oci == INVALID_CORNER_INDEX {
@@ -93,7 +94,7 @@ pub(crate) fn compute_parallelogram_prediction<DataType: ParallelogramDataType>(
         }
 
         // Debug logging for first few predictions
-        if std::env::var("DRACO_VERBOSE").is_ok() {
+        if verbose {
             println!(
                 "{} Pred p={} c={} (o={}): entries({}, {}, {})",
                 label, data_entry_id, ci.0, oci.0, vert_opp, vert_next, vert_prev
@@ -315,6 +316,7 @@ where
 
         let num_entries = size / num_components;
         let mut pred_vals = vec![DataType::default(); num_components];
+        let verbose = std::env::var("DRACO_VERBOSE").is_ok();
 
         // Process from the end (highest data_id) down to 1.
         // Index 0 is handled separately at the end.
@@ -331,6 +333,7 @@ where
                 num_components,
                 &mut pred_vals,
                 "Encoder",
+                verbose,
             );
 
             if !is_parallelogram {
@@ -446,6 +449,7 @@ where
         let data_to_corner_map = self.mesh_data.data_to_corner_map().unwrap();
 
         let mut pred_vals = vec![DataType::default(); num_components];
+        let verbose = std::env::var("DRACO_VERBOSE").is_ok();
 
         // Restore the first value.
         let zero_vals = vec![DataType::default(); num_components];
@@ -469,6 +473,7 @@ where
                 num_components,
                 &mut pred_vals,
                 "Decoder",
+                verbose,
             );
 
             if !is_parallelogram {

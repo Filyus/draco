@@ -18,6 +18,10 @@ pub fn clear() {
     }
 }
 
+pub fn enabled() -> bool {
+    LOG.get().is_some()
+}
+
 pub fn record_event(s: String) {
     if let Some(m) = LOG.get() {
         m.lock().unwrap().push(s);
