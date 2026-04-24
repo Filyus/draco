@@ -1002,11 +1002,11 @@ files:
       - name: "PointCloudEncoder"
         type: "struct"
         progress: "fully implemented"
-        note: "Supports Sequential and KD-Tree encoding methods. Version-aware encoding for v1.x and v2.x compatibility."
+        note: "Supports Sequential and KD-Tree encoding methods. Version-aware encoding for v1.x and v2.x compatibility. Sequential raw/generic attributes write raw attribute bytes instead of integer prediction framing, matching decoder_type=0 and C++ decode expectations."
     functions:
       - name: "encode"
         progress: "fully implemented"
-        note: "Supports v1.3 (Sequential) and v2.3 (KD-Tree) bitstreams."
+        note: "Supports v1.3 (Sequential) and v2.3 (KD-Tree) bitstreams. Rust-encoded v2.3 sequential point-cloud POSITION/COLOR output is covered by C++ draco_decoder interop."
       - name: "encode_header"
         progress: "fully implemented"
         note: "Sets bitstream version and flags based on EncoderOptions."
@@ -2105,6 +2105,9 @@ files:
       - name: "compare_rust_vs_cpp_decode"
         progress: "fully implemented"
         note: "Mandatory Rust/C++ interop regression for a Rust-encoded multi-attribute Edgebreaker mesh. Forces encoding_method=1, encoding_speed=5, decoding_speed=5, split_mesh_on_seams=0, keeps POSITION/NORMAL/TEX_COORD quantization enabled, asserts the DRC method byte is Edgebreaker, requires compiled C++ draco_decoder.exe/draco_encoder.exe instead of skipping, and compares Rust decode plus C++ OBJ decode for positions, normals, texcoords, and face count within quantization tolerances."
+      - name: "rust_encode_cpp_decode_small_matrix"
+        progress: "added"
+        note: "Small Rust encode -> C++ draco_decoder matrix covering mesh sequential, mesh Edgebreaker, and point-cloud sequential. Mesh cases include POSITION, NORMAL, TEX_COORD, and COLOR; point-cloud sequential covers v2.3 POSITION/COLOR. Each case validates Rust self-decode invariants and requires C++ draco_decoder to produce non-empty decoded output."
 
   - path: "crates/draco-core/tests/edgebreaker_attribute_seams_test.rs"
     functions:

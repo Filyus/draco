@@ -254,25 +254,57 @@ impl PointCloudEncoder {
                     integer_encoders.push(None);
                     normal_encoders.push(Some(att_encoder));
                 } else {
-                    let mut att_encoder = SequentialIntegerAttributeEncoder::new();
-                    att_encoder.init(i);
+                    let quant_bits = self.options.get_attribute_int(i, "quantization_bits", 0);
+                    let uses_quantization = quant_bits > 0
+                        && (att.data_type() == crate::draco_types::DataType::Float32
+                            || att.data_type() == crate::draco_types::DataType::Float64);
 
-                    if !att_encoder.encode_values(
-                        pc,
-                        &point_ids,
-                        out_buffer,
-                        &self.options,
-                        self,
-                        None,
-                        false,
-                    ) {
-                        return Err(DracoError::DracoError(format!(
-                            "Failed to encode attribute {}",
-                            i
-                        )));
+                    if uses_quantization {
+                        let mut att_encoder = SequentialIntegerAttributeEncoder::new();
+                        att_encoder.init(i);
+
+                        if !att_encoder.encode_values(
+                            pc,
+                            &point_ids,
+                            out_buffer,
+                            &self.options,
+                            self,
+                            None,
+                            false,
+                        ) {
+                            return Err(DracoError::DracoError(format!(
+                                "Failed to encode attribute {}",
+                                i
+                            )));
+                        }
+
+                        integer_encoders.push(Some(att_encoder));
+                    } else {
+                        let entry_size = att.byte_stride() as usize;
+                        let data = att.buffer().data();
+                        for &point_id in &point_ids {
+                            let value_index = att.mapped_index(point_id).0 as usize;
+                            let offset = value_index.checked_mul(entry_size).ok_or_else(|| {
+                                DracoError::DracoError(
+                                    "Point cloud raw attribute offset overflow".to_string(),
+                                )
+                            })?;
+                            let end = offset.checked_add(entry_size).ok_or_else(|| {
+                                DracoError::DracoError(
+                                    "Point cloud raw attribute byte range overflow".to_string(),
+                                )
+                            })?;
+                            if end > data.len() {
+                                return Err(DracoError::DracoError(
+                                    "Point cloud raw attribute data out of bounds".to_string(),
+                                ));
+                            }
+                            out_buffer.encode_data(&data[offset..end]);
+                        }
+
+                        integer_encoders.push(None);
                     }
 
-                    integer_encoders.push(Some(att_encoder));
                     normal_encoders.push(None);
                 }
             }

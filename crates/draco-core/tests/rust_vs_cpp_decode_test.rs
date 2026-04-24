@@ -13,6 +13,9 @@ use draco_core::geometry_indices::PointIndex;
 use draco_core::mesh::Mesh;
 use draco_core::mesh_decoder::MeshDecoder;
 use draco_core::mesh_encoder::MeshEncoder;
+use draco_core::point_cloud::PointCloud;
+use draco_core::point_cloud_decoder::PointCloudDecoder;
+use draco_core::point_cloud_encoder::PointCloudEncoder;
 
 const POSITION_TOLERANCE: f32 = 0.01;
 const NORMAL_TOLERANCE: f32 = 0.02;
@@ -165,6 +168,12 @@ fn write_f32s(attribute: &mut PointAttribute, values: &[f32]) {
     }
 }
 
+fn write_u8s(attribute: &mut PointAttribute, values: &[u8]) {
+    for (i, value) in values.iter().enumerate() {
+        attribute.buffer_mut().write(i, &[*value]);
+    }
+}
+
 fn read_f32_tuple(attribute: &PointAttribute, point: PointIndex, components: usize) -> Vec<f32> {
     let value_index = attribute.mapped_index(point).0 as usize;
     let offset = value_index * attribute.byte_stride() as usize;
@@ -214,6 +223,10 @@ fn build_multi_attribute_mesh() -> (Mesh, Vec<VertexRecord>, usize) {
     let tex_coords: Vec<f32> = vec![
         0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.1, 0.2, 0.1, 0.8, 0.9, 0.8, 0.9, 0.2,
     ];
+    let colors: Vec<u8> = vec![
+        255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255, 255, 0, 255, 255, 0, 255,
+        255, 255, 128, 64, 255, 255, 255, 128, 64, 255,
+    ];
     let indices: Vec<u32> = vec![0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4];
 
     let vertex_count = positions.len() / 3;
@@ -253,6 +266,17 @@ fn build_multi_attribute_mesh() -> (Mesh, Vec<VertexRecord>, usize) {
     write_f32s(&mut tex_coord_attribute, &tex_coords);
     mesh.add_attribute(tex_coord_attribute);
 
+    let mut color_attribute = PointAttribute::new();
+    color_attribute.init(
+        GeometryAttributeType::Color,
+        4,
+        DataType::Uint8,
+        true,
+        vertex_count,
+    );
+    write_u8s(&mut color_attribute, &colors);
+    mesh.add_attribute(color_attribute);
+
     for triangle in indices.chunks_exact(3) {
         mesh.add_face([
             PointIndex(triangle[0]),
@@ -270,6 +294,103 @@ fn build_multi_attribute_mesh() -> (Mesh, Vec<VertexRecord>, usize) {
         .collect();
 
     (mesh, expected_vertices, face_count)
+}
+
+fn build_point_cloud_with_attributes() -> PointCloud {
+    let positions: Vec<f32> = vec![
+        -1.0, -1.0, 0.0, 0.0, -1.0, 0.5, 1.0, -1.0, 0.0, -0.5, 0.0, 1.0, 0.5, 0.0, 1.0, -1.0, 1.0,
+        0.0, 0.0, 1.0, 0.5, 1.0, 1.0, 0.0,
+    ];
+    let colors: Vec<u8> = vec![
+        255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255, 255, 0, 255, 255, 0, 255,
+        255, 255, 128, 64, 255, 255, 255, 128, 64, 255,
+    ];
+    let point_count = positions.len() / 3;
+    let mut point_cloud = PointCloud::new();
+    point_cloud.set_num_points(point_count);
+
+    let mut position_attribute = PointAttribute::new();
+    position_attribute.init(
+        GeometryAttributeType::Position,
+        3,
+        DataType::Float32,
+        false,
+        point_count,
+    );
+    write_f32s(&mut position_attribute, &positions);
+    point_cloud.add_attribute(position_attribute);
+
+    let mut color_attribute = PointAttribute::new();
+    color_attribute.init(
+        GeometryAttributeType::Color,
+        4,
+        DataType::Uint8,
+        true,
+        point_count,
+    );
+    write_u8s(&mut color_attribute, &colors);
+    point_cloud.add_attribute(color_attribute);
+
+    point_cloud
+}
+
+fn rust_decode_mesh_invariants(bytes: &[u8], expected_method: u8) {
+    assert_eq!(&bytes[0..5], b"DRACO");
+    assert_eq!(bytes[7], 1, "expected triangular mesh geometry type");
+    assert_eq!(bytes[8], expected_method, "unexpected mesh encoding method");
+
+    let mut decoder = MeshDecoder::new();
+    let mut mesh = Mesh::new();
+    let mut decode_buffer = DecoderBuffer::new(bytes);
+    decoder
+        .decode(&mut decode_buffer, &mut mesh)
+        .expect("Rust decode of Rust mesh stream failed");
+
+    assert!(mesh.num_points() > 0);
+    assert!(mesh.num_faces() > 0);
+    assert!(mesh.num_attributes() >= 4);
+    assert!(mesh.named_attribute_id(GeometryAttributeType::Position) >= 0);
+    assert!(mesh.named_attribute_id(GeometryAttributeType::Normal) >= 0);
+    assert!(mesh.named_attribute_id(GeometryAttributeType::TexCoord) >= 0);
+    assert!(mesh.named_attribute_id(GeometryAttributeType::Color) >= 0);
+}
+
+fn rust_decode_point_cloud_invariants(bytes: &[u8]) {
+    assert_eq!(&bytes[0..5], b"DRACO");
+    assert_eq!(bytes[7], 0, "expected point cloud geometry type");
+    assert_eq!(bytes[8], 0, "expected sequential point cloud encoding");
+
+    let mut decoder = PointCloudDecoder::new();
+    let mut point_cloud = PointCloud::new();
+    let mut decode_buffer = DecoderBuffer::new(bytes);
+    decoder
+        .decode(&mut decode_buffer, &mut point_cloud)
+        .expect("Rust decode of Rust point-cloud stream failed");
+
+    assert!(point_cloud.num_points() > 0);
+    assert!(point_cloud.num_attributes() >= 2);
+    assert!(point_cloud.named_attribute_id(GeometryAttributeType::Position) >= 0);
+    assert!(point_cloud.named_attribute_id(GeometryAttributeType::Color) >= 0);
+}
+
+fn run_cpp_decoder(decoder_exe: &Path, drc_path: &Path, out_path: &Path, context: &str) {
+    let output = Command::new(decoder_exe)
+        .arg("-i")
+        .arg(drc_path)
+        .arg("-o")
+        .arg(out_path)
+        .output()
+        .expect("run C++ Draco decoder");
+
+    assert!(
+        output.status.success(),
+        "C++ decoder failed for {context}\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let metadata = fs::metadata(out_path).expect("C++ decoder output missing");
+    assert!(metadata.len() > 0, "C++ decoder output is empty");
 }
 
 fn decoded_vertex_records(mesh: &Mesh) -> Vec<VertexRecord> {
@@ -394,6 +515,75 @@ fn assert_vec2_sets_match(
         };
         matched[actual_index] = true;
     }
+}
+
+#[test]
+fn rust_encode_cpp_decode_small_matrix() {
+    let decoder_exe = find_cpp_tool("DRACO_CPP_DECODER", "draco_decoder.exe");
+    let tmp = std::env::temp_dir().join("draco_rust_encode_cpp_decode_small_matrix");
+    fs::create_dir_all(&tmp).expect("create temp dir");
+
+    for (name, encoding_method, encoding_speed) in [
+        ("mesh_sequential_pos_norm_uv_color", 0, 10),
+        ("mesh_edgebreaker_pos_norm_uv_color", 1, 5),
+    ] {
+        let (mesh, _expected_vertices, _expected_face_count) = build_multi_attribute_mesh();
+        let position_id = mesh.named_attribute_id(GeometryAttributeType::Position);
+        let normal_id = mesh.named_attribute_id(GeometryAttributeType::Normal);
+        let tex_coord_id = mesh.named_attribute_id(GeometryAttributeType::TexCoord);
+
+        let mut options = EncoderOptions::default();
+        options.set_global_int("encoding_method", encoding_method);
+        options.set_global_int("encoding_speed", encoding_speed);
+        options.set_global_int("decoding_speed", encoding_speed);
+        options.set_global_int("split_mesh_on_seams", 0);
+        options.set_attribute_int(position_id, "quantization_bits", 14);
+        options.set_attribute_int(normal_id, "quantization_bits", 10);
+        options.set_attribute_int(tex_coord_id, "quantization_bits", 12);
+
+        let mut encoder = MeshEncoder::new();
+        encoder.set_mesh(mesh);
+        let mut encoded = EncoderBuffer::new();
+        encoder
+            .encode(&options, &mut encoded)
+            .unwrap_or_else(|err| panic!("Rust mesh encode failed for {name}: {err:?}"));
+        let draco_bytes = encoded.data().to_vec();
+
+        rust_decode_mesh_invariants(&draco_bytes, encoding_method as u8);
+
+        let drc_path = tmp.join(format!("{name}.drc"));
+        let ply_path = tmp.join(format!("{name}.ply"));
+        fs::write(&drc_path, &draco_bytes).expect("write Rust mesh DRC");
+        run_cpp_decoder(&decoder_exe, &drc_path, &ply_path, name);
+    }
+
+    let point_cloud = build_point_cloud_with_attributes();
+    let position_id = point_cloud.named_attribute_id(GeometryAttributeType::Position);
+
+    let mut options = EncoderOptions::default();
+    options.set_global_int("encoding_method", 0);
+    options.set_version(2, 3);
+    options.set_attribute_int(position_id, "quantization_bits", 14);
+
+    let mut encoder = PointCloudEncoder::new();
+    encoder.set_point_cloud(point_cloud);
+    let mut encoded = EncoderBuffer::new();
+    encoder
+        .encode(&options, &mut encoded)
+        .expect("Rust point-cloud encode failed");
+    let draco_bytes = encoded.data().to_vec();
+
+    rust_decode_point_cloud_invariants(&draco_bytes);
+
+    let drc_path = tmp.join("point_cloud_sequential_pos_color.drc");
+    let ply_path = tmp.join("point_cloud_sequential_pos_color.ply");
+    fs::write(&drc_path, &draco_bytes).expect("write Rust point-cloud DRC");
+    run_cpp_decoder(
+        &decoder_exe,
+        &drc_path,
+        &ply_path,
+        "point_cloud_sequential_pos_color",
+    );
 }
 
 #[test]
