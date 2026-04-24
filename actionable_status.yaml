@@ -28,19 +28,4 @@
 version: 1
 last_reviewed: "2026-04-24"
 
-items:
-  - id: rust-point-cloud-sequential-quantized-encode-interop
-    area: draco-core
-    priority: medium
-    status: open
-    summary: "Rust-encoded point-cloud sequential streams with quantized POSITION and/or NORMAL are not yet proven C++ decoder compatible."
-    evidence:
-      - path: "crates/draco-core/tests/rust_vs_cpp_decode_test.rs"
-        note: "The committed small encode interop matrix covers point-cloud sequential v2.3 POSITION/COLOR, but intentionally avoids point-cloud NORMAL and quantized POSITION."
-      - path: "local diagnostic run, 2026-04-24"
-        note: "Point-cloud sequential with NORMAL failed Rust self-decode with Failed to decode quantization parameters; v2.3 point-cloud sequential with quantized POSITION passed Rust self-decode but C++ draco_decoder failed with Failed to decode point attributes."
-    impact: "Mesh encode interop is now covered by small sequential/Edgebreaker cases, but point-cloud sequential encode confidence remains lower for portable-transform attributes."
-    next_steps:
-      - "Compare C++ SequentialQuantizationAttributeEncoder/SequentialNormalAttributeEncoder stream layout with Rust PointCloudEncoder for v1.3 and v2.3."
-      - "Add a focused Rust encode -> C++ decode test for quantized point-cloud POSITION once the layout is aligned."
-      - "Add point-cloud NORMAL encode interop coverage after quantized POSITION is stable."
+items: []

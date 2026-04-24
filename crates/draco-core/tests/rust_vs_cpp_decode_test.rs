@@ -301,6 +301,10 @@ fn build_point_cloud_with_attributes() -> PointCloud {
         -1.0, -1.0, 0.0, 0.0, -1.0, 0.5, 1.0, -1.0, 0.0, -0.5, 0.0, 1.0, 0.5, 0.0, 1.0, -1.0, 1.0,
         0.0, 0.0, 1.0, 0.5, 1.0, 1.0, 0.0,
     ];
+    let normals: Vec<f32> = vec![
+        0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0,
+        1.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+    ];
     let colors: Vec<u8> = vec![
         255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255, 255, 0, 255, 255, 0, 255,
         255, 255, 128, 64, 255, 255, 255, 128, 64, 255,
@@ -319,6 +323,17 @@ fn build_point_cloud_with_attributes() -> PointCloud {
     );
     write_f32s(&mut position_attribute, &positions);
     point_cloud.add_attribute(position_attribute);
+
+    let mut normal_attribute = PointAttribute::new();
+    normal_attribute.init(
+        GeometryAttributeType::Normal,
+        3,
+        DataType::Float32,
+        false,
+        point_count,
+    );
+    write_f32s(&mut normal_attribute, &normals);
+    point_cloud.add_attribute(normal_attribute);
 
     let mut color_attribute = PointAttribute::new();
     color_attribute.init(
@@ -368,8 +383,9 @@ fn rust_decode_point_cloud_invariants(bytes: &[u8]) {
         .expect("Rust decode of Rust point-cloud stream failed");
 
     assert!(point_cloud.num_points() > 0);
-    assert!(point_cloud.num_attributes() >= 2);
+    assert!(point_cloud.num_attributes() >= 3);
     assert!(point_cloud.named_attribute_id(GeometryAttributeType::Position) >= 0);
+    assert!(point_cloud.named_attribute_id(GeometryAttributeType::Normal) >= 0);
     assert!(point_cloud.named_attribute_id(GeometryAttributeType::Color) >= 0);
 }
 
@@ -557,33 +573,43 @@ fn rust_encode_cpp_decode_small_matrix() {
         run_cpp_decoder(&decoder_exe, &drc_path, &ply_path, name);
     }
 
-    let point_cloud = build_point_cloud_with_attributes();
-    let position_id = point_cloud.named_attribute_id(GeometryAttributeType::Position);
+    for (name, prediction_scheme) in [
+        ("point_cloud_sequential_pos_norm_color", None),
+        (
+            "point_cloud_sequential_no_prediction_pos_norm_color",
+            Some(-2),
+        ),
+    ] {
+        let point_cloud = build_point_cloud_with_attributes();
+        let position_id = point_cloud.named_attribute_id(GeometryAttributeType::Position);
+        let normal_id = point_cloud.named_attribute_id(GeometryAttributeType::Normal);
 
-    let mut options = EncoderOptions::default();
-    options.set_global_int("encoding_method", 0);
-    options.set_version(2, 3);
-    options.set_attribute_int(position_id, "quantization_bits", 14);
+        let mut options = EncoderOptions::default();
+        options.set_global_int("encoding_method", 0);
+        options.set_global_int("encoding_speed", 5);
+        options.set_global_int("decoding_speed", 5);
+        options.set_version(2, 3);
+        options.set_attribute_int(position_id, "quantization_bits", 14);
+        options.set_attribute_int(normal_id, "quantization_bits", 10);
+        if let Some(prediction_scheme) = prediction_scheme {
+            options.set_prediction_scheme(prediction_scheme);
+        }
 
-    let mut encoder = PointCloudEncoder::new();
-    encoder.set_point_cloud(point_cloud);
-    let mut encoded = EncoderBuffer::new();
-    encoder
-        .encode(&options, &mut encoded)
-        .expect("Rust point-cloud encode failed");
-    let draco_bytes = encoded.data().to_vec();
+        let mut encoder = PointCloudEncoder::new();
+        encoder.set_point_cloud(point_cloud);
+        let mut encoded = EncoderBuffer::new();
+        encoder
+            .encode(&options, &mut encoded)
+            .unwrap_or_else(|err| panic!("Rust point-cloud encode failed for {name}: {err:?}"));
+        let draco_bytes = encoded.data().to_vec();
 
-    rust_decode_point_cloud_invariants(&draco_bytes);
+        rust_decode_point_cloud_invariants(&draco_bytes);
 
-    let drc_path = tmp.join("point_cloud_sequential_pos_color.drc");
-    let ply_path = tmp.join("point_cloud_sequential_pos_color.ply");
-    fs::write(&drc_path, &draco_bytes).expect("write Rust point-cloud DRC");
-    run_cpp_decoder(
-        &decoder_exe,
-        &drc_path,
-        &ply_path,
-        "point_cloud_sequential_pos_color",
-    );
+        let drc_path = tmp.join(format!("{name}.drc"));
+        let ply_path = tmp.join(format!("{name}.ply"));
+        fs::write(&drc_path, &draco_bytes).expect("write Rust point-cloud DRC");
+        run_cpp_decoder(&decoder_exe, &drc_path, &ply_path, name);
+    }
 }
 
 #[test]
