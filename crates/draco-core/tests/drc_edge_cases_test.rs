@@ -32,6 +32,21 @@ fn draco_header(major: u8, minor: u8, geometry: u8, method: u8) -> Vec<u8> {
     bytes
 }
 
+fn append_varint(bytes: &mut Vec<u8>, value: u64) {
+    let mut value = value;
+    loop {
+        let mut byte = (value & 0x7F) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        bytes.push(byte);
+        if value == 0 {
+            break;
+        }
+    }
+}
+
 fn decode_malformed_without_panic(kind: DecoderKind, bytes: &[u8]) -> Result<(), String> {
     let status = panic::catch_unwind(AssertUnwindSafe(|| match kind {
         DecoderKind::Mesh => {
@@ -50,6 +65,15 @@ fn decode_malformed_without_panic(kind: DecoderKind, bytes: &[u8]) -> Result<(),
     .map_err(|_| "decoder panicked".to_string())?;
 
     status.map_err(|e| format!("{e:?}"))
+}
+
+fn decode_by_header_without_panic(bytes: &[u8]) -> Result<(), String> {
+    let kind = if bytes.len() > 7 && bytes[0..5] == *b"DRACO" && bytes[7] == 0 {
+        DecoderKind::PointCloud
+    } else {
+        DecoderKind::Mesh
+    };
+    decode_malformed_without_panic(kind, bytes)
 }
 
 #[test]
@@ -186,6 +210,125 @@ fn oversized_drc_counts_fail_before_large_allocation() {
             decode_malformed_without_panic(kind, &bytes).is_err(),
             "{name} unexpectedly decoded successfully"
         );
+    }
+}
+
+#[test]
+fn semantically_invalid_drc_payloads_fail_without_panic() {
+    let mut impossible_point_cloud_attribute_count = draco_header(2, 0, 0, 0);
+    impossible_point_cloud_attribute_count.extend_from_slice(&1u32.to_le_bytes());
+    impossible_point_cloud_attribute_count.push(1); // one attribute decoder
+    append_varint(&mut impossible_point_cloud_attribute_count, u32::MAX as u64);
+
+    let mut invalid_point_cloud_attribute_type = draco_header(2, 0, 0, 0);
+    invalid_point_cloud_attribute_type.extend_from_slice(&1u32.to_le_bytes());
+    invalid_point_cloud_attribute_type.push(1); // one attribute decoder
+    append_varint(&mut invalid_point_cloud_attribute_type, 1); // one attribute
+    invalid_point_cloud_attribute_type.push(99); // invalid attribute type
+    invalid_point_cloud_attribute_type.push(9); // FLOAT32
+    invalid_point_cloud_attribute_type.push(3); // components
+    invalid_point_cloud_attribute_type.push(0); // normalized
+    append_varint(&mut invalid_point_cloud_attribute_type, 0); // unique id
+    invalid_point_cloud_attribute_type.push(0); // raw decoder
+    invalid_point_cloud_attribute_type.extend_from_slice(&[0; 12]);
+
+    let mut zero_component_mesh_attribute = draco_header(2, 0, 1, 0);
+    zero_component_mesh_attribute.extend_from_slice(&1u32.to_le_bytes()); // faces
+    zero_component_mesh_attribute.extend_from_slice(&1u32.to_le_bytes()); // points
+    zero_component_mesh_attribute.push(1); // raw connectivity
+    zero_component_mesh_attribute.extend_from_slice(&[0, 0, 0]); // u8 indices
+    zero_component_mesh_attribute.push(1); // one attribute decoder
+    append_varint(&mut zero_component_mesh_attribute, 1); // one attribute
+    zero_component_mesh_attribute.push(0); // POSITION
+    zero_component_mesh_attribute.push(9); // FLOAT32
+    zero_component_mesh_attribute.push(0); // invalid component count
+    zero_component_mesh_attribute.push(0); // normalized
+    append_varint(&mut zero_component_mesh_attribute, 0); // unique id
+    zero_component_mesh_attribute.push(0); // raw decoder
+
+    let cases = [
+        (
+            "impossible point-cloud attribute count",
+            DecoderKind::PointCloud,
+            impossible_point_cloud_attribute_count,
+        ),
+        (
+            "invalid point-cloud attribute type",
+            DecoderKind::PointCloud,
+            invalid_point_cloud_attribute_type,
+        ),
+        (
+            "zero-component mesh attribute",
+            DecoderKind::Mesh,
+            zero_component_mesh_attribute,
+        ),
+    ];
+
+    for (name, kind, bytes) in cases {
+        assert!(
+            decode_malformed_without_panic(kind, &bytes).is_err(),
+            "{name} unexpectedly decoded successfully"
+        );
+    }
+}
+
+#[test]
+fn mutated_supported_drc_inputs_do_not_panic() {
+    let fixture_names = [
+        "legacy_draco/cube_att.mesh_seq.1.0.0.drc",
+        "legacy_draco/cube_att.mesh_eb.1.1.0.drc",
+        "legacy_draco/point_cloud_pos_norm.seq.1.0.0.drc",
+        "point_cloud_no_qp.drc",
+    ];
+
+    for fixture in fixture_names {
+        let original = std::fs::read(repo_testdata_dir().join(fixture))
+            .unwrap_or_else(|e| panic!("failed to read {fixture}: {e}"));
+        assert!(
+            decode_by_header_without_panic(&original).is_ok(),
+            "{fixture} should be a valid baseline fixture"
+        );
+
+        let truncation_points = [
+            0,
+            1,
+            4,
+            5,
+            8,
+            10,
+            original.len() / 4,
+            original.len() / 2,
+            original.len().saturating_sub(1),
+        ];
+        for len in truncation_points {
+            let len = len.min(original.len());
+            let truncated = &original[..len];
+            let _ = decode_by_header_without_panic(truncated);
+        }
+
+        let mutation_offsets = [
+            0,
+            5,
+            6,
+            7,
+            8,
+            10,
+            original.len() / 3,
+            original.len() / 2,
+            original.len().saturating_sub(1),
+        ];
+        for offset in mutation_offsets {
+            if offset >= original.len() {
+                continue;
+            }
+            let mut mutated = original.clone();
+            mutated[offset] ^= 0xA5;
+            let _ = decode_by_header_without_panic(&mutated);
+        }
+
+        let mut extended = original.clone();
+        extended.extend_from_slice(&[0x80, 0x80, 0x80, 0x80, 0x00]);
+        let _ = decode_by_header_without_panic(&extended);
     }
 }
 

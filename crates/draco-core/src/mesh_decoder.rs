@@ -21,6 +21,33 @@ use crate::mesh_edgebreaker_decoder::MeshEdgebreakerDecoder;
 use crate::test_event_log;
 use crate::version::{version_at_least, version_less_than, VERSION_FLAGS_INTRODUCED};
 
+fn validate_num_attributes_in_decoder(
+    num_attributes_in_decoder: usize,
+    remaining_bytes: usize,
+) -> Result<(), DracoError> {
+    // Each attribute must have at least type, data type, component count,
+    // normalized flag, unique id, and a decoder type byte. Reject impossible
+    // counts before reserving vectors from untrusted input.
+    const MIN_ATTRIBUTE_BYTES: usize = 6;
+    if num_attributes_in_decoder == 0
+        || num_attributes_in_decoder > remaining_bytes / MIN_ATTRIBUTE_BYTES
+    {
+        return Err(DracoError::DracoError(
+            "Invalid number of attributes".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_num_components(num_components: u8) -> Result<(), DracoError> {
+    if num_components == 0 {
+        return Err(DracoError::DracoError(
+            "Invalid attribute component count".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub struct MeshDecoder {
     geometry_type: EncodedGeometryType,
     method: u8,
@@ -601,38 +628,20 @@ impl MeshDecoder {
                     "Invalid number of attributes".to_string(),
                 ));
             }
+            validate_num_attributes_in_decoder(num_attributes_in_decoder, buffer.remaining_size())?;
 
             let mut att_ids: Vec<i32> = Vec::with_capacity(num_attributes_in_decoder);
             let mut decoder_types: Vec<u8> = Vec::with_capacity(num_attributes_in_decoder);
 
             for _ in 0..num_attributes_in_decoder {
                 let att_type_val = buffer.decode_u8()?;
-                let att_type = match att_type_val {
-                    0 => GeometryAttributeType::Position,
-                    1 => GeometryAttributeType::Normal,
-                    2 => GeometryAttributeType::Color,
-                    3 => GeometryAttributeType::TexCoord,
-                    4 => GeometryAttributeType::Generic,
-                    _ => GeometryAttributeType::Invalid,
-                };
+                let att_type = GeometryAttributeType::try_from(att_type_val)?;
 
                 let data_type_val = buffer.decode_u8()?;
-                let data_type = match data_type_val {
-                    1 => DataType::Int8,
-                    2 => DataType::Uint8,
-                    3 => DataType::Int16,
-                    4 => DataType::Uint16,
-                    5 => DataType::Int32,
-                    6 => DataType::Uint32,
-                    7 => DataType::Int64,
-                    8 => DataType::Uint64,
-                    9 => DataType::Float32,
-                    10 => DataType::Float64,
-                    11 => DataType::Bool,
-                    _ => DataType::Invalid,
-                };
+                let data_type = DataType::try_from(data_type_val)?;
 
                 let num_components = buffer.decode_u8()?;
+                validate_num_components(num_components)?;
                 let normalized = buffer.decode_u8()? != 0;
                 let unique_id: u32 = if bitstream_version < 0x0103 {
                     buffer.decode_u16()? as u32
@@ -799,7 +808,7 @@ impl MeshDecoder {
                             .generate_point_ids_and_corners_max_prediction_degree(
                                 mesh,
                                 &corner_order,
-                            );
+                            )?;
                         sequenced_point_ids = Some(ids);
                         sequenced_data_to_corner_map = Some(map);
                         sequenced_vertex_to_data_map = Some(v_map); // Use directly from traversal
@@ -823,7 +832,11 @@ impl MeshDecoder {
             // Difference prediction which doesn't need mesh connectivity.
             if self.method == 1 && sequenced_vertex_to_data_map.is_none() {
                 if let Some(ref map) = sequenced_data_to_corner_map {
-                    let ct = self.corner_table.as_ref().unwrap();
+                    let ct = self.corner_table.as_ref().ok_or_else(|| {
+                        DracoError::DracoError(
+                            "Edgebreaker attribute traversal missing corner table".to_string(),
+                        )
+                    })?;
                     let mut v_map = vec![-1i32; ct.num_vertices()];
                     for (i, &c_id) in map.iter().enumerate() {
                         let v = ct.vertex(CornerIndex(c_id));
@@ -1223,10 +1236,11 @@ impl MeshDecoder {
         mesh: &Mesh,
         processed_connectivity_corners: &[u32],
     ) -> Result<(Vec<PointIndex>, Vec<u32>, Vec<i32>), DracoError> {
-        let corner_table = self
-            .corner_table
-            .as_ref()
-            .expect("corner_table must be set before generating point IDs");
+        let corner_table = self.corner_table.as_ref().ok_or_else(|| {
+            DracoError::DracoError(
+                "Edgebreaker DFS attribute traversal missing corner table".to_string(),
+            )
+        })?;
         Self::generate_point_ids_and_corners_dfs_for_table(
             mesh,
             corner_table,
@@ -1483,12 +1497,13 @@ impl MeshDecoder {
         &self,
         mesh: &Mesh,
         _processed_connectivity_corners: &[u32],
-    ) -> (Vec<PointIndex>, Vec<u32>, Vec<i32>) {
+    ) -> Result<(Vec<PointIndex>, Vec<u32>, Vec<i32>), DracoError> {
         // Matches C++ MaxPredictionDegreeTraverser (MESH_TRAVERSAL_PREDICTION_DEGREE).
-        let corner_table = self
-            .corner_table
-            .as_ref()
-            .expect("corner_table must be set before generating point IDs");
+        let corner_table = self.corner_table.as_ref().ok_or_else(|| {
+            DracoError::DracoError(
+                "Edgebreaker prediction-degree traversal missing corner table".to_string(),
+            )
+        })?;
         let num_vertices = corner_table.num_vertices();
         let num_faces = corner_table.num_faces();
 
@@ -1769,7 +1784,7 @@ impl MeshDecoder {
             }
         }
 
-        (point_ids, data_to_corner_map, vertex_to_data_map)
+        Ok((point_ids, data_to_corner_map, vertex_to_data_map))
     }
 
     #[allow(dead_code)]

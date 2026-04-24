@@ -3,6 +3,7 @@ use crate::data_buffer::DataBuffer;
 use crate::draco_types::DataType;
 use crate::geometry_indices::{AttributeValueIndex, PointIndex, INVALID_ATTRIBUTE_VALUE_INDEX};
 use crate::status::DracoError;
+use std::convert::TryFrom;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeometryAttributeType {
@@ -12,6 +13,23 @@ pub enum GeometryAttributeType {
     Color,
     TexCoord,
     Generic,
+}
+
+impl TryFrom<u8> for GeometryAttributeType {
+    type Error = DracoError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Position),
+            1 => Ok(Self::Normal),
+            2 => Ok(Self::Color),
+            3 => Ok(Self::TexCoord),
+            4 => Ok(Self::Generic),
+            _ => Err(DracoError::DracoError(format!(
+                "Invalid geometry attribute type: {value}"
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

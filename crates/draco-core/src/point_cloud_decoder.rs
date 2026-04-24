@@ -70,6 +70,33 @@ fn make_point_ids(num_points: usize) -> Result<Vec<PointIndex>, DracoError> {
     Ok(point_ids)
 }
 
+fn validate_num_attributes_in_decoder(
+    num_attributes_in_decoder: usize,
+    remaining_bytes: usize,
+) -> Result<(), DracoError> {
+    // Each attribute must have at least type, data type, component count,
+    // normalized flag, unique id, and a decoder type byte. Reject impossible
+    // counts before reserving vectors from untrusted input.
+    const MIN_ATTRIBUTE_BYTES: usize = 6;
+    if num_attributes_in_decoder == 0
+        || num_attributes_in_decoder > remaining_bytes / MIN_ATTRIBUTE_BYTES
+    {
+        return Err(DracoError::DracoError(
+            "Invalid number of attributes".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_num_components(num_components: u8) -> Result<(), DracoError> {
+    if num_components == 0 {
+        return Err(DracoError::DracoError(
+            "Invalid attribute component count".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 impl PointCloudDecoder {
     pub fn new() -> Self {
         Self {
@@ -193,6 +220,10 @@ impl PointCloudDecoder {
                         "Invalid number of attributes".to_string(),
                     ));
                 }
+                validate_num_attributes_in_decoder(
+                    num_attributes_in_decoder,
+                    buffer.remaining_size(),
+                )?;
 
                 let mut attribute_specs: Vec<AttributeSpec> =
                     Vec::with_capacity(num_attributes_in_decoder);
@@ -203,32 +234,13 @@ impl PointCloudDecoder {
 
                 for _ in 0..num_attributes_in_decoder {
                     let att_type_val = buffer.decode_u8()?;
-                    let att_type = match att_type_val {
-                        0 => GeometryAttributeType::Position,
-                        1 => GeometryAttributeType::Normal,
-                        2 => GeometryAttributeType::Color,
-                        3 => GeometryAttributeType::TexCoord,
-                        4 => GeometryAttributeType::Generic,
-                        _ => GeometryAttributeType::Invalid,
-                    };
+                    let att_type = GeometryAttributeType::try_from(att_type_val)?;
 
                     let data_type_val = buffer.decode_u8()?;
-                    let data_type = match data_type_val {
-                        1 => DataType::Int8,
-                        2 => DataType::Uint8,
-                        3 => DataType::Int16,
-                        4 => DataType::Uint16,
-                        5 => DataType::Int32,
-                        6 => DataType::Uint32,
-                        7 => DataType::Int64,
-                        8 => DataType::Uint64,
-                        9 => DataType::Float32,
-                        10 => DataType::Float64,
-                        11 => DataType::Bool,
-                        _ => DataType::Invalid,
-                    };
+                    let data_type = DataType::try_from(data_type_val)?;
 
                     let num_components = buffer.decode_u8()?;
+                    validate_num_components(num_components)?;
                     let normalized = buffer.decode_u8()? != 0;
                     let unique_id: u32 = if bitstream_version < 0x0103 {
                         buffer.decode_u16()? as u32
