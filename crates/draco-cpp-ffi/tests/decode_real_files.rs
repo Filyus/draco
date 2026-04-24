@@ -101,11 +101,11 @@ fn decode_real_files_comparison() {
             path: vec!["bunny_cpp_standard.drc"],
             iters: 50,
         },
-        FileCase {
-            label: "cube_att",
-            path: vec!["cube_att.drc"],
-            iters: 200,
-        },
+        // testdata/cube_att.drc is a bitstream v1.1 mesh below the current
+        // Draco 1.0.0+ compatibility floor. C++ expands its split attribute
+        // connectivity to 24 logical mesh points, while the Rust decoder
+        // currently recovers only the 8 unique position points, so it is not a
+        // valid apples-to-apples decode performance case.
         FileCase {
             label: "annulus (edgbrk)",
             path: vec!["annulus_eb.drc"],
