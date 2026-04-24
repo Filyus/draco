@@ -69,18 +69,3 @@ items:
     next_steps:
       - "Decide whether compression should be part of default features."
       - "If not, surface this limitation in public docs and examples."
-
-  - id: sequential-prediction-method-coverage
-    area: draco-core
-    priority: medium
-    status: open
-    summary: "Sequential integer attribute decoder does not cover every declared prediction method."
-    evidence:
-      - path: "crates/draco-core/src/prediction_scheme.rs"
-        note: "Enum declares MultiParallelogram and deprecated texcoord prediction methods."
-      - path: "crates/draco-core/src/sequential_integer_attribute_decoder.rs"
-        note: "Unsupported prediction method branches return false."
-    impact: "Some valid C++-encoded streams can fail when they use unimplemented prediction methods."
-    next_steps:
-      - "Map real fixtures to the unimplemented prediction methods."
-      - "Either implement each method or explicitly reject it earlier with a typed error and fixture coverage."

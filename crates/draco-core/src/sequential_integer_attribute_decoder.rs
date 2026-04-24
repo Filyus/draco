@@ -5,7 +5,9 @@ use crate::point_cloud_decoder::PointCloudDecoder;
 use crate::point_cloud::PointCloud;
 use crate::prediction_scheme_delta::PredictionSchemeDeltaDecoder;
 use crate::prediction_scheme_parallelogram::PredictionSchemeParallelogramDecoder;
+use crate::prediction_scheme_multi_parallelogram::PredictionSchemeMultiParallelogramDecoder;
 use crate::prediction_scheme_constrained_multi_parallelogram::PredictionSchemeConstrainedMultiParallelogramDecoder;
+use crate::prediction_scheme_tex_coords_deprecated::PredictionSchemeTexCoordsDeprecatedDecoder;
 use crate::prediction_scheme_tex_coords_portable::PredictionSchemeTexCoordsPortableDecoder;
 use crate::prediction_scheme_geometric_normal::{
     MeshPredictionSchemeGeometricNormalDecoder,
@@ -137,7 +139,9 @@ impl SequentialIntegerAttributeDecoder {
             PredictionSchemeDeltaDecoder<i32, i32, PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform>,
         > = None;
         let mut predictor_parallelogram_opt: Option<PredictionSchemeParallelogramDecoder<i32, i32, PredictionSchemeWrapDecodingTransform<i32>>> = None;
+        let mut predictor_multi_parallelogram_opt: Option<PredictionSchemeMultiParallelogramDecoder<'_, i32, i32, PredictionSchemeWrapDecodingTransform<i32>>> = None;
         let mut predictor_constrained_multi_parallelogram_opt: Option<PredictionSchemeConstrainedMultiParallelogramDecoder<'_, i32, i32, PredictionSchemeWrapDecodingTransform<i32>>> = None;
+        let mut predictor_tex_coords_deprecated_opt: Option<PredictionSchemeTexCoordsDeprecatedDecoder<'_, PredictionSchemeWrapDecodingTransform<i32>>> = None;
         let mut predictor_tex_coords_opt: Option<PredictionSchemeTexCoordsPortableDecoder> = None;
         let mut predictor_geometric_normal_opt: Option<MeshPredictionSchemeGeometricNormalDecoder> = None;
         
@@ -234,6 +238,68 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
+            PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
+                if let Some(corner_table) = corner_table {
+                         data_to_corner_map.resize(num_points, 0);
+
+                         if let Some(map) = vertex_to_data_map_override {
+                             if map.len() != corner_table.num_vertices() {
+                                 eprintln!("Invalid vertex_to_data_map_override length");
+                                 return false;
+                             }
+                             vertex_to_data_map.resize(map.len(), 0);
+                             vertex_to_data_map.copy_from_slice(map);
+
+                             if let Some(dcm) = data_to_corner_map_override {
+                                 if dcm.len() != num_points {
+                                     eprintln!("Invalid data_to_corner_map_override length");
+                                     return false;
+                                 }
+                                 data_to_corner_map.copy_from_slice(dcm);
+                             }
+                         } else if let Some(map) = data_to_corner_map_override {
+                             if map.len() != num_points {
+                                 eprintln!("Invalid data_to_corner_map_override length");
+                                 return false;
+                             }
+                             data_to_corner_map.copy_from_slice(map);
+
+                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                                 let corner_id = CornerIndex(corner_u32);
+                                 if corner_id == INVALID_CORNER_INDEX {
+                                     continue;
+                                 }
+                                 let v = corner_table.vertex(corner_id).0 as usize;
+                                 if v < vertex_to_data_map.len() {
+                                     vertex_to_data_map[v] = data_id as i32;
+                                 }
+                             }
+                         } else {
+                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                                 let corner_id = CornerIndex(corner_u32);
+                                 if corner_id == INVALID_CORNER_INDEX {
+                                     continue;
+                                 }
+                                 let v = corner_table.vertex(corner_id).0 as usize;
+                                 if v < vertex_to_data_map.len() {
+                                     vertex_to_data_map[v] = data_id as i32;
+                                 }
+                             }
+                         }
+
+                         let mut mesh_data = MeshPredictionSchemeData::new();
+                         mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
+
+                         let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
+                         let predictor = PredictionSchemeMultiParallelogramDecoder::new(transform, mesh_data);
+                         predictor_multi_parallelogram_opt = Some(predictor);
+                } else {
+                    eprintln!("MultiParallelogram prediction requires corner table");
+                    return false;
+                }
+            }
             PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram => {
                 if let Some(corner_table) = corner_table {
                          // Generate maps
@@ -300,6 +366,82 @@ impl SequentialIntegerAttributeDecoder {
                          predictor_constrained_multi_parallelogram_opt = Some(predictor);
                 } else {
                     eprintln!("ConstrainedMultiParallelogram prediction requires corner table");
+                    return false;
+                }
+            }
+            PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
+                if let Some(corner_table) = corner_table {
+                         data_to_corner_map.resize(num_points, 0);
+
+                         if let Some(map) = vertex_to_data_map_override {
+                             if map.len() != corner_table.num_vertices() {
+                                 eprintln!("Invalid vertex_to_data_map_override length");
+                                 return false;
+                             }
+                             vertex_to_data_map.resize(map.len(), 0);
+                             vertex_to_data_map.copy_from_slice(map);
+
+                             if let Some(dcm) = data_to_corner_map_override {
+                                 if dcm.len() != num_points {
+                                     eprintln!("Invalid data_to_corner_map_override length");
+                                     return false;
+                                 }
+                                 data_to_corner_map.copy_from_slice(dcm);
+                             }
+                         } else if let Some(map) = data_to_corner_map_override {
+                             if map.len() != num_points {
+                                 eprintln!("Invalid data_to_corner_map_override length");
+                                 return false;
+                             }
+                             data_to_corner_map.copy_from_slice(map);
+
+                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                                 let corner_id = CornerIndex(corner_u32);
+                                 if corner_id == INVALID_CORNER_INDEX {
+                                     continue;
+                                 }
+                                 let v = corner_table.vertex(corner_id).0 as usize;
+                                 if v < vertex_to_data_map.len() {
+                                     vertex_to_data_map[v] = data_id as i32;
+                                 }
+                             }
+                         } else {
+                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                                 let corner_id = CornerIndex(corner_u32);
+                                 if corner_id == INVALID_CORNER_INDEX {
+                                     continue;
+                                 }
+                                 let v = corner_table.vertex(corner_id).0 as usize;
+                                 if v < vertex_to_data_map.len() {
+                                     vertex_to_data_map[v] = data_id as i32;
+                                 }
+                             }
+                         }
+
+                         let mut mesh_data = MeshPredictionSchemeData::new();
+                         mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
+
+                         let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
+                         let mut predictor = PredictionSchemeTexCoordsDeprecatedDecoder::new(transform);
+                         predictor.init(&mesh_data);
+
+                         let pos_att_id = point_cloud.named_attribute_id(crate::geometry_attribute::GeometryAttributeType::Position);
+                         if pos_att_id >= 0 {
+                             let pos_att = point_cloud.attribute(pos_att_id);
+                             if !predictor.set_parent_attribute(pos_att) {
+                                 eprintln!("Failed to set parent attribute for TexCoordsDeprecated");
+                                 return false;
+                             }
+                         } else {
+                             eprintln!("Position attribute not found for TexCoordsDeprecated");
+                             return false;
+                         }
+
+                         predictor_tex_coords_deprecated_opt = Some(predictor);
+                } else {
+                    eprintln!("TexCoordsDeprecated prediction requires corner table");
                     return false;
                 }
             }
@@ -606,8 +748,28 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
+            PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
+                let predictor = predictor_multi_parallelogram_opt.as_mut().unwrap();
+                if !predictor.decode_prediction_data(in_buffer) {
+                    eprintln!(
+                        "Failed to decode prediction data (att_id={}, method={:?}, transform={:?})",
+                        att_id, selected_method, selected_transform
+                    );
+                    return false;
+                }
+            }
             PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram => {
                 let predictor = predictor_constrained_multi_parallelogram_opt.as_mut().unwrap();
+                if !predictor.decode_prediction_data(in_buffer) {
+                    eprintln!(
+                        "Failed to decode prediction data (att_id={}, method={:?}, transform={:?})",
+                        att_id, selected_method, selected_transform
+                    );
+                    return false;
+                }
+            }
+            PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
+                let predictor = predictor_tex_coords_deprecated_opt.as_mut().unwrap();
                 if !predictor.decode_prediction_data(in_buffer) {
                     eprintln!(
                         "Failed to decode prediction data (att_id={}, method={:?}, transform={:?})",
@@ -649,7 +811,9 @@ impl SequentialIntegerAttributeDecoder {
                 let entry_to_point_id_map: Vec<u32> = point_ids.iter().map(|p| p.0).collect();
                 let map_opt = match selected_method {
                     PredictionSchemeMethod::MeshPredictionParallelogram
+                    | PredictionSchemeMethod::MeshPredictionMultiParallelogram
                     | PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram
+                    | PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated
                     | PredictionSchemeMethod::MeshPredictionTexCoordsPortable
                     | PredictionSchemeMethod::MeshPredictionGeometricNormal => Some(entry_to_point_id_map.as_slice()),
                     _ => None,
@@ -692,9 +856,36 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
+            PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
+                let predictor = predictor_multi_parallelogram_opt.as_mut().unwrap();
+                if !predictor.compute_original_values(&corrections, &mut values, num_values, num_components, None) {
+                    eprintln!(
+                        "Failed to compute original values (att_id={}, method={:?}, transform={:?})",
+                        att_id, selected_method, selected_transform
+                    );
+                    return false;
+                }
+            }
             PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram => {
                 let predictor = predictor_constrained_multi_parallelogram_opt.as_mut().unwrap();
                 if !predictor.compute_original_values(&corrections, &mut values, num_values, num_components, None) {
+                    eprintln!(
+                        "Failed to compute original values (att_id={}, method={:?}, transform={:?})",
+                        att_id, selected_method, selected_transform
+                    );
+                    return false;
+                }
+            }
+            PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
+                let predictor = predictor_tex_coords_deprecated_opt.as_mut().unwrap();
+                let entry_to_point_id_map: Vec<u32> = point_ids.iter().map(|p| p.0).collect();
+                if !predictor.compute_original_values(
+                    &corrections,
+                    &mut values,
+                    num_values,
+                    num_components,
+                    Some(&entry_to_point_id_map),
+                ) {
                     eprintln!(
                         "Failed to compute original values (att_id={}, method={:?}, transform={:?})",
                         att_id, selected_method, selected_transform

@@ -1446,11 +1446,11 @@ files:
       - name: "SequentialIntegerAttributeDecoder"
         type: "struct"
         progress: "fully implemented"
-        note: "Supports Draco prediction framing and multiple mesh prediction schemes. Fixed ZigZag decoding to check are_corrections_positive based on transform type - octahedron normal transforms don't use ZigZag."
+        note: "Supports Draco prediction framing and all declared integer prediction methods, including legacy MultiParallelogram and TexCoordsDeprecated decoding. Fixed ZigZag decoding to check are_corrections_positive based on transform type - octahedron normal transforms don't use ZigZag."
     functions:
       - name: "decode_values"
         progress: "fully implemented"
-        note: "Supports prediction scheme decoding and symbol decoding. Fixed to skip ZigZag decoding for octahedron normal transforms (NormalOctahedron, NormalOctahedronCanonicalized)."
+        note: "Supports prediction scheme decoding and symbol decoding for Difference, Parallelogram, MultiParallelogram, ConstrainedMultiParallelogram, TexCoordsDeprecated, TexCoordsPortable, GeometricNormal, and None. Fixed to skip ZigZag decoding for octahedron normal transforms (NormalOctahedron, NormalOctahedronCanonicalized)."
       - name: "init"
         progress: "fully implemented"
         note: "Matches C++ logic."
@@ -1805,6 +1805,18 @@ files:
         type: "struct"
         progress: "fully implemented"
         note: "Delegates to Wrap encoding transform; reports transform type Wrap and encodes min/max bounds like C++."
+  - path: "crates/draco-core/src/prediction_scheme_multi_parallelogram.rs"
+    structures:
+      - name: "PredictionSchemeMultiParallelogramDecoder"
+        type: "struct"
+        progress: "fully implemented"
+        note: "Backward-compatible decoder for legacy Draco MultiParallelogram prediction. Averages all valid parallelogram predictions around the vertex with C++ unsigned accumulation semantics and falls back to the previous decoded entry when no valid parallelogram exists."
+  - path: "crates/draco-core/src/prediction_scheme_tex_coords_deprecated.rs"
+    structures:
+      - name: "PredictionSchemeTexCoordsDeprecatedDecoder"
+        type: "struct"
+        progress: "fully implemented"
+        note: "Backward-compatible decoder for legacy non-portable Draco TexCoords prediction. Reads version-dependent orientation counts, decodes orientation bits with RAnsBitDecoder, uses POSITION as parent attribute, and computes float-based UV predictions matching the deprecated C++ scheme."
   - path: "crates/draco-core/src/prediction_scheme_geometric_normal.rs"
     structures:
       - name: "PredictionSchemeGeometricNormalDecoder"

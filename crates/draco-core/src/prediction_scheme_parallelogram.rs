@@ -35,7 +35,7 @@ impl ParallelogramDataType for i32 {
 // computation that genuinely needs all these inputs; grouping them would add indirection.
 // Helper function
 #[allow(clippy::too_many_arguments)]
-fn compute_parallelogram_prediction<DataType: ParallelogramDataType>(
+pub(crate) fn compute_parallelogram_prediction<DataType: ParallelogramDataType>(
     data_entry_id: i32,
     ci: CornerIndex,
     table: &CornerTable,

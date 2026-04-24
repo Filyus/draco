@@ -39,10 +39,14 @@ pub mod prediction_scheme;
 pub mod prediction_scheme_constrained_multi_parallelogram;
 pub mod prediction_scheme_delta;
 pub mod prediction_scheme_geometric_normal;
+#[cfg(feature = "decoder")]
+pub mod prediction_scheme_multi_parallelogram;
 pub mod prediction_scheme_normal_octahedron_canonicalized_transform_base;
 pub mod prediction_scheme_normal_octahedron_transform_base;
 pub mod prediction_scheme_parallelogram;
 pub mod prediction_scheme_selection;
+#[cfg(feature = "decoder")]
+pub mod prediction_scheme_tex_coords_deprecated;
 pub mod prediction_scheme_tex_coords_portable;
 pub mod prediction_scheme_wrap;
 pub mod quantization_utils;
