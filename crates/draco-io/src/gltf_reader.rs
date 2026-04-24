@@ -456,6 +456,11 @@ struct AccessorLayout<'a> {
     view_end: usize,
 }
 
+struct GlbChunks<'a> {
+    json: &'a [u8],
+    bin: Option<&'a [u8]>,
+}
+
 /// Information about a Draco-compressed primitive within a glTF mesh.
 #[derive(Debug, Clone)]
 pub struct DracoPrimitiveInfo {
@@ -493,82 +498,9 @@ impl GltfReader {
     }
 
     fn from_glb_with_base_path(data: &[u8], base_path: Option<&Path>) -> Result<Self> {
-        if data.len() < 12 {
-            return Err(GltfError::InvalidGlb(
-                "File too small for GLB header".into(),
-            ));
-        }
-
-        let magic = read_u32_le(&data[0..4]);
-        let version = read_u32_le(&data[4..8]);
-        let length = read_u32_le(&data[8..12]) as usize;
-
-        if magic != GLB_MAGIC {
-            return Err(GltfError::InvalidGlb("Invalid GLB magic".into()));
-        }
-        if version != GLB_VERSION {
-            return Err(GltfError::InvalidGlb(format!(
-                "Unsupported GLB version: {}",
-                version
-            )));
-        }
-        if length > data.len() {
-            return Err(GltfError::InvalidGlb("File truncated".into()));
-        }
-
-        let mut offset = 12;
-        let mut json_chunk: Option<&[u8]> = None;
-        let mut bin_chunk: Option<&[u8]> = None;
-
-        // Parse chunks
-        while offset + 8 <= length {
-            let chunk_length = read_u32_le(&data[offset..offset + 4]) as usize;
-            let chunk_type = read_u32_le(&data[offset + 4..offset + 8]);
-            offset += 8;
-
-            if offset + chunk_length > length {
-                return Err(GltfError::InvalidGlb("Chunk extends past file end".into()));
-            }
-
-            let chunk_data = &data[offset..offset + chunk_length];
-            offset += chunk_length;
-
-            match chunk_type {
-                GLB_CHUNK_JSON => json_chunk = Some(chunk_data),
-                GLB_CHUNK_BIN => bin_chunk = Some(chunk_data),
-                _ => {} // Ignore unknown chunks
-            }
-        }
-
-        let json_data = json_chunk.ok_or_else(|| GltfError::InvalidGlb("No JSON chunk".into()))?;
-        let root: GltfRoot = serde_json::from_slice(json_data)?;
-
-        // Load buffers
-        let mut buffers = Vec::with_capacity(root.buffers.len());
-        for (i, buffer) in root.buffers.iter().enumerate() {
-            if i == 0 && buffer.uri.is_none() {
-                // First buffer without URI uses the binary chunk
-                let bin = bin_chunk.ok_or_else(|| {
-                    GltfError::InvalidGlb("Buffer 0 has no URI but no BIN chunk present".into())
-                })?;
-                buffers.push(bin.to_vec());
-            } else if let Some(uri) = &buffer.uri {
-                if uri.starts_with("data:") {
-                    buffers.push(decode_data_uri(uri)?);
-                } else if let Some(base) = base_path {
-                    buffers.push(fs::read(base.join(uri))?);
-                } else {
-                    return Err(GltfError::Unsupported(
-                        "External buffer URIs require opening GLB from a filesystem path".into(),
-                    ));
-                }
-            } else {
-                return Err(GltfError::InvalidGlb(format!(
-                    "Buffer {} has no URI and is not buffer 0",
-                    i
-                )));
-            }
-        }
+        let chunks = parse_glb_chunks(data)?;
+        let root: GltfRoot = serde_json::from_slice(chunks.json)?;
+        let buffers = load_buffers(&root, true, chunks.bin, base_path)?;
 
         Ok(Self { root, buffers })
     }
@@ -576,28 +508,7 @@ impl GltfReader {
     /// Parse from glTF JSON data with optional base path for external buffers.
     pub fn from_gltf(json_data: &[u8], base_path: Option<&Path>) -> Result<Self> {
         let root: GltfRoot = serde_json::from_slice(json_data)?;
-
-        // Load buffers
-        let mut buffers = Vec::with_capacity(root.buffers.len());
-        for buffer in &root.buffers {
-            if let Some(uri) = &buffer.uri {
-                if uri.starts_with("data:") {
-                    buffers.push(decode_data_uri(uri)?);
-                } else {
-                    // External file
-                    let buffer_path = if let Some(base) = base_path {
-                        base.join(uri)
-                    } else {
-                        Path::new(uri).to_path_buf()
-                    };
-                    buffers.push(fs::read(&buffer_path)?);
-                }
-            } else {
-                return Err(GltfError::InvalidGltf(
-                    "Buffer without URI in non-GLB file".into(),
-                ));
-            }
-        }
+        let buffers = load_buffers(&root, false, None, base_path)?;
 
         Ok(Self { root, buffers })
     }
@@ -874,6 +785,31 @@ impl GltfReader {
         GltfAccessorReader::new(&self.root, &self.buffers)
     }
 
+    fn decode_primitive_mesh(
+        &self,
+        mesh_idx: usize,
+        gltf_mesh: &GltfMesh,
+        prim_idx: usize,
+        primitive: &Primitive,
+    ) -> Result<Mesh> {
+        if let Some(draco) = primitive
+            .extensions
+            .as_ref()
+            .and_then(|ext| ext.khr_draco_mesh_compression.as_ref())
+        {
+            let info = DracoPrimitiveInfo {
+                mesh_index: mesh_idx,
+                mesh_name: gltf_mesh.name.clone(),
+                primitive_index: prim_idx,
+                buffer_view: draco.buffer_view,
+                attributes: draco.attributes.clone(),
+            };
+            self.decode_draco_mesh(&info)
+        } else {
+            self.decode_standard_primitive(mesh_idx, prim_idx, primitive)
+        }
+    }
+
     /// Get the number of meshes in the glTF file.
     pub fn num_meshes(&self) -> usize {
         self.root.meshes.len()
@@ -901,6 +837,111 @@ impl GltfReader {
 
 fn read_u32_le(data: &[u8]) -> u32 {
     u32::from_le_bytes([data[0], data[1], data[2], data[3]])
+}
+
+fn parse_glb_chunks(data: &[u8]) -> Result<GlbChunks<'_>> {
+    if data.len() < 12 {
+        return Err(GltfError::InvalidGlb(
+            "File too small for GLB header".into(),
+        ));
+    }
+
+    let magic = read_u32_le(&data[0..4]);
+    let version = read_u32_le(&data[4..8]);
+    let length = read_u32_le(&data[8..12]) as usize;
+
+    if magic != GLB_MAGIC {
+        return Err(GltfError::InvalidGlb("Invalid GLB magic".into()));
+    }
+    if version != GLB_VERSION {
+        return Err(GltfError::InvalidGlb(format!(
+            "Unsupported GLB version: {}",
+            version
+        )));
+    }
+    if length > data.len() {
+        return Err(GltfError::InvalidGlb("File truncated".into()));
+    }
+
+    let mut offset = 12;
+    let mut json_chunk: Option<&[u8]> = None;
+    let mut bin_chunk: Option<&[u8]> = None;
+
+    while offset + 8 <= length {
+        let chunk_length = read_u32_le(&data[offset..offset + 4]) as usize;
+        let chunk_type = read_u32_le(&data[offset + 4..offset + 8]);
+        offset += 8;
+
+        if offset + chunk_length > length {
+            return Err(GltfError::InvalidGlb("Chunk extends past file end".into()));
+        }
+
+        let chunk_data = &data[offset..offset + chunk_length];
+        offset += chunk_length;
+
+        match chunk_type {
+            GLB_CHUNK_JSON => json_chunk = Some(chunk_data),
+            GLB_CHUNK_BIN => bin_chunk = Some(chunk_data),
+            _ => {}
+        }
+    }
+
+    Ok(GlbChunks {
+        json: json_chunk.ok_or_else(|| GltfError::InvalidGlb("No JSON chunk".into()))?,
+        bin: bin_chunk,
+    })
+}
+
+fn load_buffers(
+    root: &GltfRoot,
+    is_glb: bool,
+    glb_bin_chunk: Option<&[u8]>,
+    base_path: Option<&Path>,
+) -> Result<Vec<Vec<u8>>> {
+    let mut buffers = Vec::with_capacity(root.buffers.len());
+    for (i, buffer) in root.buffers.iter().enumerate() {
+        buffers.push(load_buffer(i, buffer, is_glb, glb_bin_chunk, base_path)?);
+    }
+    Ok(buffers)
+}
+
+fn load_buffer(
+    index: usize,
+    buffer: &Buffer,
+    is_glb: bool,
+    glb_bin_chunk: Option<&[u8]>,
+    base_path: Option<&Path>,
+) -> Result<Vec<u8>> {
+    if let Some(uri) = &buffer.uri {
+        if uri.starts_with("data:") {
+            return decode_data_uri(uri);
+        }
+        if let Some(base) = base_path {
+            return Ok(fs::read(base.join(uri))?);
+        }
+        if is_glb {
+            return Err(GltfError::Unsupported(
+                "External buffer URIs require opening GLB from a filesystem path".into(),
+            ));
+        }
+        return Ok(fs::read(Path::new(uri))?);
+    }
+
+    if is_glb {
+        if index == 0 {
+            return glb_bin_chunk.map(|bin| bin.to_vec()).ok_or_else(|| {
+                GltfError::InvalidGlb("Buffer 0 has no URI but no BIN chunk present".into())
+            });
+        }
+        return Err(GltfError::InvalidGlb(format!(
+            "Buffer {} has no URI and is not buffer 0",
+            index
+        )));
+    }
+
+    Err(GltfError::InvalidGltf(
+        "Buffer without URI in non-GLB file".into(),
+    ))
 }
 
 fn accessor_num_components(accessor_type: &str) -> Result<u8> {
@@ -966,25 +1007,7 @@ impl GltfReader {
 
         for (mesh_idx, gltf_mesh) in self.root.meshes.iter().enumerate() {
             for (prim_idx, primitive) in gltf_mesh.primitives.iter().enumerate() {
-                let mesh = if let Some(ext) = &primitive.extensions {
-                    if let Some(draco) = &ext.khr_draco_mesh_compression {
-                        // Draco-compressed primitive
-                        let info = DracoPrimitiveInfo {
-                            mesh_index: mesh_idx,
-                            mesh_name: gltf_mesh.name.clone(),
-                            primitive_index: prim_idx,
-                            buffer_view: draco.buffer_view,
-                            attributes: draco.attributes.clone(),
-                        };
-                        self.decode_draco_mesh(&info)?
-                    } else {
-                        // Standard primitive (no Draco extension)
-                        self.decode_standard_primitive(mesh_idx, prim_idx, primitive)?
-                    }
-                } else {
-                    // Standard primitive (no extensions)
-                    self.decode_standard_primitive(mesh_idx, prim_idx, primitive)?
-                };
+                let mesh = self.decode_primitive_mesh(mesh_idx, gltf_mesh, prim_idx, primitive)?;
                 result.push(mesh);
             }
         }
@@ -1074,22 +1097,8 @@ impl GltfReader {
         if let Some(mesh_idx) = gltf_node.mesh {
             if let Some(gltf_mesh) = self.root.meshes.get(mesh_idx) {
                 for (prim_idx, primitive) in gltf_mesh.primitives.iter().enumerate() {
-                    let mesh = if let Some(ext) = &primitive.extensions {
-                        if let Some(draco) = &ext.khr_draco_mesh_compression {
-                            let info = DracoPrimitiveInfo {
-                                mesh_index: mesh_idx,
-                                mesh_name: gltf_mesh.name.clone(),
-                                primitive_index: prim_idx,
-                                buffer_view: draco.buffer_view,
-                                attributes: draco.attributes.clone(),
-                            };
-                            self.decode_draco_mesh(&info)?
-                        } else {
-                            self.decode_standard_primitive(mesh_idx, prim_idx, primitive)?
-                        }
-                    } else {
-                        self.decode_standard_primitive(mesh_idx, prim_idx, primitive)?
-                    };
+                    let mesh =
+                        self.decode_primitive_mesh(mesh_idx, gltf_mesh, prim_idx, primitive)?;
 
                     let part_name = if gltf_mesh.primitives.len() > 1 {
                         gltf_mesh
