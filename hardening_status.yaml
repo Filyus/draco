@@ -1,0 +1,118 @@
+# Decode hardening status for Rust Draco.
+#
+# Purpose:
+# - Track malformed-input and resource-hardening work separately from
+#   actionable_status.yaml so the main actionable file stays short.
+# - Keep completed hardening evidence, residual risk, and next investigation
+#   steps in one place.
+# - Do not use this file as a full implementation inventory; detailed completed
+#   behavior still belongs in implementation_state.yaml.
+
+version: 1
+last_reviewed: "2026-04-24"
+
+scope:
+  crate: "draco-core"
+  surface: "Rust DRC decode of mesh and point-cloud streams"
+  compatibility_floor: "Draco 1.0.0+ for supported compatibility claims"
+  threat_model:
+    controlled_assets: "Known-good generated/fixture streams from trusted pipelines."
+    untrusted_assets: "Externally supplied .drc bytes that may be truncated, corrupted, inconsistent, oversized, or adversarial."
+
+readiness:
+  controlled_assets: "good"
+  opportunistic_untrusted_decode: "improving"
+  arbitrary_hostile_input: "not_claimed"
+  summary: "Positive-path decode coverage is strong for the supported fixture set. Malformed-input behavior has deterministic regression coverage and several panic/resource hazards have been converted into errors, but sustained fuzzing and explicit caller resource policy are still missing."
+
+completed:
+  - id: malformed-basic-drc-streams
+    status: covered
+    evidence:
+      - path: "crates/draco-core/tests/drc_edge_cases_test.rs"
+        tests:
+          - "malformed_drc_inputs_fail_without_panic"
+          - "mutated_supported_drc_inputs_do_not_panic"
+    note: "Covers empty/short/bad-magic streams, invalid geometry type, truncation, corrupt point-cloud varints, truncated metadata, deterministic byte flips, truncations, and trailing garbage over supported fixtures."
+
+  - id: resource-count-preflight
+    status: covered
+    evidence:
+      - path: "crates/draco-core/tests/drc_edge_cases_test.rs"
+        tests:
+          - "oversized_drc_counts_fail_before_large_allocation"
+      - path: "crates/draco-core/src/mesh_decoder.rs"
+      - path: "crates/draco-core/src/point_cloud_decoder.rs"
+    note: "Oversized mesh face counts, point-cloud point counts, and impossible attribute counts fail before large allocations where these counts are parsed."
+
+  - id: attribute-descriptor-validation
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/draco_types.rs"
+      - path: "crates/draco-core/src/geometry_attribute.rs"
+      - path: "crates/draco-core/tests/drc_edge_cases_test.rs"
+        tests:
+          - "semantically_invalid_drc_payloads_fail_without_panic"
+    note: "Invalid attribute type ids, invalid data type ids, zero-component attributes, and impossible attribute counts are rejected instead of silently constructing invalid descriptors."
+
+  - id: edgebreaker-attribute-seam-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/mesh_decoder.rs"
+        tests:
+          - "attribute_corner_table_rejects_out_of_range_seam_corner"
+    note: "Attribute seam corner-table rebuilding rejects out-of-range seam corners and seam opposite corners instead of unchecked vector indexing."
+
+  - id: edgebreaker-connectivity-invariants
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/edgebreaker_connectivity_decoder.rs"
+        tests:
+          - "invalid_opposite_corner_is_rejected_without_indexing"
+          - "topology_symbol_that_requires_active_corner_fails_cleanly"
+    note: "Active-corner stack access, vertex-hole indexing, and opposite-corner writes use fallible helpers so malformed topology returns controlled errors."
+
+open_risks:
+  - id: no-sustained-fuzzing
+    priority: high
+    summary: "There is no sustained fuzz/property harness that feeds arbitrary bytes into MeshDecoder and PointCloudDecoder."
+    why_it_matters: "Deterministic mutations and hand-written malformed cases catch known classes, but hostile inputs can combine format sections in unexpected ways."
+    next_steps:
+      - "Add a small fuzz/property entrypoint that asserts decode never panics for arbitrary byte slices."
+      - "Seed it with supported fixtures and current malformed edge cases."
+      - "Run native and wasm-relevant configurations before making hostile-input claims."
+
+  - id: drc-level-edgebreaker-corruption
+    priority: high
+    summary: "Current Edgebreaker topology/seam hardening has direct helper regressions, but limited DRC-level malformed topology payloads."
+    why_it_matters: "The most fragile decode surface is cross-section synchronization between topology symbols, split events, start-face bits, seam bitstreams, and prediction side streams."
+    next_steps:
+      - "Add small DRC-level corruptions around Edgebreaker symbol counts, encoded connectivity size, seam bitstreams, and split-event counts."
+      - "Assert controlled failure without panic and keep the cases compact."
+
+  - id: resource-policy-boundary
+    priority: medium
+    summary: "Decoder code avoids arbitrary Draco-format caps, but caller-level input-size, timeout, and memory policy is not documented here."
+    why_it_matters: "Draco is designed for large meshes; hard-coded geometry caps are undesirable, but production callers still need explicit operational limits."
+    next_steps:
+      - "Document recommended caller limits for input byte size, worker isolation, timeout/cancellation, and memory budget."
+      - "Keep decoder internals focused on overflow checks and fallible allocation rather than artificial mesh-size caps."
+
+  - id: decode-path-panic-audit
+    priority: medium
+    summary: "A final audit is still needed for reachable decode-path unwrap/expect/indexing in prediction and attribute decoders."
+    why_it_matters: "Some unwraps are internal invariants for encoder/test paths, but malformed DRC should not reach panicking assumptions in decode paths."
+    next_steps:
+      - "Audit decode-only paths for unwrap/expect and unchecked indexing reachable from external bytes."
+      - "Convert reachable malformed-input hazards into DracoError or false returns with regression tests."
+
+exit_criteria:
+  controlled_assets:
+    - "Supported fixture inventory decodes successfully."
+    - "Legacy Draco 1.0.0+ smoke fixtures remain covered."
+    - "Malformed edge-case regression tests pass."
+  arbitrary_hostile_input:
+    - "Fuzz/property entrypoint exists and runs in CI or documented pre-release process."
+    - "DRC-level Edgebreaker corruption cases fail without panic."
+    - "Caller resource policy is documented."
+    - "Decode-path panic audit has no known reachable malformed-input panics."
