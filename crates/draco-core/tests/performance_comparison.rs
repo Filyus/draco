@@ -270,7 +270,7 @@ fn test_performance_comparison() {
     println!("\n=== Rust vs C++ Encoding Performance ===\n");
     println!(
         "{:>6} {:>6} {:>12} {:>12} {:>10} {:>10}",
-        "Grid", "Speed", "Rust (ms)", "C++ (ms)", "Ratio", "Size"
+        "Grid", "Speed", "Rust (ms)", "C++ (ms)", "Speedup", "Size"
     );
     println!("{}", "-".repeat(70));
 
@@ -298,13 +298,13 @@ fn test_performance_comparison() {
 
             let rust_ms = rust_time * 1000.0;
             let cpp_ms = cpp_time * 1000.0;
-            let ratio = if cpp_ms > 0.0 { rust_ms / cpp_ms } else { 0.0 };
+            let speedup = if rust_ms > 0.0 { cpp_ms / rust_ms } else { 0.0 };
 
             let size_match = if rust_size == cpp_size { "✓" } else { "✗" };
 
             println!(
                 "{:>6} {:>6} {:>10.2}ms {:>10.2}ms {:>9.2}x {:>6} {}",
-                grid_size, speed, rust_ms, cpp_ms, ratio, rust_size, size_match
+                grid_size, speed, rust_ms, cpp_ms, speedup, rust_size, size_match
             );
         }
 
@@ -312,5 +312,5 @@ fn test_performance_comparison() {
     }
 
     println!("\nNote: C++ times include process startup overhead (~10-20ms)");
-    println!("      Ratio < 1.0 means Rust is faster, > 1.0 means C++ is faster\n");
+    println!("      Speedup > 1.0 means Rust is faster, < 1.0 means C++ is faster\n");
 }

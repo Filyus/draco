@@ -167,7 +167,7 @@ fn profile_sequential_encoding() {
         if cpp_time >= 0 {
             let cpp_ms = cpp_time as f64 / 1000.0;
             println!("  C++  avg: {:.2}ms", cpp_ms);
-            println!("  Ratio (Rust/C++): {:.2}x", avg / cpp_ms);
+            println!("  Speedup (C++/Rust): {:.2}x", cpp_ms / avg);
         }
 
         println!();
@@ -300,14 +300,14 @@ fn profile_detailed_breakdown() {
     if cpp_time >= 0 {
         let cpp_us = cpp_time as f64;
         println!("C++ avg:               {:7.1} µs", cpp_us);
-        println!("Rust/C++ ratio:        {:7.2}x", total_us / cpp_us);
+        println!("C++/Rust speedup:      {:7.2}x", cpp_us / total_us);
         println!();
         println!("If Rust matched C++ at encoding core, total would be:");
         let hypothetical = mesh_clone_us + options_us + cpp_us;
         println!(
-            "  {:7.1} µs (ratio: {:.2}x)",
+            "  {:7.1} µs (speedup: {:.2}x)",
             hypothetical,
-            hypothetical / cpp_us
+            cpp_us / hypothetical
         );
     }
 }
@@ -1070,7 +1070,7 @@ fn profile_full_encode_breakdown() {
     println!("  3. Full Rust encode:      {:7.1} µs", full_encode_us);
     println!("  4. Full C++ encode:       {:7.1} µs", cpp_avg);
     println!();
-    println!("Rust/C++ ratio: {:.2}x", full_encode_us / cpp_avg);
+    println!("C++/Rust speedup: {:.2}x", cpp_avg / full_encode_us);
     println!();
     println!(
         "CornerTable as % of full: {:.1}%",
@@ -1271,8 +1271,8 @@ fn profile_rust_vs_cpp_breakdown() {
             cpp_profile.encode_time_us as f64
         );
         println!(
-            "  Ratio:        {:.2}x {}",
-            rust_encode / cpp_profile.encode_time_us as f64,
+            "  Speedup:      {:.2}x {}",
+            cpp_profile.encode_time_us as f64 / rust_encode,
             if rust_encode < cpp_profile.encode_time_us as f64 {
                 "(Rust faster)"
             } else {
@@ -1287,8 +1287,8 @@ fn profile_rust_vs_cpp_breakdown() {
             cpp_profile.total_time_us as f64
         );
         println!(
-            "  Ratio:        {:.2}x {}",
-            rust_total / cpp_profile.total_time_us as f64,
+            "  Speedup:      {:.2}x {}",
+            cpp_profile.total_time_us as f64 / rust_total,
             if rust_total < cpp_profile.total_time_us as f64 {
                 "(Rust faster)"
             } else {
@@ -1406,14 +1406,14 @@ fn profile_decode_rust_vs_cpp() {
         println!("  Faces:      {}\n", rust_num_faces);
 
         // Comparison
-        let ratio = rust_avg / cpp_result.decode_time_us as f64;
+        let speedup = cpp_result.decode_time_us as f64 / rust_avg;
         println!("Comparison:");
         println!("  Rust:       {:7.1} µs", rust_avg);
         println!("  C++:        {:7.1} µs", cpp_result.decode_time_us as f64);
         println!(
-            "  Ratio:      {:.2}x {}",
-            ratio,
-            if ratio < 1.0 {
+            "  Speedup:    {:.2}x {}",
+            speedup,
+            if speedup > 1.0 {
                 "(Rust faster)"
             } else {
                 "(C++ faster)"
@@ -1516,11 +1516,11 @@ fn profile_decode_sequential_breakdown() {
     println!("  Decode:       {:7.1} µs", decode_us);
     println!("  TOTAL:        {:7.1} µs", buf_init_us + decode_us);
 
-    let ratio = decode_us / cpp_result.decode_time_us as f64;
+    let speedup = cpp_result.decode_time_us as f64 / decode_us;
     println!(
-        "\nRatio: {:.2}x {}",
-        ratio,
-        if ratio < 1.0 {
+        "\nSpeedup: {:.2}x {}",
+        speedup,
+        if speedup > 1.0 {
             "(Rust faster)"
         } else {
             "(C++ faster)"

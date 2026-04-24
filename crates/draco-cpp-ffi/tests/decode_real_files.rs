@@ -128,7 +128,7 @@ fn decode_real_files_comparison() {
     // ── Reference files (synthetic, all speeds) ──────────────────────────────
     println!("── Synthetic reference files (C++ encoder output, speeds 0–10) ─────────────");
     println!("┌──────────────────────┬────────┬───────────┬───────────┬─────────┬─────────┐");
-    println!("│ File                 │ Bytes  │ Rust (µs) │ C++ (µs)  │  Ratio  │ Winner  │");
+    println!("│ File                 │ Bytes  │ Rust (µs) │ C++ (µs)  │ Speedup │ Winner  │");
     println!("├──────────────────────┼────────┼───────────┼───────────┼─────────┼─────────┤");
 
     for case in &reference_files {
@@ -152,8 +152,8 @@ fn decode_real_files_comparison() {
 
         match (rust, cpp) {
             (Some((r_us, r_pts, r_faces)), Some((c_us, c_pts, c_faces))) => {
-                let ratio = r_us / c_us;
-                let winner = if ratio <= 1.0 { "Rust" } else { "C++" };
+                let speedup = c_us / r_us;
+                let winner = if speedup >= 1.0 { "Rust" } else { "C++" };
                 let ok = if r_pts == c_pts && r_faces == c_faces {
                     "✓"
                 } else {
@@ -165,7 +165,7 @@ fn decode_real_files_comparison() {
                     data.len(),
                     r_us,
                     c_us,
-                    ratio,
+                    speedup,
                     ok,
                     winner
                 );
@@ -191,7 +191,7 @@ fn decode_real_files_comparison() {
     println!();
     println!("── Real-world .drc files ─────────────────────────────────────────────────────");
     println!("┌──────────────────────┬────────┬───────────┬───────────┬─────────┬─────────┐");
-    println!("│ File                 │ Bytes  │ Rust (µs) │ C++ (µs)  │  Ratio  │ Winner  │");
+    println!("│ File                 │ Bytes  │ Rust (µs) │ C++ (µs)  │ Speedup │ Winner  │");
     println!("├──────────────────────┼────────┼───────────┼───────────┼─────────┼─────────┤");
 
     for case in real_files {
@@ -215,8 +215,8 @@ fn decode_real_files_comparison() {
 
         match (rust, cpp) {
             (Some((r_us, r_pts, r_faces)), Some((c_us, c_pts, c_faces))) => {
-                let ratio = r_us / c_us;
-                let winner = if ratio <= 1.0 { "Rust" } else { "C++" };
+                let speedup = c_us / r_us;
+                let winner = if speedup >= 1.0 { "Rust" } else { "C++" };
                 let ok = if r_pts == c_pts && r_faces == c_faces {
                     "✓"
                 } else {
@@ -228,7 +228,7 @@ fn decode_real_files_comparison() {
                     data.len(),
                     r_us,
                     c_us,
-                    ratio,
+                    speedup,
                     ok,
                     winner
                 );
@@ -251,7 +251,7 @@ fn decode_real_files_comparison() {
     println!("└──────────────────────┴────────┴───────────┴───────────┴─────────┴─────────┘");
     println!();
     println!("Notes:");
-    println!("  • Ratio < 1.0x means Rust is faster");
+    println!("  • Speedup > 1.0x means Rust is faster");
     println!("  • ✓ = decoded point/face counts match between Rust and C++");
     println!("  • Iterations: reference files = 200, real-world files = 50");
     println!("  • C++ built with /O2 (Release), Rust with opt-level=3 + thin LTO");

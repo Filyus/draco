@@ -140,7 +140,7 @@ fn test_ffi_performance_comparison() {
 
     println!(
         "{:>6} {:>6} {:>12} {:>12} {:>10} {:>14}",
-        "Grid", "Speed", "Rust (ms)", "C++ (ms)", "Ratio", "Size"
+        "Grid", "Speed", "Rust (ms)", "C++ (ms)", "Speedup", "Size"
     );
     println!("{}", "-".repeat(75));
 
@@ -175,8 +175,8 @@ fn test_ffi_performance_comparison() {
             };
 
             let rust_ms = rust_time * 1000.0;
-            let ratio = if cpp_time > 0.0 {
-                rust_ms / cpp_time
+            let speedup = if rust_ms > 0.0 {
+                cpp_time / rust_ms
             } else {
                 0.0
             };
@@ -189,12 +189,12 @@ fn test_ffi_performance_comparison() {
 
             println!(
                 "{:>6} {:>6} {:>10.2}ms {:>10.2}ms {:>9.2}x   {}",
-                grid_size, speed, rust_ms, cpp_time, ratio, size_status
+                grid_size, speed, rust_ms, cpp_time, speedup, size_status
             );
         }
     }
 
-    println!("\nNote: Ratio < 1.0 means Rust is faster, > 1.0 means C++ is faster");
+    println!("\nNote: Speedup > 1.0 means Rust is faster, < 1.0 means C++ is faster");
     println!(
         "      Times are averaged over {} iterations (no process startup overhead)\n",
         iterations

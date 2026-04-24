@@ -129,12 +129,12 @@ fn bench_decode_comparison() {
         // benchmark_cpp_decode already returns total_time / iterations (the average), so no further division needed
         let cpp_avg_us = cpp_avg_us_raw as u128;
 
-        let ratio = rust_avg_us as f64 / cpp_avg_us as f64;
-        let pct_diff = ((ratio - 1.0) * 100.0).abs();
-        let comparison = if ratio > 1.05 {
-            format!("Rust {:.1}% slower", pct_diff)
-        } else if ratio < 0.95 {
+        let speedup = cpp_avg_us as f64 / rust_avg_us as f64;
+        let pct_diff = ((speedup - 1.0) * 100.0).abs();
+        let comparison = if speedup > 1.05 {
             format!("Rust {:.1}% faster", pct_diff)
+        } else if speedup < 0.95 {
+            format!("Rust {:.1}% slower", pct_diff)
         } else {
             "Similar performance".to_string()
         };
@@ -142,7 +142,7 @@ fn bench_decode_comparison() {
         println!("Speed {}: {} bytes", speed, encoded_data.len());
         println!("  Rust:  {:>6} μs avg", rust_avg_us);
         println!("  C++:   {:>6} μs avg", cpp_avg_us);
-        println!("  Ratio: {:.2}x ({})", ratio, comparison);
+        println!("  Speedup: {:.2}x ({})", speedup, comparison);
         println!();
     }
 }

@@ -134,7 +134,7 @@ fn comprehensive_performance_test() {
     println!("┌───────────────────────────────────────────────────────────────────────┐");
     println!("│                        ENCODING PERFORMANCE                           │");
     println!("├───────┬──────────┬──────────┬──────────┬─────────┬──────────┬─────────┤");
-    println!("│ Speed │   Size   │ Rust (µs)│ C++ (µs) │  Ratio  │  Winner  │  Match  │");
+    println!("│ Speed │   Size   │ Rust (µs)│ C++ (µs) │ Speedup │  Winner  │  Match  │");
     println!("├───────┼──────────┼──────────┼──────────┼─────────┼──────────┼─────────┤");
 
     let mut encode_results = Vec::new();
@@ -188,8 +188,8 @@ fn comprehensive_performance_test() {
             }
         };
 
-        let ratio = rust_avg_us / cpp_avg_us;
-        let winner = if ratio < 1.0 { "Rust" } else { "C++" };
+        let speedup = cpp_avg_us / rust_avg_us;
+        let winner = if speedup >= 1.0 { "Rust" } else { "C++" };
         let size_match = rust_data.len() == cpp_data_size;
         let match_str = if size_match { "✓" } else { "✗" };
 
@@ -199,12 +199,12 @@ fn comprehensive_performance_test() {
             rust_data.len(),
             rust_avg_us,
             cpp_avg_us,
-            ratio,
+            speedup,
             winner,
             match_str
         );
 
-        encode_results.push((speed, rust_data, ratio, size_match));
+        encode_results.push((speed, rust_data, speedup, size_match));
     }
 
     println!("└───────┴──────────┴──────────┴──────────┴─────────┴──────────┴─────────┘");
@@ -212,7 +212,7 @@ fn comprehensive_performance_test() {
     println!("\n┌───────────────────────────────────────────────────────────────────────┐");
     println!("│                        DECODING PERFORMANCE                           │");
     println!("├───────┬──────────┬──────────┬──────────┬─────────┬──────────┬─────────┤");
-    println!("│ Speed │   Size   │ Rust (µs)│ C++ (µs) │  Ratio  │  Winner  │ Correct │");
+    println!("│ Speed │   Size   │ Rust (µs)│ C++ (µs) │ Speedup │  Winner  │ Correct │");
     println!("├───────┼──────────┼──────────┼──────────┼─────────┼──────────┼─────────┤");
 
     for (speed, rust_encoded, _encode_ratio, size_match) in encode_results {
@@ -276,8 +276,8 @@ fn comprehensive_performance_test() {
         }
 
         let rust_avg_us = (rust_total_us as f64) / (decode_iterations as f64);
-        let ratio = rust_avg_us / cpp_avg_us;
-        let winner = if ratio < 1.0 { "Rust" } else { "C++" };
+        let speedup = cpp_avg_us / rust_avg_us;
+        let winner = if speedup >= 1.0 { "Rust" } else { "C++" };
         let correct = rust_points == cpp_points as usize && rust_faces == cpp_faces as usize;
         let correct_str = if correct { "✓" } else { "✗" };
 
@@ -287,7 +287,7 @@ fn comprehensive_performance_test() {
             rust_encoded.len(),
             rust_avg_us,
             cpp_avg_us,
-            ratio,
+            speedup,
             winner,
             correct_str
         );
@@ -298,8 +298,8 @@ fn comprehensive_performance_test() {
     println!("\nNotes:");
     println!("  • Encoding iterations: {}", encode_iterations);
     println!("  • Decoding iterations: {}", decode_iterations);
-    println!("  • Ratio < 1.0 means Rust is faster");
-    println!("  • Ratio > 1.0 means C++ is faster");
+    println!("  • Speedup > 1.0 means Rust is faster");
+    println!("  • Speedup < 1.0 means C++ is faster");
     println!("  • Match: Binary output size comparison");
     println!("  • Correct: Decoded mesh matches original\n");
 }
