@@ -2105,6 +2105,12 @@ files:
         progress: "added"
         note: "Optional C++ decoder interop coverage for the same Rust-produced seam-bearing Edgebreaker stream."
 
+  - path: "crates/draco-core/tests/drc_edge_cases_test.rs"
+    functions:
+      - name: "malformed_drc_inputs_fail_without_panic"
+        progress: "added"
+        note: "Negative decode hardening coverage for malformed DRC inputs. Verifies MeshDecoder and PointCloudDecoder return errors without panicking for empty/short/bad-magic streams, invalid geometry type, truncated mesh and point-cloud payloads, corrupt point-cloud varints, and truncated point-cloud attribute metadata."
+
   - path: "crates/draco-core/tests/drc_existing_files_test.rs"
     functions:
       - name: "inventory_skipped_testdata_drc_fixtures"
