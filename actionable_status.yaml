@@ -10,19 +10,6 @@ version: 1
 last_reviewed: "2026-04-24"
 
 items:
-  - id: rust-edgebreaker-multi-attribute-wip
-    area: draco-core
-    priority: high
-    status: open
-    summary: "Edgebreaker multi-attribute path is still treated as WIP."
-    evidence:
-      - path: "crates/draco-core/tests/rust_vs_cpp_decode_test.rs"
-        note: "Test forces sequential encoding because Edgebreaker multi-attr is WIP."
-    impact: "Interop/roundtrip confidence is limited for Edgebreaker meshes with multiple attributes."
-    next_steps:
-      - "Replace sequential fallback in tests with a real Edgebreaker multi-attribute fixture."
-      - "Verify Rust decode and C++ decode agree on attribute values and connectivity."
-
   - id: rust-drc-bitstream-coverage
     area: draco-core
     priority: medium

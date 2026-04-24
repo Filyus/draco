@@ -1,7 +1,7 @@
-//! Debug test to compare Rust decode vs C++ decode
+//! Required Rust/C++ interop coverage for Rust-encoded Edgebreaker meshes.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use draco_core::decoder_buffer::DecoderBuffer;
@@ -14,209 +14,508 @@ use draco_core::mesh::Mesh;
 use draco_core::mesh_decoder::MeshDecoder;
 use draco_core::mesh_encoder::MeshEncoder;
 
-fn cpp_decoder() -> Option<PathBuf> {
+const POSITION_TOLERANCE: f32 = 0.01;
+const NORMAL_TOLERANCE: f32 = 0.02;
+const TEX_COORD_TOLERANCE: f32 = 0.01;
+
+const BUILD_HINT: &str = "C++ Draco tools are required for this test. Build them with: \
+cmake -S . -B build -G \"Visual Studio 17 2022\" && \
+cmake --build build --config Release --target draco_decoder draco_encoder";
+
+#[derive(Debug, Clone)]
+struct VertexRecord {
+    position: [f32; 3],
+    normal: [f32; 3],
+    tex_coord: [f32; 2],
+}
+
+#[derive(Debug)]
+struct ObjSummary {
+    positions: Vec<[f32; 3]>,
+    normals: Vec<[f32; 3]>,
+    tex_coords: Vec<[f32; 2]>,
+    faces: Vec<Vec<String>>,
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates directory")
+        .parent()
+        .expect("repo root")
+        .to_path_buf()
+}
+
+fn cpp_tool_from_dir(build_dir: &Path, tool_name: &str) -> Option<PathBuf> {
+    let direct = build_dir.join(tool_name);
+    if direct.exists() {
+        return Some(direct);
+    }
+
+    for config in ["Release", "Debug"] {
+        let configured = build_dir.join(config).join(tool_name);
+        if configured.exists() {
+            return Some(configured);
+        }
+    }
+
+    let nested = build_dir.join("src").join("draco");
+    for config in ["Release", "Debug"] {
+        let configured = nested.join(config).join(tool_name);
+        if configured.exists() {
+            return Some(configured);
+        }
+    }
+
+    None
+}
+
+fn find_cpp_tool(env_var: &str, tool_name: &str) -> PathBuf {
+    if let Ok(path) = std::env::var(env_var) {
+        let path = PathBuf::from(path);
+        assert!(
+            path.exists(),
+            "{} points to a missing {}: {}\n{}",
+            env_var,
+            tool_name,
+            path.display(),
+            BUILD_HINT
+        );
+        return path;
+    }
+
     if let Ok(build_dir) = std::env::var("DRACO_CPP_BUILD_DIR") {
-        let dec = PathBuf::from(&build_dir).join("draco_decoder.exe");
-        if dec.exists() {
-            return Some(dec);
+        if let Some(path) = cpp_tool_from_dir(Path::new(&build_dir), tool_name) {
+            return path;
         }
     }
-    let build_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()?
-        .parent()?
-        .join("build")
-        .join("Debug");
-    let dec = build_dir.join("draco_decoder.exe");
-    if dec.exists() { Some(dec) } else { None }
+
+    let root = repo_root();
+    let candidates = [
+        root.join("build-original")
+            .join("src")
+            .join("draco")
+            .join("Release")
+            .join(tool_name),
+        root.join("build")
+            .join("src")
+            .join("draco")
+            .join("Release")
+            .join(tool_name),
+        root.join("build")
+            .join("src")
+            .join("draco")
+            .join("Debug")
+            .join(tool_name),
+    ];
+
+    candidates
+        .into_iter()
+        .find(|path| path.exists())
+        .unwrap_or_else(|| panic!("Could not find required C++ tool {tool_name}.\n{BUILD_HINT}"))
 }
 
-fn parse_obj_positions(obj_content: &str) -> Vec<[f32; 3]> {
+fn parse_obj(obj_content: &str) -> ObjSummary {
     let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut tex_coords = Vec::new();
+    let mut faces = Vec::new();
+
     for line in obj_content.lines() {
-        if line.starts_with("v ") {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 4 {
-                let x: f32 = parts[1].parse().unwrap_or(0.0);
-                let y: f32 = parts[2].parse().unwrap_or(0.0);
-                let z: f32 = parts[3].parse().unwrap_or(0.0);
-                positions.push([x, y, z]);
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        match parts.as_slice() {
+            ["v", x, y, z, ..] => positions.push([
+                x.parse().expect("OBJ x position"),
+                y.parse().expect("OBJ y position"),
+                z.parse().expect("OBJ z position"),
+            ]),
+            ["vn", x, y, z, ..] => normals.push([
+                x.parse().expect("OBJ x normal"),
+                y.parse().expect("OBJ y normal"),
+                z.parse().expect("OBJ z normal"),
+            ]),
+            ["vt", u, v, ..] => tex_coords.push([
+                u.parse().expect("OBJ u tex coord"),
+                v.parse().expect("OBJ v tex coord"),
+            ]),
+            ["f", indices @ ..] => {
+                faces.push(indices.iter().map(|value| value.to_string()).collect())
             }
+            _ => {}
         }
     }
-    positions
+
+    ObjSummary {
+        positions,
+        normals,
+        tex_coords,
+        faces,
+    }
 }
 
-fn read_position_from_buffer(buffer: &[u8], index: usize) -> [f32; 3] {
-    let offset = index * 12;
-    let x = f32::from_le_bytes([buffer[offset], buffer[offset+1], buffer[offset+2], buffer[offset+3]]);
-    let y = f32::from_le_bytes([buffer[offset+4], buffer[offset+5], buffer[offset+6], buffer[offset+7]]);
-    let z = f32::from_le_bytes([buffer[offset+8], buffer[offset+9], buffer[offset+10], buffer[offset+11]]);
-    [x, y, z]
+fn write_f32s(attribute: &mut PointAttribute, values: &[f32]) {
+    for (i, value) in values.iter().enumerate() {
+        attribute.buffer_mut().write(i * 4, &value.to_le_bytes());
+    }
+}
+
+fn read_f32_tuple(attribute: &PointAttribute, point: PointIndex, components: usize) -> Vec<f32> {
+    let value_index = attribute.mapped_index(point).0 as usize;
+    let offset = value_index * attribute.byte_stride() as usize;
+    let data = attribute.buffer().data();
+    (0..components)
+        .map(|component| {
+            let start = offset + component * 4;
+            f32::from_le_bytes(data[start..start + 4].try_into().expect("f32 bytes"))
+        })
+        .collect()
+}
+
+fn read_position(attribute: &PointAttribute, point: PointIndex) -> [f32; 3] {
+    let values = read_f32_tuple(attribute, point, 3);
+    [values[0], values[1], values[2]]
+}
+
+fn read_normal(attribute: &PointAttribute, point: PointIndex) -> [f32; 3] {
+    let values = read_f32_tuple(attribute, point, 3);
+    [values[0], values[1], values[2]]
+}
+
+fn read_tex_coord(attribute: &PointAttribute, point: PointIndex) -> [f32; 2] {
+    let values = read_f32_tuple(attribute, point, 2);
+    [values[0], values[1]]
+}
+
+fn close_vec3(a: [f32; 3], b: [f32; 3], tolerance: f32) -> bool {
+    (a[0] - b[0]).abs() <= tolerance
+        && (a[1] - b[1]).abs() <= tolerance
+        && (a[2] - b[2]).abs() <= tolerance
+}
+
+fn close_vec2(a: [f32; 2], b: [f32; 2], tolerance: f32) -> bool {
+    (a[0] - b[0]).abs() <= tolerance && (a[1] - b[1]).abs() <= tolerance
+}
+
+fn build_multi_attribute_mesh() -> (Mesh, Vec<VertexRecord>, usize) {
+    let positions: Vec<f32> = vec![
+        -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0,
+        1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0,
+    ];
+    let normals: Vec<f32> = vec![
+        0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, -1.0,
+        0.0, 0.0, -1.0, 0.0, 0.0, -1.0,
+    ];
+    let tex_coords: Vec<f32> = vec![
+        0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.1, 0.2, 0.1, 0.8, 0.9, 0.8, 0.9, 0.2,
+    ];
+    let indices: Vec<u32> = vec![0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4];
+
+    let vertex_count = positions.len() / 3;
+    let face_count = indices.len() / 3;
+    let mut mesh = Mesh::new();
+
+    let mut position_attribute = PointAttribute::new();
+    position_attribute.init(
+        GeometryAttributeType::Position,
+        3,
+        DataType::Float32,
+        false,
+        vertex_count,
+    );
+    write_f32s(&mut position_attribute, &positions);
+    mesh.add_attribute(position_attribute);
+
+    let mut normal_attribute = PointAttribute::new();
+    normal_attribute.init(
+        GeometryAttributeType::Normal,
+        3,
+        DataType::Float32,
+        false,
+        vertex_count,
+    );
+    write_f32s(&mut normal_attribute, &normals);
+    mesh.add_attribute(normal_attribute);
+
+    let mut tex_coord_attribute = PointAttribute::new();
+    tex_coord_attribute.init(
+        GeometryAttributeType::TexCoord,
+        2,
+        DataType::Float32,
+        false,
+        vertex_count,
+    );
+    write_f32s(&mut tex_coord_attribute, &tex_coords);
+    mesh.add_attribute(tex_coord_attribute);
+
+    for triangle in indices.chunks_exact(3) {
+        mesh.add_face([
+            PointIndex(triangle[0]),
+            PointIndex(triangle[1]),
+            PointIndex(triangle[2]),
+        ]);
+    }
+
+    let expected_vertices = (0..vertex_count)
+        .map(|i| VertexRecord {
+            position: [positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]],
+            normal: [normals[i * 3], normals[i * 3 + 1], normals[i * 3 + 2]],
+            tex_coord: [tex_coords[i * 2], tex_coords[i * 2 + 1]],
+        })
+        .collect();
+
+    (mesh, expected_vertices, face_count)
+}
+
+fn decoded_vertex_records(mesh: &Mesh) -> Vec<VertexRecord> {
+    let position_id = mesh.named_attribute_id(GeometryAttributeType::Position);
+    let normal_id = mesh.named_attribute_id(GeometryAttributeType::Normal);
+    let tex_coord_id = mesh.named_attribute_id(GeometryAttributeType::TexCoord);
+    assert!(position_id >= 0, "Rust decode missing POSITION attribute");
+    assert!(normal_id >= 0, "Rust decode missing NORMAL attribute");
+    assert!(tex_coord_id >= 0, "Rust decode missing TEX_COORD attribute");
+
+    let position_attribute = mesh.attribute(position_id);
+    let normal_attribute = mesh.attribute(normal_id);
+    let tex_coord_attribute = mesh.attribute(tex_coord_id);
+
+    (0..mesh.num_points())
+        .map(|point| {
+            let point = PointIndex(point as u32);
+            VertexRecord {
+                position: read_position(position_attribute, point),
+                normal: read_normal(normal_attribute, point),
+                tex_coord: read_tex_coord(tex_coord_attribute, point),
+            }
+        })
+        .collect()
+}
+
+fn assert_vertex_records_match(expected: &[VertexRecord], actual: &[VertexRecord]) {
+    assert_eq!(actual.len(), expected.len(), "decoded point count mismatch");
+    let mut matched = vec![false; actual.len()];
+
+    for expected_vertex in expected {
+        let Some((actual_index, _)) = actual.iter().enumerate().find(|(index, actual_vertex)| {
+            !matched[*index]
+                && close_vec3(
+                    expected_vertex.position,
+                    actual_vertex.position,
+                    POSITION_TOLERANCE,
+                )
+                && close_vec3(
+                    expected_vertex.normal,
+                    actual_vertex.normal,
+                    NORMAL_TOLERANCE,
+                )
+                && close_vec2(
+                    expected_vertex.tex_coord,
+                    actual_vertex.tex_coord,
+                    TEX_COORD_TOLERANCE,
+                )
+        }) else {
+            panic!(
+                "No decoded Rust vertex matched expected vertex {:?}\nActual vertices: {:?}",
+                expected_vertex, actual
+            );
+        };
+        matched[actual_index] = true;
+    }
+}
+
+fn assert_position_sets_match(expected: &[[f32; 3]], actual: &[[f32; 3]], context: &str) {
+    assert_eq!(
+        actual.len(),
+        expected.len(),
+        "{context} position count mismatch"
+    );
+    let mut matched = vec![false; actual.len()];
+
+    for &expected_position in expected {
+        let Some((actual_index, _)) =
+            actual.iter().enumerate().find(|(index, &actual_position)| {
+                !matched[*index]
+                    && close_vec3(expected_position, actual_position, POSITION_TOLERANCE)
+            })
+        else {
+            panic!(
+                "{context}: no decoded position matched expected {:?}\nActual positions: {:?}",
+                expected_position, actual
+            );
+        };
+        matched[actual_index] = true;
+    }
+}
+
+fn assert_vec3_sets_match(
+    expected: &[[f32; 3]],
+    actual: &[[f32; 3]],
+    tolerance: f32,
+    context: &str,
+) {
+    assert_eq!(actual.len(), expected.len(), "{context} count mismatch");
+    let mut matched = vec![false; actual.len()];
+
+    for &expected_value in expected {
+        let Some((actual_index, _)) = actual.iter().enumerate().find(|(index, &actual_value)| {
+            !matched[*index] && close_vec3(expected_value, actual_value, tolerance)
+        }) else {
+            panic!(
+                "{context}: no decoded value matched expected {:?}\nActual values: {:?}",
+                expected_value, actual
+            );
+        };
+        matched[actual_index] = true;
+    }
+}
+
+fn assert_vec2_sets_match(
+    expected: &[[f32; 2]],
+    actual: &[[f32; 2]],
+    tolerance: f32,
+    context: &str,
+) {
+    assert_eq!(actual.len(), expected.len(), "{context} count mismatch");
+    let mut matched = vec![false; actual.len()];
+
+    for &expected_value in expected {
+        let Some((actual_index, _)) = actual.iter().enumerate().find(|(index, &actual_value)| {
+            !matched[*index] && close_vec2(expected_value, actual_value, tolerance)
+        }) else {
+            panic!(
+                "{context}: no decoded value matched expected {:?}\nActual values: {:?}",
+                expected_value, actual
+            );
+        };
+        matched[actual_index] = true;
+    }
 }
 
 #[test]
 fn compare_rust_vs_cpp_decode() {
-    let Some(decoder_exe) = cpp_decoder() else {
-        println!("C++ decoder not found, skipping comparison test");
-        return;
-    };
+    let decoder_exe = find_cpp_tool("DRACO_CPP_DECODER", "draco_decoder.exe");
+    let encoder_exe = find_cpp_tool("DRACO_CPP_ENCODER", "draco_encoder.exe");
+    assert!(
+        encoder_exe.exists(),
+        "Required C++ encoder is missing: {}\n{}",
+        encoder_exe.display(),
+        BUILD_HINT
+    );
 
-    // Create a simple cube mesh
-    let positions: Vec<f32> = vec![
-        // Front face
-        -1.0, -1.0,  1.0,
-         1.0, -1.0,  1.0,
-         1.0,  1.0,  1.0,
-        -1.0,  1.0,  1.0,
-        // Back face
-        -1.0, -1.0, -1.0,
-        -1.0,  1.0, -1.0,
-         1.0,  1.0, -1.0,
-         1.0, -1.0, -1.0,
-    ];
+    let (mesh, expected_vertices, expected_face_count) = build_multi_attribute_mesh();
 
-    let normals: Vec<f32> = vec![
-        0.0, 0.0, 1.0,
-        0.0, 0.0, 1.0,
-        0.0, 0.0, 1.0,
-        0.0, 0.0, 1.0,
-        0.0, 0.0, -1.0,
-        0.0, 0.0, -1.0,
-        0.0, 0.0, -1.0,
-        0.0, 0.0, -1.0,
-    ];
+    let position_id = mesh.named_attribute_id(GeometryAttributeType::Position);
+    let normal_id = mesh.named_attribute_id(GeometryAttributeType::Normal);
+    let tex_coord_id = mesh.named_attribute_id(GeometryAttributeType::TexCoord);
 
-    let uvs: Vec<f32> = vec![
-        0.0, 0.0,
-        1.0, 0.0,
-        1.0, 1.0,
-        0.0, 1.0,
-        1.0, 0.0,
-        1.0, 1.0,
-        0.0, 1.0,
-        0.0, 0.0,
-    ];
+    let mut options = EncoderOptions::default();
+    options.set_global_int("encoding_method", 1);
+    options.set_global_int("encoding_speed", 5);
+    options.set_global_int("decoding_speed", 5);
+    options.set_global_int("split_mesh_on_seams", 0);
+    options.set_attribute_int(position_id, "quantization_bits", 14);
+    options.set_attribute_int(normal_id, "quantization_bits", 10);
+    options.set_attribute_int(tex_coord_id, "quantization_bits", 12);
 
-    let indices: Vec<u32> = vec![
-        0, 1, 2, 2, 3, 0,
-        4, 5, 6, 6, 7, 4,
-    ];
-
-    let vertex_count = positions.len() / 3;
-    let face_count = indices.len() / 3;
-
-    // Build mesh
-    let mut draco_mesh = Mesh::new();
-
-    let mut pos_attr = PointAttribute::new();
-    pos_attr.init(GeometryAttributeType::Position, 3, DataType::Float32, false, vertex_count);
-    for (i, chunk) in positions.chunks(3).enumerate() {
-        let bytes: Vec<u8> = chunk.iter().flat_map(|v| v.to_le_bytes()).collect();
-        pos_attr.buffer_mut().write(i * 12, &bytes);
-    }
-    draco_mesh.add_attribute(pos_attr);
-
-    let mut norm_attr = PointAttribute::new();
-    norm_attr.init(GeometryAttributeType::Normal, 3, DataType::Float32, false, vertex_count);
-    for (i, chunk) in normals.chunks(3).enumerate() {
-        let bytes: Vec<u8> = chunk.iter().flat_map(|v| v.to_le_bytes()).collect();
-        norm_attr.buffer_mut().write(i * 12, &bytes);
-    }
-    draco_mesh.add_attribute(norm_attr);
-
-    let mut uv_attr = PointAttribute::new();
-    uv_attr.init(GeometryAttributeType::TexCoord, 2, DataType::Float32, false, vertex_count);
-    for (i, chunk) in uvs.chunks(2).enumerate() {
-        let bytes: Vec<u8> = chunk.iter().flat_map(|v| v.to_le_bytes()).collect();
-        uv_attr.buffer_mut().write(i * 8, &bytes);
-    }
-    draco_mesh.add_attribute(uv_attr);
-
-    for i in 0..face_count {
-        draco_mesh.add_face([
-            PointIndex(indices[i * 3]),
-            PointIndex(indices[i * 3 + 1]),
-            PointIndex(indices[i * 3 + 2]),
-        ]);
-    }
-
-    // Encode with quantization
     let mut encoder = MeshEncoder::new();
-    let mut enc_buffer = EncoderBuffer::new();
-    let mut enc_options = EncoderOptions::default();
-    // Use Sequential encoding for reliable roundtrip (Edgebreaker multi-attr is WIP)
-    enc_options.set_global_int("encoding_method", 0);
-    
-    let pos_id = draco_mesh.named_attribute_id(GeometryAttributeType::Position);
-    enc_options.set_attribute_int(pos_id, "quantization_bits", 14);
-    let norm_id = draco_mesh.named_attribute_id(GeometryAttributeType::Normal);
-    enc_options.set_attribute_int(norm_id, "quantization_bits", 10);
-    let uv_id = draco_mesh.named_attribute_id(GeometryAttributeType::TexCoord);
-    enc_options.set_attribute_int(uv_id, "quantization_bits", 12);
+    encoder.set_mesh(mesh);
+    let mut encoded = EncoderBuffer::new();
+    encoder
+        .encode(&options, &mut encoded)
+        .expect("Rust Edgebreaker encode failed");
+    let draco_bytes = encoded.data().to_vec();
 
-    encoder.set_mesh(draco_mesh);
-    encoder.encode(&enc_options, &mut enc_buffer).expect("Encode failed");
+    assert_eq!(&draco_bytes[0..5], b"DRACO");
+    assert_eq!(draco_bytes[7], 1, "expected triangular mesh geometry type");
+    assert_eq!(draco_bytes[8], 1, "expected Rust Edgebreaker encoding");
 
-    let draco_bytes = enc_buffer.data().to_vec();
-    println!("Encoded {} bytes", draco_bytes.len());
-
-    // Rust decode
-    let mut dec_buffer = DecoderBuffer::new(&draco_bytes);
     let mut rust_decoder = MeshDecoder::new();
     let mut rust_mesh = Mesh::new();
-    rust_decoder.decode(&mut dec_buffer, &mut rust_mesh).expect("Rust decode failed");
+    let mut decode_buffer = DecoderBuffer::new(&draco_bytes);
+    rust_decoder
+        .decode(&mut decode_buffer, &mut rust_mesh)
+        .expect("Rust decode of Rust Edgebreaker stream failed");
 
-    let rust_pos_buffer = rust_mesh.attribute(0).buffer().data();
-    
-    println!("\n=== RUST DECODED POSITIONS ===");
-    for i in 0..rust_mesh.num_points() {
-        let pos = read_position_from_buffer(rust_pos_buffer, i);
-        println!("  Point {}: {:?}", i, pos);
-    }
+    assert_eq!(
+        rust_mesh.num_faces(),
+        expected_face_count,
+        "Rust decoded face count mismatch"
+    );
+    let rust_vertices = decoded_vertex_records(&rust_mesh);
 
-    // C++ decode
-    let tmp = std::env::temp_dir().join("draco_compare_test");
-    fs::create_dir_all(&tmp).ok();
-    let drc_path = tmp.join("test.drc");
-    let obj_path = tmp.join("test.obj");
-    
-    fs::write(&drc_path, &draco_bytes).expect("Failed to write DRC");
-    
+    let tmp = std::env::temp_dir().join("draco_edgebreaker_multi_attribute_cpp_required");
+    fs::create_dir_all(&tmp).expect("create temp dir");
+    let drc_path = tmp.join("multi_attr_edgebreaker.drc");
+    let obj_path = tmp.join("multi_attr_edgebreaker.obj");
+    fs::write(&drc_path, &draco_bytes).expect("write Rust Edgebreaker DRC");
+
     let output = Command::new(&decoder_exe)
-        .args(["-i", drc_path.to_string_lossy().as_ref(), "-o", obj_path.to_string_lossy().as_ref()])
+        .arg("-i")
+        .arg(&drc_path)
+        .arg("-o")
+        .arg(&obj_path)
         .output()
-        .expect("Failed to run C++ decoder");
-    
-    assert!(output.status.success(), "C++ decoder failed: {}", 
-        String::from_utf8_lossy(&output.stderr));
+        .expect("run C++ Draco decoder");
 
-    let obj_content = fs::read_to_string(&obj_path).expect("Failed to read OBJ");
-    let cpp_positions = parse_obj_positions(&obj_content);
+    assert!(
+        output.status.success(),
+        "C++ decoder failed for Rust Edgebreaker multi-attribute stream\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 
-    println!("\n=== C++ DECODED POSITIONS ===");
-    for (i, pos) in cpp_positions.iter().enumerate() {
-        println!("  Point {}: {:?}", i, pos);
-    }
+    let obj_content = fs::read_to_string(&obj_path).expect("read C++ decoded OBJ");
+    let obj = parse_obj(&obj_content);
+    let expected_positions: Vec<[f32; 3]> = expected_vertices
+        .iter()
+        .map(|vertex| vertex.position)
+        .collect();
+    let expected_normals: Vec<[f32; 3]> = expected_vertices
+        .iter()
+        .map(|vertex| vertex.normal)
+        .collect();
+    let expected_tex_coords: Vec<[f32; 2]> = expected_vertices
+        .iter()
+        .map(|vertex| vertex.tex_coord)
+        .collect();
+    let rust_positions: Vec<[f32; 3]> =
+        rust_vertices.iter().map(|vertex| vertex.position).collect();
+    let rust_normals: Vec<[f32; 3]> = rust_vertices.iter().map(|vertex| vertex.normal).collect();
+    let rust_tex_coords: Vec<[f32; 2]> = rust_vertices
+        .iter()
+        .map(|vertex| vertex.tex_coord)
+        .collect();
 
-    println!("\n=== COMPARISON ===");
-    println!("Original   -> Rust decode  -> C++ decode");
-    for i in 0..vertex_count {
-        let orig = [positions[i*3], positions[i*3+1], positions[i*3+2]];
-        
-        let rust_pos = read_position_from_buffer(rust_pos_buffer, i);
-        let cpp_pos = if i < cpp_positions.len() { cpp_positions[i] } else { [999.0; 3] };
-        
-        let rust_ok = (orig[0] - rust_pos[0]).abs() < 0.01 
-                   && (orig[1] - rust_pos[1]).abs() < 0.01 
-                   && (orig[2] - rust_pos[2]).abs() < 0.01;
-        let cpp_ok = (orig[0] - cpp_pos[0]).abs() < 0.01 
-                  && (orig[1] - cpp_pos[1]).abs() < 0.01 
-                  && (orig[2] - cpp_pos[2]).abs() < 0.01;
-        
-        let rust_status = if rust_ok { "✓" } else { "✗" };
-        let cpp_status = if cpp_ok { "✓" } else { "✗" };
-        
-        println!("  {}: {:?} -> {:?} {} -> {:?} {}", 
-            i, orig, rust_pos, rust_status, cpp_pos, cpp_status);
-    }
+    assert_position_sets_match(&rust_positions, &obj.positions, "C++ vs Rust");
+    assert_position_sets_match(&expected_positions, &obj.positions, "C++ vs expected");
+    assert_vec3_sets_match(
+        &rust_normals,
+        &obj.normals,
+        NORMAL_TOLERANCE,
+        "C++ vs Rust normals",
+    );
+    assert_vec3_sets_match(
+        &expected_normals,
+        &obj.normals,
+        NORMAL_TOLERANCE,
+        "C++ vs expected normals",
+    );
+    assert_vec2_sets_match(
+        &rust_tex_coords,
+        &obj.tex_coords,
+        TEX_COORD_TOLERANCE,
+        "C++ vs Rust tex coords",
+    );
+    assert_vec2_sets_match(
+        &expected_tex_coords,
+        &obj.tex_coords,
+        TEX_COORD_TOLERANCE,
+        "C++ vs expected tex coords",
+    );
+    assert_eq!(
+        obj.faces.len(),
+        expected_face_count,
+        "C++ decoded OBJ face count mismatch"
+    );
+
+    assert_vertex_records_match(&expected_vertices, &rust_vertices);
 }

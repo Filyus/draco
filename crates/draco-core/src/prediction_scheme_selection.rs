@@ -16,7 +16,7 @@ pub fn select_prediction_method(
     encoder: &dyn GeometryEncoder,
 ) -> PredictionSchemeMethod {
     let speed = options.get_encoding_speed();
-    
+
     if speed >= 10 {
         return PredictionSchemeMethod::Difference;
     }
@@ -25,11 +25,14 @@ pub fn select_prediction_method(
         let att_quant = options.get_attribute_int(att_id, "quantization_bits", -1);
         let pc = encoder.point_cloud().unwrap(); // Should be safe if called from encoder
         let att = pc.attribute(att_id);
-        
-        if att_quant != -1 && att.attribute_type() == GeometryAttributeType::TexCoord && att.num_components() == 2 {
+
+        if att_quant != -1
+            && att.attribute_type() == GeometryAttributeType::TexCoord
+            && att.num_components() == 2
+        {
             let pos_att = pc.named_attribute(GeometryAttributeType::Position);
             let mut is_pos_att_valid = false;
-            
+
             if let Some(pos_att) = pos_att {
                 if pos_att.data_type().is_integral() {
                     is_pos_att_valid = true;
@@ -41,7 +44,7 @@ pub fn select_prediction_method(
                     }
                 }
             }
-            
+
             if is_pos_att_valid && speed < 4 {
                 return PredictionSchemeMethod::MeshPredictionTexCoordsPortable;
             }
@@ -61,18 +64,18 @@ pub fn select_prediction_method(
             }
             return PredictionSchemeMethod::Difference;
         }
-        
+
         if speed >= 8 {
             return PredictionSchemeMethod::Difference;
         }
-        
+
         if speed >= 2 || pc.num_points() < 40 {
             return PredictionSchemeMethod::MeshPredictionParallelogram;
         }
-        
+
         return PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram;
     }
-    
+
     // Point Cloud prediction
     PredictionSchemeMethod::Difference
 }
@@ -120,7 +123,10 @@ mod tests {
         }
     }
 
-    fn make_attribute(attribute_type: GeometryAttributeType, data_type: DataType) -> PointAttribute {
+    fn make_attribute(
+        attribute_type: GeometryAttributeType,
+        data_type: DataType,
+    ) -> PointAttribute {
         let mut attribute = PointAttribute::new();
         attribute.init(attribute_type, 3, data_type, false, 1);
         attribute
@@ -130,8 +136,14 @@ mod tests {
     fn sequential_mesh_still_selects_mesh_prediction_schemes() {
         let mut point_cloud = PointCloud::new();
         point_cloud.set_num_points(64);
-        point_cloud.add_attribute(make_attribute(GeometryAttributeType::Position, DataType::Float32));
-        let generic_att_id = point_cloud.add_attribute(make_attribute(GeometryAttributeType::Generic, DataType::Float32));
+        point_cloud.add_attribute(make_attribute(
+            GeometryAttributeType::Position,
+            DataType::Float32,
+        ));
+        let generic_att_id = point_cloud.add_attribute(make_attribute(
+            GeometryAttributeType::Generic,
+            DataType::Float32,
+        ));
 
         let mut options = EncoderOptions::new();
         options.set_global_int("encoding_speed", 5);
@@ -153,8 +165,14 @@ mod tests {
     fn normal_prediction_matches_cpp_when_positions_are_quantized() {
         let mut point_cloud = PointCloud::new();
         point_cloud.set_num_points(64);
-        let pos_att_id = point_cloud.add_attribute(make_attribute(GeometryAttributeType::Position, DataType::Float32));
-        let normal_att_id = point_cloud.add_attribute(make_attribute(GeometryAttributeType::Normal, DataType::Float32));
+        let pos_att_id = point_cloud.add_attribute(make_attribute(
+            GeometryAttributeType::Position,
+            DataType::Float32,
+        ));
+        let normal_att_id = point_cloud.add_attribute(make_attribute(
+            GeometryAttributeType::Normal,
+            DataType::Float32,
+        ));
 
         let mut options = EncoderOptions::new();
         options.set_global_int("encoding_speed", 1);

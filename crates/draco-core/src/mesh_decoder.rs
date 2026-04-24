@@ -327,11 +327,12 @@ impl MeshDecoder {
         // (1) Attribute decoder identifiers.
         // For Edgebreaker this ties each decoder payload to attribute connectivity data.
         let mut att_data_id_by_decoder: Vec<u8> = vec![0; num_attributes_decoders];
+        let mut encoder_type_by_decoder: Vec<u8> = vec![0; num_attributes_decoders];
         let mut traversal_method_by_decoder: Vec<u8> = vec![0; num_attributes_decoders];
         if self.method == 1 {
             for i in 0..num_attributes_decoders {
                 att_data_id_by_decoder[i] = buffer.decode_u8()?;
-                let _decoder_type = buffer.decode_u8()?;
+                encoder_type_by_decoder[i] = buffer.decode_u8()?;
                 // traversal_method was added in v1.2. For older streams, default to
                 // DEPTH_FIRST (0).
                 if bitstream_version >= 0x0102 {
@@ -425,7 +426,11 @@ impl MeshDecoder {
             let mut attr_corner_table: Option<CornerTable> = None;
             if self.method == 1 {
                 let att_data_id = att_data_id_by_decoder[dec_i] as usize;
-                if att_data_id < self.edgebreaker_attribute_seam_corners.len() {
+                let uses_attribute_connectivity =
+                    encoder_type_by_decoder.get(dec_i).copied().unwrap_or(0) != 0;
+                if uses_attribute_connectivity
+                    && att_data_id < self.edgebreaker_attribute_seam_corners.len()
+                {
                     let seam_corners = &self.edgebreaker_attribute_seam_corners[att_data_id];
                     if !seam_corners.is_empty() {
                         if let Some(base_ct) = self.corner_table.as_deref() {
@@ -483,6 +488,31 @@ impl MeshDecoder {
                     }
                     point_ids_for_decoder = Some(ids);
                     data_to_corner_map_for_decoder = Some(map);
+                } else if att_data_id_by_decoder[dec_i] != u8::MAX {
+                    if let (Some(base_ct), Some(base_map)) = (
+                        self.corner_table.as_deref(),
+                        self.edgebreaker_data_to_corner_map.as_ref(),
+                    ) {
+                        let mut ids: Vec<PointIndex> = Vec::with_capacity(base_map.len());
+                        for &corner_u32 in base_map {
+                            let corner = CornerIndex(corner_u32);
+                            if corner == INVALID_CORNER_INDEX {
+                                ids.push(PointIndex(0));
+                                continue;
+                            }
+                            let face_id = FaceIndex(corner.0 / 3);
+                            let corner_offset = (corner.0 % 3) as usize;
+                            let point_id = mesh.face(face_id)[corner_offset];
+                            ids.push(point_id);
+                        }
+                        if base_map.len() != base_ct.num_vertices() {
+                            return Err(DracoError::DracoError(
+                                "Invalid Edgebreaker data-to-corner map size".to_string(),
+                            ));
+                        }
+                        point_ids_for_decoder = Some(ids);
+                        data_to_corner_map_for_decoder = Some(base_map.clone());
+                    }
                 }
 
                 // Note: For edgebreaker, we intentionally do NOT take a traversal

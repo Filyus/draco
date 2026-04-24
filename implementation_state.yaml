@@ -1,4 +1,4 @@
-parity_check_count: 3
+parity_check_count: 4
 status_notes:
   - "This file is a manually curated implementation log, not an exact percentage metric."
   - "Entries may be selective; avoid adding new duplicate path entries when a matching file entry already exists."
@@ -20,6 +20,11 @@ parity_verifications:
     source_file: "src/draco/compression/mesh/traverser/mesh_traversal_sequencer.h"
     status: completed
     note: "Seed processing verified: connectivity corners reversed then init face corners appended."
+  - id: 4
+    function: "MeshEdgebreakerDecoderImpl::CreateAttributesDecoder"
+    source_file: "src/draco/compression/mesh/mesh_edgebreaker_decoder_impl.cc"
+    status: completed
+    note: "Verified decoder_type controls whether non-position Edgebreaker attribute data uses attribute-specific connectivity. MESH_VERTEX_ATTRIBUTE marks is_connectivity_used=false even when boundary seam corners exist; no-interior-seam split groups reuse the base corner table/order and keep C++ parallelogram prediction enabled."
 
 files:
   - path: "crates/draco-cpp-ffi/src/lib.rs"
@@ -733,7 +738,7 @@ files:
         note: "Decodes mesh connectivity using Sequential or Edgebreaker methods. Version-aware num_faces/num_points decoding (raw u32 for v<2.2, varint for v>=2.2)."
       - name: "decode_attributes"
         progress: "fully implemented"
-        note: "Decodes attributes using SequentialIntegerAttributeDecoder. Sequential mesh parsing matches MeshEncoder stream; Edgebreaker parses attribute decoder identifiers and wires per-decoder traversal ordering into explicit mappings and data_to_corner_map overrides. Legacy support exists for important older layouts, but overall version coverage is still narrower than C++."
+        note: "Decodes attributes using SequentialIntegerAttributeDecoder. Sequential mesh parsing matches MeshEncoder stream; Edgebreaker parses attribute decoder identifiers, preserves the encoded decoder_type, and only builds attribute-specific corner tables for MESH_CORNER_ATTRIBUTE groups. MESH_VERTEX_ATTRIBUTE split groups with no interior seams now reuse the base Edgebreaker data_to_corner order, matching C++ and allowing speed 5 TEX_COORD parallelogram prediction without a Rust-specific fallback. Legacy support exists for important older layouts, but overall version coverage is still narrower than C++."
       - name: "generate_point_ids_dfs"
         progress: "fully implemented"
         note: "Implements Draco C++ DepthFirstTraverser traversal order over the decoded CornerTable for Edgebreaker attribute decoding. Uses sequential face iteration as seeds matching C++ decoder (not encoder's processed_connectivity_corners). Fixed DFS visit order (Next, Prev before loop; Tip in loop) matching C++ depth_first_traverser.h."
@@ -1248,7 +1253,7 @@ files:
     functions:
       - name: "select_prediction_method"
         progress: "fully implemented"
-        note: "Implements C++ SelectPredictionMethod rules directly. Mesh prediction is no longer disabled for sequential encoding, and normal attributes now select MeshPredictionGeometricNormal at speeds < 4 when positions are integral or quantized."
+        note: "Implements C++ SelectPredictionMethod rules directly. Mesh prediction is no longer disabled for sequential encoding, normal attributes select MeshPredictionGeometricNormal at speeds < 4 when positions are integral or quantized, and Edgebreaker split-connectivity non-position attributes keep the C++ speed-based Parallelogram path instead of forcing Difference."
   - path: "crates/draco-core/src/quantization_utils.rs"
     structures:
       - name: "Dequantizer"
@@ -2072,6 +2077,12 @@ files:
       - name: "Mesh::ApplyPointIdDeduplication"
         progress: "implemented"
         note: "Ported face remapping logic from original src/draco/mesh/mesh.cc under DRACO_ATTRIBUTE_INDICES_DEDUPLICATION_SUPPORTED."
+
+  - path: "crates/draco-core/tests/rust_vs_cpp_decode_test.rs"
+    functions:
+      - name: "compare_rust_vs_cpp_decode"
+        progress: "fully implemented"
+        note: "Mandatory Rust/C++ interop regression for a Rust-encoded multi-attribute Edgebreaker mesh. Forces encoding_method=1, encoding_speed=5, decoding_speed=5, split_mesh_on_seams=0, keeps POSITION/NORMAL/TEX_COORD quantization enabled, asserts the DRC method byte is Edgebreaker, requires compiled C++ draco_decoder.exe/draco_encoder.exe instead of skipping, and compares Rust decode plus C++ OBJ decode for positions, normals, texcoords, and face count within quantization tolerances."
 
   - path: "crates/draco-core/tests/edgebreaker_attribute_seams_test.rs"
     functions:
