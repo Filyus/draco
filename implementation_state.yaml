@@ -2024,7 +2024,7 @@ files:
         note: "OBJ writer WASM module. Exports meshes to OBJ format."
       - name: "ply-reader-wasm"
         progress: "fully implemented"
-        note: "PLY parser WASM module backed by draco-io PlyReader. Parses ASCII, binary_little_endian, and binary_big_endian PLY bytes into mesh data."
+        note: "PLY parser WASM module backed by draco-io PlyReader. Parses ASCII, binary_little_endian, and binary_big_endian PLY bytes into mesh data; parse_ply_bytes now uses the shared draco-io parser for binary PLY and has WASM-facing tests for both binary endian variants."
       - name: "ply-writer-wasm"
         progress: "fully implemented"
         note: "PLY writer WASM module backed by draco-io PlyWriter. Exports meshes as ASCII, binary_little_endian, or binary_big_endian PLY and returns binary_data for binary formats."

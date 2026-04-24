@@ -3,7 +3,7 @@
 # Scope:
 # - Keep only items that still need code changes.
 # - Do not mirror implementation_state.yaml or list completed work.
-# - Remove items as soon as they are fixed and covered by tests.
+# - Remove items as soon as they are fixed and covered by tests, then update implementation_state.yaml with the completed behavior.
 # - Prefer concrete file/line evidence over broad percentages.
 
 version: 1
@@ -24,19 +24,6 @@ items:
     next_steps:
       - "Inventory skipped .drc fixtures by header version, geometry type, method, and failure reason."
       - "Implement the highest-value missing legacy layout or traversal variant first."
-
-  - id: wasm-ply-reader-binary
-    area: web
-    priority: medium
-    status: open
-    summary: "WASM PLY reader does not parse binary PLY."
-    evidence:
-      - path: "web/ply-reader-wasm/src/lib.rs"
-        note: "parse_binary_ply returns a not implemented error after reading header metadata."
-    impact: "Browser users must use ASCII PLY or the native draco-io reader for binary PLY."
-    next_steps:
-      - "Port the native draco-io binary PLY parsing path into the WASM reader or share a common parser."
-      - "Add wasm-facing tests for binary_little_endian and binary_big_endian fixtures."
 
   - id: gltf-reader-subset
     area: draco-io

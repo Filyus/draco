@@ -1,23 +1,21 @@
 //! PLY Reader WASM module.
 //!
 //! Provides PLY file parsing functionality for web applications.
-//! Supports ASCII PLY parsing in this WASM module.
+//! Supports ASCII and binary PLY parsing via `parse_ply_bytes`.
 
-use wasm_bindgen::prelude::*;
-use serde::{Deserialize, Serialize};
 use draco_core::draco_types::DataType;
 use draco_core::geometry_attribute::GeometryAttributeType;
 use draco_core::geometry_indices::FaceIndex;
 use draco_core::mesh::Mesh;
 use draco_io::ply_reader::PlyReader;
+use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
 }
-
-
 
 /// Mesh data structure for JavaScript interop.
 #[derive(Serialize, Deserialize)]
@@ -86,8 +84,8 @@ fn to_js_value(result: &ParseResult) -> JsValue {
 /// Parse PLY file content from a string (ASCII PLY).
 #[wasm_bindgen]
 pub fn parse_ply(content: &str) -> JsValue {
-    let result = parse_ply_with_core(content.as_bytes())
-        .unwrap_or_else(|_| parse_ply_internal(content));
+    let result =
+        parse_ply_with_core(content.as_bytes()).unwrap_or_else(|_| parse_ply_internal(content));
     to_js_value(&result)
 }
 
@@ -96,12 +94,18 @@ pub fn parse_ply(content: &str) -> JsValue {
 pub fn parse_ply_bytes(data: &[u8]) -> JsValue {
     // Catch any panics
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        parse_ply_with_core(data).unwrap_or_else(|_| match std::str::from_utf8(data) {
-            Ok(content) => parse_ply_internal(content),
-            Err(_) => parse_binary_ply(data),
+        parse_ply_with_core(data).unwrap_or_else(|error| match std::str::from_utf8(data) {
+            Ok(content) if is_ascii_ply(data) => parse_ply_internal(content),
+            _ => ParseResult {
+                success: false,
+                meshes: vec![],
+                error: Some(error),
+                warnings: vec![],
+                header: parse_header_info(data),
+            },
         })
     }));
-    
+
     let result = match result {
         Ok(r) => r,
         Err(e) => {
@@ -121,7 +125,7 @@ pub fn parse_ply_bytes(data: &[u8]) -> JsValue {
             }
         }
     };
-    
+
     to_js_value(&result)
 }
 
@@ -165,6 +169,13 @@ fn parse_header_info(data: &[u8]) -> Option<PlyHeader> {
     })
 }
 
+fn is_ascii_ply(data: &[u8]) -> bool {
+    data.starts_with(b"ply")
+        && parse_header_info(data)
+            .map(|header| header.format == "ascii")
+            .unwrap_or(false)
+}
+
 fn mesh_to_js_data(mesh: &Mesh) -> MeshData {
     let positions = read_attribute_as_f32(mesh, GeometryAttributeType::Position, 3);
     let normals = read_attribute_as_f32(mesh, GeometryAttributeType::Normal, 3);
@@ -182,7 +193,11 @@ fn mesh_to_js_data(mesh: &Mesh) -> MeshData {
     }
 }
 
-fn read_attribute_as_f32(mesh: &Mesh, attribute_type: GeometryAttributeType, components: usize) -> Vec<f32> {
+fn read_attribute_as_f32(
+    mesh: &Mesh,
+    attribute_type: GeometryAttributeType,
+    components: usize,
+) -> Vec<f32> {
     let att_id = mesh.named_attribute_id(attribute_type);
     if att_id < 0 {
         return Vec::new();
@@ -197,12 +212,24 @@ fn read_attribute_as_f32(mesh: &Mesh, attribute_type: GeometryAttributeType, com
             let offset = base + component * att.data_type().byte_length();
             let data = att.buffer().data();
             let value = match att.data_type() {
-                DataType::Float32 => f32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()),
-                DataType::Float64 => f64::from_le_bytes(data[offset..offset + 8].try_into().unwrap()) as f32,
-                DataType::Int32 => i32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()) as f32,
-                DataType::Uint32 => u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()) as f32,
-                DataType::Int16 => i16::from_le_bytes(data[offset..offset + 2].try_into().unwrap()) as f32,
-                DataType::Uint16 => u16::from_le_bytes(data[offset..offset + 2].try_into().unwrap()) as f32,
+                DataType::Float32 => {
+                    f32::from_le_bytes(data[offset..offset + 4].try_into().unwrap())
+                }
+                DataType::Float64 => {
+                    f64::from_le_bytes(data[offset..offset + 8].try_into().unwrap()) as f32
+                }
+                DataType::Int32 => {
+                    i32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()) as f32
+                }
+                DataType::Uint32 => {
+                    u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()) as f32
+                }
+                DataType::Int16 => {
+                    i16::from_le_bytes(data[offset..offset + 2].try_into().unwrap()) as f32
+                }
+                DataType::Uint16 => {
+                    u16::from_le_bytes(data[offset..offset + 2].try_into().unwrap()) as f32
+                }
                 DataType::Int8 => data[offset] as i8 as f32,
                 DataType::Uint8 => data[offset] as f32,
                 _ => 0.0,
@@ -347,10 +374,18 @@ fn parse_ply_internal(content: &str) -> ParseResult {
     let nx_idx = vertex_properties.iter().position(|p| p.name == "nx");
     let ny_idx = vertex_properties.iter().position(|p| p.name == "ny");
     let nz_idx = vertex_properties.iter().position(|p| p.name == "nz");
-    let r_idx = vertex_properties.iter().position(|p| p.name == "red" || p.name == "r");
-    let g_idx = vertex_properties.iter().position(|p| p.name == "green" || p.name == "g");
-    let b_idx = vertex_properties.iter().position(|p| p.name == "blue" || p.name == "b");
-    let a_idx = vertex_properties.iter().position(|p| p.name == "alpha" || p.name == "a");
+    let r_idx = vertex_properties
+        .iter()
+        .position(|p| p.name == "red" || p.name == "r");
+    let g_idx = vertex_properties
+        .iter()
+        .position(|p| p.name == "green" || p.name == "g");
+    let b_idx = vertex_properties
+        .iter()
+        .position(|p| p.name == "blue" || p.name == "b");
+    let a_idx = vertex_properties
+        .iter()
+        .position(|p| p.name == "alpha" || p.name == "a");
 
     let has_positions = x_idx.is_some() && y_idx.is_some() && z_idx.is_some();
     let has_normals = nx_idx.is_some() && ny_idx.is_some() && nz_idx.is_some();
@@ -481,77 +516,63 @@ fn parse_ply_internal(content: &str) -> ParseResult {
     }
 }
 
-fn parse_binary_ply(data: &[u8]) -> ParseResult {
-    let mut format = "unknown".to_string();
-    let mut vertex_count = 0usize;
-    let mut face_count = 0usize;
-    let mut property_names: Vec<String> = Vec::new();
-
-    if let Some(header_end) = find_ply_header_end(data) {
-        let header_text = String::from_utf8_lossy(&data[..header_end]);
-        for line in header_text.lines() {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.is_empty() {
-                continue;
-            }
-            match parts[0] {
-                "format" if parts.len() >= 2 => {
-                    format = parts[1].to_string();
-                }
-                "element" if parts.len() >= 3 => {
-                    let count = parts[2].parse().unwrap_or(0);
-                    if parts[1] == "vertex" {
-                        vertex_count = count;
-                    } else if parts[1] == "face" {
-                        face_count = count;
-                    }
-                }
-                "property" if parts.len() >= 3 => {
-                    if parts[1] == "list" && parts.len() >= 5 {
-                        property_names.push(parts[4].to_string());
-                    } else {
-                        property_names.push(parts[2].to_string());
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    ParseResult {
-        success: false,
-        meshes: vec![],
-        error: Some(format!(
-            "Binary PLY format '{}' is not implemented in the WASM reader yet. Use the native draco-io reader for binary PLY, or ASCII PLY in this module.",
-            format
-        )),
-        warnings: vec![],
-        header: Some(PlyHeader {
-            format,
-            vertex_count,
-            face_count,
-            properties: property_names,
-        }),
-    }
-}
-
-fn find_ply_header_end(data: &[u8]) -> Option<usize> {
-    const HEADER_END_LF: &[u8] = b"end_header\n";
-    const HEADER_END_CRLF: &[u8] = b"end_header\r\n";
-
-    data.windows(HEADER_END_CRLF.len())
-        .position(|window| window == HEADER_END_CRLF)
-        .map(|pos| pos + HEADER_END_CRLF.len())
-        .or_else(|| {
-            data.windows(HEADER_END_LF.len())
-                .position(|window| window == HEADER_END_LF)
-                .map(|pos| pos + HEADER_END_LF.len())
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn binary_ply_quad(format: &str) -> Vec<u8> {
+        let mut ply = format!(
+            "ply\nformat {format} 1.0\nelement vertex 4\nproperty float x\nproperty float y\nproperty float z\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n"
+        )
+        .into_bytes();
+
+        for vertex in [
+            [0.0f32, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ] {
+            for component in vertex {
+                if format == "binary_big_endian" {
+                    ply.extend_from_slice(&component.to_be_bytes());
+                } else {
+                    ply.extend_from_slice(&component.to_le_bytes());
+                }
+            }
+        }
+
+        ply.push(4);
+        for index in [0i32, 1, 2, 3] {
+            if format == "binary_big_endian" {
+                ply.extend_from_slice(&index.to_be_bytes());
+            } else {
+                ply.extend_from_slice(&index.to_le_bytes());
+            }
+        }
+
+        ply
+    }
+
+    fn assert_binary_quad_result(result: ParseResult, format: &str) {
+        assert!(
+            result.success,
+            "binary PLY parse should succeed: {:?}",
+            result.error
+        );
+        assert_eq!(result.meshes.len(), 1);
+
+        let mesh = &result.meshes[0];
+        assert_eq!(
+            mesh.positions,
+            vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0]
+        );
+        assert_eq!(mesh.indices, vec![0, 1, 2, 0, 2, 3]);
+
+        let header = result.header.expect("header should be parsed");
+        assert_eq!(header.format, format);
+        assert_eq!(header.vertex_count, 4);
+        assert_eq!(header.face_count, 1);
+    }
 
     #[test]
     fn test_parse_simple_ply() {
@@ -579,11 +600,11 @@ end_header
 
     #[test]
     fn test_parse_bunny_ply() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../testdata/bun_zipper.ply");
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/bun_zipper.ply");
         let content = std::fs::read_to_string(&path).expect("Failed to read bunny PLY");
         println!("Content length: {} bytes", content.len());
-        
+
         let result = parse_ply_internal(&content);
         println!("Result success: {}", result.success);
         if let Some(ref err) = result.error {
@@ -593,32 +614,45 @@ end_header
             println!("Warning: {}", w);
         }
         if let Some(ref header) = result.header {
-            println!("Header: {} vertices, {} faces", header.vertex_count, header.face_count);
+            println!(
+                "Header: {} vertices, {} faces",
+                header.vertex_count, header.face_count
+            );
         }
         if !result.meshes.is_empty() {
             let mesh = &result.meshes[0];
-            println!("Mesh: {} positions, {} indices", mesh.positions.len(), mesh.indices.len());
+            println!(
+                "Mesh: {} positions, {} indices",
+                mesh.positions.len(),
+                mesh.indices.len()
+            );
         }
-        
+
         assert!(result.success, "Parsing should succeed");
         assert_eq!(result.meshes.len(), 1, "Should have 1 mesh");
-        assert_eq!(result.meshes[0].positions.len(), 35947 * 3, "Should have 35947 vertices");
-        assert_eq!(result.meshes[0].indices.len(), 69451 * 3, "Should have 69451 faces (triangulated)");
+        assert_eq!(
+            result.meshes[0].positions.len(),
+            35947 * 3,
+            "Should have 35947 vertices"
+        );
+        assert_eq!(
+            result.meshes[0].indices.len(),
+            69451 * 3,
+            "Should have 69451 faces (triangulated)"
+        );
     }
 
     #[test]
-    fn test_parse_binary_ply_reports_header_and_honest_error() {
-        let mut data = b"ply\nformat binary_little_endian 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nelement face 0\nend_header\n".to_vec();
-        data.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    fn test_parse_binary_little_endian_ply_bytes() {
+        let data = binary_ply_quad("binary_little_endian");
+        let result = parse_ply_with_core(&data).expect("little-endian binary PLY should parse");
+        assert_binary_quad_result(result, "binary_little_endian");
+    }
 
-        let result = parse_binary_ply(&data);
-        assert!(!result.success);
-        assert!(result.error.as_ref().unwrap().contains("binary_little_endian"));
-
-        let header = result.header.expect("binary header should be parsed");
-        assert_eq!(header.format, "binary_little_endian");
-        assert_eq!(header.vertex_count, 1);
-        assert_eq!(header.face_count, 0);
-        assert!(header.properties.contains(&"x".to_string()));
+    #[test]
+    fn test_parse_binary_big_endian_ply_bytes() {
+        let data = binary_ply_quad("binary_big_endian");
+        let result = parse_ply_with_core(&data).expect("big-endian binary PLY should parse");
+        assert_binary_quad_result(result, "binary_big_endian");
     }
 }
