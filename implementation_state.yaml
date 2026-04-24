@@ -2128,3 +2128,6 @@ files:
       - name: "decode_generated_legacy_draco_smoke_fixtures"
         progress: "added"
         note: "Regression coverage for six small generated C++ Draco 1.0.0/1.1.0 smoke fixtures under testdata/legacy_draco: mesh sequential, mesh Edgebreaker, and point-cloud sequential streams decode successfully with nonzero geometry and attributes."
+      - name: "generated_legacy_sequential_cube_attributes_match_cpp_decoder"
+        progress: "added"
+        note: "C++-oracle regression for generated Draco 1.0.0/1.1.0 sequential cube_att mesh fixtures. Runs the matching legacy draco_decoder.exe, parses the decoded OBJ, and compares Rust face-corner POSITION/TEX_COORD/NORMAL records against C++ output with tolerances. Legacy Edgebreaker per-corner attribute parity remains tracked in actionable_status.yaml."

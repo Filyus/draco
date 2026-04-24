@@ -641,6 +641,8 @@ impl MeshEdgebreakerDecoder {
         // to properly position the buffer. Now we need to decode from them.
         self.attribute_seam_corners.clear();
 
+        let uses_legacy_attribute_connectivity = bitstream_version < 0x0201;
+
         if self.traversal_decoder_type == 2 {
             // Valence mode - use the seam decoders we already started
             for mut seam_decoder in valence_seam_decoders.into_iter() {
@@ -652,9 +654,12 @@ impl MeshEdgebreakerDecoder {
                             let opp = ct.opposite(CornerIndex(c));
                             if opp != crate::geometry_indices::INVALID_CORNER_INDEX {
                                 let opp_face = (opp.0 / 3) as usize;
-                                if f < opp_face && seam_decoder.decode_next_bit() {
+                                if uses_legacy_attribute_connectivity {
+                                    if seam_decoder.decode_next_bit() {
+                                        seam_corners.push(c);
+                                    }
+                                } else if f < opp_face && seam_decoder.decode_next_bit() {
                                     seam_corners.push(c);
-                                    seam_corners.push(opp.0);
                                 }
                             } else {
                                 seam_corners.push(c);
@@ -683,9 +688,12 @@ impl MeshEdgebreakerDecoder {
                             let opp = ct.opposite(CornerIndex(c));
                             if opp != crate::geometry_indices::INVALID_CORNER_INDEX {
                                 let opp_face = (opp.0 / 3) as usize;
-                                if f < opp_face && seam_decoder.decode_next_bit() {
+                                if uses_legacy_attribute_connectivity {
+                                    if seam_decoder.decode_next_bit() {
+                                        seam_corners.push(c);
+                                    }
+                                } else if f < opp_face && seam_decoder.decode_next_bit() {
                                     seam_corners.push(c);
-                                    seam_corners.push(opp.0);
                                 }
                             } else {
                                 seam_corners.push(c);

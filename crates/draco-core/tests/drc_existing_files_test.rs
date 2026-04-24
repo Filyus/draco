@@ -1,10 +1,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use draco_core::compression_config::EncodedGeometryType;
 use draco_core::decoder_buffer::DecoderBuffer;
+use draco_core::draco_types::DataType;
 use draco_core::encoder_buffer::EncoderBuffer;
 use draco_core::encoder_options::EncoderOptions;
+use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
+use draco_core::geometry_indices::PointIndex;
 use draco_core::mesh::Mesh;
 use draco_core::mesh_decoder::MeshDecoder;
 use draco_core::mesh_encoder::MeshEncoder;
@@ -15,6 +19,15 @@ use draco_core::status::DracoError;
 fn repo_testdata_dir() -> PathBuf {
     // CARGO_MANIFEST_DIR = <repo>/crates/draco-core
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata")
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates directory")
+        .parent()
+        .expect("repo root")
+        .to_path_buf()
 }
 
 fn collect_drc_files_recursive(root: &Path) -> Vec<PathBuf> {
@@ -218,6 +231,182 @@ fn decode_drc(bytes: &[u8]) -> (EncodedGeometryType, Option<Mesh>, Option<PointC
     }
 }
 
+#[derive(Debug, Clone)]
+struct LegacyCornerRecord {
+    position: [f32; 3],
+    tex_coord: [f32; 2],
+    normal: [f32; 3],
+}
+
+fn legacy_decoder_path(version_dir: &str) -> PathBuf {
+    let path = repo_root()
+        .join("draco-version-tools")
+        .join(version_dir)
+        .join("draco_decoder.exe");
+    assert!(
+        path.exists(),
+        "missing legacy Draco decoder at {}",
+        path.display()
+    );
+    path
+}
+
+fn parse_obj_triplet_index(value: &str, component: usize) -> usize {
+    let raw = value
+        .split('/')
+        .nth(component)
+        .unwrap_or_else(|| panic!("invalid OBJ face element: {value}"));
+    assert!(!raw.is_empty(), "missing OBJ face component in {value}");
+    raw.parse::<usize>()
+        .unwrap_or_else(|e| panic!("invalid OBJ face index {raw}: {e}"))
+        - 1
+}
+
+fn parse_cpp_obj_corner_records(obj: &str) -> Vec<LegacyCornerRecord> {
+    let mut positions = Vec::new();
+    let mut tex_coords = Vec::new();
+    let mut normals = Vec::new();
+    let mut records = Vec::new();
+
+    for line in obj.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        match parts.as_slice() {
+            ["v", x, y, z, ..] => positions.push([
+                x.parse().expect("OBJ x position"),
+                y.parse().expect("OBJ y position"),
+                z.parse().expect("OBJ z position"),
+            ]),
+            ["vt", u, v, ..] => tex_coords.push([
+                u.parse().expect("OBJ u tex coord"),
+                v.parse().expect("OBJ v tex coord"),
+            ]),
+            ["vn", x, y, z, ..] => normals.push([
+                x.parse().expect("OBJ x normal"),
+                y.parse().expect("OBJ y normal"),
+                z.parse().expect("OBJ z normal"),
+            ]),
+            ["f", corners @ ..] => {
+                assert_eq!(corners.len(), 3, "expected triangulated OBJ face: {line}");
+                for corner in corners {
+                    let position = positions[parse_obj_triplet_index(corner, 0)];
+                    let tex_coord = tex_coords[parse_obj_triplet_index(corner, 1)];
+                    let normal = normals[parse_obj_triplet_index(corner, 2)];
+                    records.push(LegacyCornerRecord {
+                        position,
+                        tex_coord,
+                        normal,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    records
+}
+
+fn read_f32_tuple(attribute: &PointAttribute, point: PointIndex, components: usize) -> Vec<f32> {
+    assert_eq!(
+        attribute.data_type(),
+        DataType::Float32,
+        "legacy smoke fixture attributes should decode to float32"
+    );
+    let value_index = attribute.mapped_index(point).0 as usize;
+    assert_ne!(
+        value_index,
+        u32::MAX as usize,
+        "attribute has invalid mapping for point {}",
+        point.0
+    );
+    assert!(
+        value_index < attribute.size(),
+        "attribute mapping for point {} is out of range: {} >= {}",
+        point.0,
+        value_index,
+        attribute.size()
+    );
+    let offset = value_index * attribute.byte_stride() as usize;
+    let data = attribute.buffer().data();
+    (0..components)
+        .map(|component| {
+            let start = offset + component * 4;
+            f32::from_le_bytes(data[start..start + 4].try_into().expect("f32 bytes"))
+        })
+        .collect()
+}
+
+fn rust_corner_records(mesh: &Mesh) -> Vec<LegacyCornerRecord> {
+    let pos_id = mesh.named_attribute_id(GeometryAttributeType::Position);
+    let tex_id = mesh.named_attribute_id(GeometryAttributeType::TexCoord);
+    let normal_id = mesh.named_attribute_id(GeometryAttributeType::Normal);
+    assert!(pos_id >= 0, "Rust decode missing POSITION attribute");
+    assert!(tex_id >= 0, "Rust decode missing TEX_COORD attribute");
+    assert!(normal_id >= 0, "Rust decode missing NORMAL attribute");
+
+    let pos = mesh.attribute(pos_id);
+    let tex = mesh.attribute(tex_id);
+    let normal = mesh.attribute(normal_id);
+    assert_eq!(pos.num_components(), 3);
+    assert_eq!(tex.num_components(), 2);
+    assert_eq!(normal.num_components(), 3);
+
+    let mut records = Vec::with_capacity(mesh.num_faces() * 3);
+    for face_id in 0..mesh.num_faces() {
+        for point in mesh.face(draco_core::geometry_indices::FaceIndex(face_id as u32)) {
+            let position = read_f32_tuple(pos, point, 3);
+            let tex_coord = read_f32_tuple(tex, point, 2);
+            let normal = read_f32_tuple(normal, point, 3);
+            records.push(LegacyCornerRecord {
+                position: [position[0], position[1], position[2]],
+                tex_coord: [tex_coord[0], tex_coord[1]],
+                normal: [normal[0], normal[1], normal[2]],
+            });
+        }
+    }
+    records
+}
+
+fn close_vec2(a: [f32; 2], b: [f32; 2], tolerance: f32) -> bool {
+    (a[0] - b[0]).abs() <= tolerance && (a[1] - b[1]).abs() <= tolerance
+}
+
+fn close_vec3(a: [f32; 3], b: [f32; 3], tolerance: f32) -> bool {
+    (a[0] - b[0]).abs() <= tolerance
+        && (a[1] - b[1]).abs() <= tolerance
+        && (a[2] - b[2]).abs() <= tolerance
+}
+
+fn close_legacy_corner_record(expected: &LegacyCornerRecord, actual: &LegacyCornerRecord) -> bool {
+    close_vec3(expected.position, actual.position, 0.01)
+        && close_vec2(expected.tex_coord, actual.tex_coord, 0.01)
+        && close_vec3(expected.normal, actual.normal, 0.03)
+}
+
+fn assert_legacy_corner_records_match(
+    fixture: &str,
+    expected: &[LegacyCornerRecord],
+    actual: &[LegacyCornerRecord],
+) {
+    assert_eq!(
+        actual.len(),
+        expected.len(),
+        "{fixture}: corner record count mismatch"
+    );
+    let mut matched = vec![false; actual.len()];
+
+    for expected_record in expected {
+        let Some((actual_index, _)) = actual.iter().enumerate().find(|(index, actual_record)| {
+            !matched[*index] && close_legacy_corner_record(expected_record, actual_record)
+        }) else {
+            panic!(
+                "{fixture}: no Rust corner matched C++ corner {:?}\nRust corners: {:?}",
+                expected_record, actual
+            );
+        };
+        matched[actual_index] = true;
+    }
+}
+
 #[test]
 fn decode_legacy_mesh_v20_v21_from_testdata() {
     let fixtures = [
@@ -400,6 +589,62 @@ fn decode_generated_legacy_draco_smoke_fixtures() {
             }
             _ => unreachable!(),
         }
+    }
+}
+
+#[test]
+fn generated_legacy_sequential_cube_attributes_match_cpp_decoder() {
+    let fixtures = [
+        ("legacy_draco/cube_att.mesh_seq.1.0.0.drc", "1.0.0-b756664"),
+        ("legacy_draco/cube_att.mesh_seq.1.1.0.drc", "1.1.0-dc28e6a"),
+    ];
+
+    for (fixture, decoder_version) in fixtures {
+        let drc_path = repo_testdata_dir().join(fixture);
+        let obj_path = std::env::temp_dir().join(format!(
+            "draco_legacy_attr_{}_{}.obj",
+            decoder_version,
+            fixture.replace(['/', '\\', '.'], "_")
+        ));
+
+        let output = Command::new(legacy_decoder_path(decoder_version))
+            .arg("-i")
+            .arg(&drc_path)
+            .arg("-o")
+            .arg(&obj_path)
+            .output()
+            .unwrap_or_else(|e| {
+                panic!("{fixture}: failed to run legacy Draco decoder {decoder_version}: {e}")
+            });
+        assert!(
+            output.status.success(),
+            "{fixture}: legacy Draco decoder {decoder_version} failed\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let cpp_obj = fs::read_to_string(&obj_path)
+            .unwrap_or_else(|e| panic!("{fixture}: failed to read C++ decoded OBJ: {e}"));
+        let cpp_records = parse_cpp_obj_corner_records(&cpp_obj);
+        assert_eq!(
+            cpp_records.len(),
+            36,
+            "{fixture}: expected 12 triangular faces from C++ decoder"
+        );
+
+        let bytes = read_file_bytes(&drc_path);
+        let mut buffer = DecoderBuffer::new(&bytes);
+        let mut mesh = Mesh::new();
+        let mut decoder = MeshDecoder::new();
+        decoder
+            .decode(&mut buffer, &mut mesh)
+            .unwrap_or_else(|e| panic!("{fixture}: Rust decode failed: {e:?}"));
+        assert_eq!(mesh.num_faces(), 12, "{fixture}: Rust face count mismatch");
+
+        let rust_records = rust_corner_records(&mesh);
+        assert_legacy_corner_records_match(fixture, &cpp_records, &rust_records);
+
+        let _ = fs::remove_file(obj_path);
     }
 }
 

@@ -92,6 +92,12 @@ fn find_cpp_tool(env_var: &str, tool_name: &str) -> PathBuf {
 
     let root = repo_root();
     let candidates = [
+        root.join("draco-version-tools")
+            .join("1.5.7-8786740")
+            .join(tool_name),
+        root.join("draco-version-tools")
+            .join("main-77e616e")
+            .join(tool_name),
         root.join("build-original")
             .join("src")
             .join("draco")

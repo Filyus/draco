@@ -27,6 +27,24 @@ version: 1
 last_reviewed: "2026-04-24"
 
 items:
+  - id: rust-drc-legacy-edgebreaker-per-corner-attributes
+    area: draco-core
+    priority: medium
+    status: open
+    summary: "Legacy Draco 1.0.0/1.1.0 Edgebreaker UV/normal parity still needs per-corner attribute connectivity support."
+    evidence:
+      - path: "testdata/legacy_draco/cube_att.mesh_eb.1.0.0.drc"
+        note: "C++ draco_decoder restores per-corner TEX_COORD/NORMAL records for cube_att; a local parity probe showed Rust corner records differ because the current PointAttribute mapping is point->attribute-value, not face-corner->attribute-value."
+      - path: "crates/draco-core/tests/drc_existing_files_test.rs"
+        note: "generated_legacy_sequential_cube_attributes_match_cpp_decoder now compares POSITION/TEX_COORD/NORMAL corner records for sequential legacy fixtures against C++ output. Edgebreaker legacy fixtures remain covered only by smoke invariants."
+      - path: "crates/draco-core/src/mesh_edgebreaker_decoder.rs"
+        note: "Attribute seam decoding now follows the C++ legacy <2.1 directed-corner branch, but the decoded per-corner connectivity is not yet represented through the public Mesh/PointAttribute model."
+    impact: "Legacy Edgebreaker meshes with UV seams or normal seams may decode successfully while exposing incorrect UV/normal mappings through the Rust API."
+    next_steps:
+      - "Decide whether Rust Mesh should gain explicit per-corner attribute mapping or expand legacy Edgebreaker meshes into split logical points after decode."
+      - "Once the representation is chosen, add C++-oracle parity for generated legacy cube_att Edgebreaker fixtures from Draco 1.0.0 and 1.1.0."
+      - "Keep the current Draco 1.0.0+ policy floor; this is a supported-floor quality gap, not a pre-1.0 archival-format request."
+
   - id: rust-drc-untrusted-decode-hardening
     area: draco-core
     priority: high
