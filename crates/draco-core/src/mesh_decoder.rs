@@ -862,32 +862,23 @@ impl MeshDecoder {
                     // - per_decoder_traversal == 1 (PREDICTION_DEGREE): MaxPredictionDegree traversal (speed 0)
                     // - per_decoder_traversal == 0 (DEPTH_FIRST): DFS traversal (speed >= 1)
 
-                    // Build corner_order: processed_connectivity_corners (already reversed in decode)
-                    let corner_order: Vec<u32> =
-                        self.edgebreaker_processed_connectivity_corners.clone();
-                    // Note: encoder reverses then appends init_face corners.
-                    // Decoder's processed_connectivity_corners is stored reversed already.
-                    // We don't have init_face_connectivity_corners in the decoder, but they
-                    // should be at the end of corner_order from the encoder perspective.
-
                     if per_decoder_traversal == 1 {
                         // Speed 0: use MaxPredictionDegree traversal
                         let (ids, map, v_map) = self
                             .generate_point_ids_and_corners_max_prediction_degree(
                                 mesh,
-                                &corner_order,
+                                &self.edgebreaker_processed_connectivity_corners,
                             )?;
                         sequenced_point_ids = Some(ids);
                         sequenced_data_to_corner_map = Some(map);
                         sequenced_vertex_to_data_map = Some(v_map); // Use directly from traversal
                     } else {
-                        // Speed >= 1: use DFS with sequential faces
-                        let seeds: Vec<u32> =
-                            (0..mesh.num_faces()).map(|f| (f * 3) as u32).collect();
-
+                        // Speed >= 1: use DFS with sequential faces. The traversal helper
+                        // already uses CornerIndex(3 * face_id) when no explicit seeds are
+                        // provided, so avoid allocating a temporary seed vector here.
                         let (ids, map, v_map) =
-                            self.generate_point_ids_and_corners_dfs(mesh, &seeds)?;
-                        sequenced_point_ids = Some(ids.clone());
+                            self.generate_point_ids_and_corners_dfs(mesh, &[])?;
+                        sequenced_point_ids = Some(ids);
                         sequenced_data_to_corner_map = Some(map);
                         sequenced_vertex_to_data_map = Some(v_map); // Use directly from DFS traversal
                     }
