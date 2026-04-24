@@ -25,6 +25,17 @@ mod ffi {
         pub num_faces: u32,
     }
 
+    /// Decoded mesh fingerprint from C++.
+    #[repr(C)]
+    pub struct DracoDecodeFingerprint {
+        pub num_points: u32,
+        pub num_faces: u32,
+        pub num_attributes: u32,
+        pub face_hash: u64,
+        pub attribute_hash: u64,
+        pub canonical_corner_hash: u64,
+    }
+
     extern "C" {
         /// Benchmark encoding: runs encoding multiple times and returns average time in microseconds
         pub fn draco_benchmark_encode_mesh(
@@ -48,6 +59,20 @@ mod ffi {
             encoding_speed: c_int,
             decoding_speed: c_int,
             quantization_bits: c_int,
+            output_buffer: *mut u8,
+            output_buffer_size: usize,
+        ) -> usize;
+
+        /// Single-shot sequential mesh encoding with optional compressed connectivity.
+        pub fn draco_encode_mesh_sequential(
+            num_points: u32,
+            positions: *const f32,
+            num_faces: u32,
+            faces: *const u32,
+            encoding_speed: c_int,
+            decoding_speed: c_int,
+            quantization_bits: c_int,
+            compress_connectivity: c_int,
             output_buffer: *mut u8,
             output_buffer_size: usize,
         ) -> usize;
@@ -117,6 +142,20 @@ mod ffi {
             encoded_size: usize,
             iterations: u32,
             result: *mut DracoDecodeProfileResult,
+        ) -> c_int;
+
+        /// Decode a mesh once and return stable structural/data fingerprints.
+        pub fn draco_decode_mesh_fingerprint(
+            encoded_data: *const u8,
+            encoded_size: usize,
+            result: *mut DracoDecodeFingerprint,
+        ) -> c_int;
+
+        /// Decode a point cloud once and return stable structural/data fingerprints.
+        pub fn draco_decode_point_cloud_fingerprint(
+            encoded_data: *const u8,
+            encoded_size: usize,
+            result: *mut DracoDecodeFingerprint,
         ) -> c_int;
     }
 }
@@ -293,6 +332,57 @@ pub fn encode_cpp_mesh(
     None
 }
 
+/// Encode a mesh using C++ Draco sequential mode.
+#[cfg(not(draco_ffi_disabled))]
+pub fn encode_cpp_mesh_sequential(
+    positions: &[f32],
+    faces: &[u32],
+    encoding_speed: i32,
+    decoding_speed: i32,
+    quantization_bits: i32,
+    compress_connectivity: bool,
+) -> Option<Vec<u8>> {
+    let num_points = (positions.len() / 3) as u32;
+    let num_faces = (faces.len() / 3) as u32;
+
+    let buffer_size = (num_points as usize * 12 + faces.len() * 4 + 4096).max(65536);
+    let mut buffer = vec![0u8; buffer_size];
+
+    let encoded_size = unsafe {
+        ffi::draco_encode_mesh_sequential(
+            num_points,
+            positions.as_ptr(),
+            num_faces,
+            faces.as_ptr(),
+            encoding_speed,
+            decoding_speed,
+            quantization_bits,
+            i32::from(compress_connectivity),
+            buffer.as_mut_ptr(),
+            buffer_size,
+        )
+    };
+
+    if encoded_size == 0 {
+        return None;
+    }
+
+    buffer.truncate(encoded_size);
+    Some(buffer)
+}
+
+#[cfg(draco_ffi_disabled)]
+pub fn encode_cpp_mesh_sequential(
+    _positions: &[f32],
+    _faces: &[u32],
+    _encoding_speed: i32,
+    _decoding_speed: i32,
+    _quantization_bits: i32,
+    _compress_connectivity: bool,
+) -> Option<Vec<u8>> {
+    None
+}
+
 /// Profile C++ encoding with detailed timing breakdown
 #[cfg(not(draco_ffi_disabled))]
 pub fn profile_cpp_encode(
@@ -361,6 +451,17 @@ pub struct CppDecodeProfileResult {
     pub num_faces: u32,
 }
 
+/// Structural and data fingerprint for a decoded C++ mesh.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CppDecodeFingerprint {
+    pub num_points: u32,
+    pub num_faces: u32,
+    pub num_attributes: u32,
+    pub face_hash: u64,
+    pub attribute_hash: u64,
+    pub canonical_corner_hash: u64,
+}
+
 /// Profile C++ decoding
 #[cfg(not(draco_ffi_disabled))]
 pub fn profile_cpp_decode(encoded_data: &[u8], iterations: u32) -> Option<CppDecodeProfileResult> {
@@ -395,6 +496,80 @@ pub fn profile_cpp_decode(
     _encoded_data: &[u8],
     _iterations: u32,
 ) -> Option<CppDecodeProfileResult> {
+    None
+}
+
+/// Decode a mesh with C++ Draco and return stable fingerprints for comparison.
+#[cfg(not(draco_ffi_disabled))]
+pub fn decode_cpp_mesh_fingerprint(encoded_data: &[u8]) -> Option<CppDecodeFingerprint> {
+    let mut result = ffi::DracoDecodeFingerprint {
+        num_points: 0,
+        num_faces: 0,
+        num_attributes: 0,
+        face_hash: 0,
+        attribute_hash: 0,
+        canonical_corner_hash: 0,
+    };
+
+    let status = unsafe {
+        ffi::draco_decode_mesh_fingerprint(encoded_data.as_ptr(), encoded_data.len(), &mut result)
+    };
+
+    if status != 0 {
+        return None;
+    }
+
+    Some(CppDecodeFingerprint {
+        num_points: result.num_points,
+        num_faces: result.num_faces,
+        num_attributes: result.num_attributes,
+        face_hash: result.face_hash,
+        attribute_hash: result.attribute_hash,
+        canonical_corner_hash: result.canonical_corner_hash,
+    })
+}
+
+#[cfg(draco_ffi_disabled)]
+pub fn decode_cpp_mesh_fingerprint(_encoded_data: &[u8]) -> Option<CppDecodeFingerprint> {
+    None
+}
+
+/// Decode a point cloud with C++ Draco and return stable fingerprints for comparison.
+#[cfg(not(draco_ffi_disabled))]
+pub fn decode_cpp_point_cloud_fingerprint(encoded_data: &[u8]) -> Option<CppDecodeFingerprint> {
+    let mut result = ffi::DracoDecodeFingerprint {
+        num_points: 0,
+        num_faces: 0,
+        num_attributes: 0,
+        face_hash: 0,
+        attribute_hash: 0,
+        canonical_corner_hash: 0,
+    };
+
+    let status = unsafe {
+        ffi::draco_decode_point_cloud_fingerprint(
+            encoded_data.as_ptr(),
+            encoded_data.len(),
+            &mut result,
+        )
+    };
+
+    if status != 0 {
+        return None;
+    }
+
+    Some(CppDecodeFingerprint {
+        num_points: result.num_points,
+        num_faces: result.num_faces,
+        num_attributes: result.num_attributes,
+        face_hash: result.face_hash,
+        attribute_hash: result.attribute_hash,
+        canonical_corner_hash: result.canonical_corner_hash,
+    })
+}
+
+#[cfg(draco_ffi_disabled)]
+pub fn decode_cpp_point_cloud_fingerprint(_encoded_data: &[u8]) -> Option<CppDecodeFingerprint> {
     None
 }
 

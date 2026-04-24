@@ -18,6 +18,7 @@ pub struct MeshEdgebreakerDecoder {
     corner_table: Option<crate::corner_table::CornerTable>,
     traversal_decoder_type: u8,
     vertex_to_corner_map: Vec<u32>,
+    is_vert_hole: Vec<bool>,
 }
 
 impl Default for MeshEdgebreakerDecoder {
@@ -35,6 +36,7 @@ impl MeshEdgebreakerDecoder {
             corner_table: None,
             traversal_decoder_type: 0,
             vertex_to_corner_map: Vec::new(),
+            is_vert_hole: Vec::new(),
         }
     }
 
@@ -64,6 +66,10 @@ impl MeshEdgebreakerDecoder {
 
     pub fn get_vertex_to_corner_map(&self) -> &[u32] {
         &self.vertex_to_corner_map
+    }
+
+    pub fn take_is_vert_hole(&mut self) -> Vec<bool> {
+        std::mem::take(&mut self.is_vert_hole)
     }
 
     pub fn get_traversal_decoder_type(&self) -> u8 {
@@ -543,6 +549,7 @@ impl MeshEdgebreakerDecoder {
 
         // For valence mode, we need to save the seam decoders to use after connectivity
         let mut valence_seam_decoders: Vec<RAnsBitDecoder> = Vec::new();
+        let remove_invalid_vertices = num_attribute_data == 0 || bitstream_version < 0x0202;
 
         let num_vertices = if self.traversal_decoder_type == 2 {
             // Valence mode
@@ -576,7 +583,11 @@ impl MeshEdgebreakerDecoder {
             }
 
             let nv = connectivity_decoder
-                .decode_connectivity(actual_num_symbols as i32, &mut valence_decoder)
+                .decode_connectivity(
+                    actual_num_symbols as i32,
+                    &mut valence_decoder,
+                    remove_invalid_vertices,
+                )
                 .map_err(DracoError::DracoError)? as usize;
 
             // Don't end seam decoders yet - we need to decode from them after corner table is built
@@ -597,7 +608,11 @@ impl MeshEdgebreakerDecoder {
             );
 
             let nv = connectivity_decoder
-                .decode_connectivity(actual_num_symbols as i32, &mut traversal_decoder)
+                .decode_connectivity(
+                    actual_num_symbols as i32,
+                    &mut traversal_decoder,
+                    remove_invalid_vertices,
+                )
                 .map_err(DracoError::DracoError)? as usize;
 
             has_start_face_bits_flag = traversal_decoder.has_start_face_bits;
@@ -622,6 +637,8 @@ impl MeshEdgebreakerDecoder {
         let mut ct = connectivity_decoder.corner_table;
         ct.vertex_corners.truncate(num_vertices);
         self.corner_table = Some(ct);
+        connectivity_decoder.is_vert_hole.truncate(num_vertices);
+        self.is_vert_hole = connectivity_decoder.is_vert_hole;
 
         // Initialize vertex_to_corner_map
         self.vertex_to_corner_map = vec![u32::MAX; num_vertices];

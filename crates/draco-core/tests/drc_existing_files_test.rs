@@ -452,7 +452,11 @@ fn decode_legacy_mesh_v20_v21_from_testdata() {
 
 #[test]
 fn decode_point_cloud_sequential_v22_v23_from_testdata() {
-    let fixtures = ["pc_color.drc", "point_cloud_no_qp.drc"];
+    let fixtures = [
+        "pc_color.drc",
+        "point_cloud_no_qp.drc",
+        "production_draco/bpy_point_cloud.seq.v2.3.pos_norm_color.drc",
+    ];
 
     for fixture in fixtures {
         let path = repo_testdata_dir().join(fixture);
@@ -489,6 +493,41 @@ fn decode_point_cloud_sequential_v22_v23_from_testdata() {
             "{fixture} decoded with 0 attributes"
         );
     }
+}
+
+#[test]
+fn decode_production_point_cloud_kdtree_fixture() {
+    let fixture = "production_draco/bpy_point_cloud.kd.v2.3.pos_norm_color.drc";
+    let path = repo_testdata_dir().join(fixture);
+    let bytes = read_file_bytes(&path);
+    let (major, minor, geometry_type, method) = parse_header(&bytes);
+
+    assert_eq!(
+        geometry_type,
+        EncodedGeometryType::PointCloud,
+        "{fixture} should be a point-cloud fixture"
+    );
+    assert_eq!(
+        method, 1,
+        "{fixture} should cover KD-tree point-cloud method"
+    );
+    assert_eq!((major, minor), (2, 3), "{fixture} should be v2.3");
+
+    let mut buffer = DecoderBuffer::new(&bytes);
+    let mut pc = PointCloud::new();
+    let mut decoder = PointCloudDecoder::new();
+    let status = decoder.decode(&mut buffer, &mut pc);
+
+    assert!(
+        status.is_ok(),
+        "point-cloud KD-tree decode failed for {fixture}: {:?}",
+        status.err()
+    );
+    assert!(pc.num_points() > 0, "{fixture} decoded with 0 points");
+    assert!(
+        pc.num_attributes() > 0,
+        "{fixture} decoded with 0 attributes"
+    );
 }
 
 #[test]

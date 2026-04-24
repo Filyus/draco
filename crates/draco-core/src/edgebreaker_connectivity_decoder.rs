@@ -43,6 +43,7 @@ impl EdgebreakerConnectivityDecoder {
         &mut self,
         num_symbols: i32,
         traversal_decoder: &mut T,
+        remove_invalid_vertices: bool,
     ) -> Result<i32, String> {
         let max_num_vertices = self.is_vert_hole.len() as i32;
         let mut num_faces = 0;
@@ -228,7 +229,9 @@ impl EdgebreakerConnectivityDecoder {
                     }
 
                     self.corner_table.make_vertex_isolated(vertex_n);
-                    self.invalid_vertices.push(vertex_n);
+                    if remove_invalid_vertices {
+                        self.invalid_vertices.push(vertex_n);
+                    }
                 }
                 self.replace_active_corner(corner, "TOPOLOGY_S")?;
                 traversal_decoder.on_split_symbol_decoded(corner);
@@ -540,7 +543,7 @@ mod tests {
         let mut decoder = EdgebreakerConnectivityDecoder::new(1, 3);
         let mut traversal_decoder = StaticTraversalDecoder::new(vec![0]); // TOPOLOGY_C
 
-        let status = decoder.decode_connectivity(1, &mut traversal_decoder);
+        let status = decoder.decode_connectivity(1, &mut traversal_decoder, true);
 
         assert!(status.is_err());
     }
