@@ -500,8 +500,8 @@ files:
   - path: "crates/draco-core/src/prediction_scheme_geometric_normal.rs"
     functions:
       - name: "decode_prediction_data"
-        progress: "partially implemented"
-        note: "Functional for current supported fixtures, but still relies on a guarded v2.2+ +2-byte retry workaround when canonical transform+flip-bit init fails. Treat as working-but-not-clean parity."
+        progress: "fully implemented"
+        note: "Decodes transform data and flip bits directly without the older guarded +2-byte retry workaround; later struct audit also marks the geometric normal decoder fully implemented."
   - path: "crates/draco-core/src/draco_types.rs"
     structures:
       - name: "DataType"
@@ -1157,8 +1157,8 @@ files:
         note: "Decoder works correctly and matches C++ output."
       - name: "PredictionSchemeParallelogramEncoder"
         type: "struct"
-        progress: "partially implemented"
-        note: "Encoder has known limitation: vertex_to_data_map differs from decoder due to corner table structure differences. The encoder's corner table uses original mesh vertex IDs while decoder assigns new IDs during symbol processing. This causes prediction mismatches. Difference prediction scheme works correctly as a workaround."
+        progress: "fully implemented"
+        note: "Encoder uses the shared parallelogram prediction/fallback path and later audits mark prediction computation and correction encoding fully implemented."
     functions:
       - name: "compute_correction_values"
         progress: "fully implemented"
@@ -1779,8 +1779,8 @@ files:
     structures:
       - name: "PredictionSchemeTexCoordsPortableDecoder"
         type: "struct"
-        progress: "partially implemented"
-        note: "Implements orientation bitstream decoding and computes original values; uses Wrap transform decoding (min/max bounds) to match Draco C++. Parent position reads now use a stricter ConvertValue-like path with finite/range validation, but broader TexCoordsPortable parity coverage still needs more fixture validation."
+        progress: "fully implemented"
+        note: "Implements orientation bitstream decoding, Wrap transform decoding, C++-matching fallback prediction order, checked parent position conversion, bounds validation, unsigned/wrapping decoder orientation math, and overflow-risk rejection. Covered by roundtrip, fallback, and overflow tests."
       - name: "PredictionSchemeTexCoordsPortableEncoder"
         type: "struct"
         progress: "fully implemented"
@@ -2007,8 +2007,8 @@ files:
         progress: "fully implemented"
         note: "glTF/GLB writer WASM module. Supports optional Draco compression and now returns an explicit error if a produced Draco payload fails the internal decode check, instead of silently retrying without quantization."
       - name: "fbx-reader-wasm"
-        progress: "partially implemented"
-        note: "FBX binary parser WASM module. Reads uncompressed FBX 7.x binary arrays and now rejects compressed array payloads explicitly instead of mis-parsing them."
+        progress: "fully implemented"
+        note: "FBX binary parser WASM module. Reads uncompressed and zlib-compressed FBX 7.x binary arrays, validates decompressed payload sizes, and has parse-level coverage for compressed Geometry arrays."
       - name: "fbx-writer-wasm"
         progress: "fully implemented"
         note: "FBX binary writer WASM module. Writes FBX 7.5 format."

@@ -3,9 +3,9 @@
 //! Provides FBX binary file parsing functionality for web applications.
 //! Supports FBX 7.x binary format.
 
-use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read, Seek, SeekFrom};
+use wasm_bindgen::prelude::*;
 
 /// Mesh data structure for JavaScript interop.
 #[derive(Serialize, Deserialize, Clone)]
@@ -171,12 +171,23 @@ fn parse_node<R: Read + Seek>(reader: &mut R, is_64bit: bool) -> Result<Option<F
         let mut buf = [0u8; 25];
         reader.read_exact(&mut buf).map_err(|e| e.to_string())?;
 
-        let end_offset = u64::from_le_bytes([buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]]);
-        let num_properties = u64::from_le_bytes([buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15]]);
-        let properties_len = u64::from_le_bytes([buf[16], buf[17], buf[18], buf[19], buf[20], buf[21], buf[22], buf[23]]);
+        let end_offset = u64::from_le_bytes([
+            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
+        ]);
+        let num_properties = u64::from_le_bytes([
+            buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15],
+        ]);
+        let properties_len = u64::from_le_bytes([
+            buf[16], buf[17], buf[18], buf[19], buf[20], buf[21], buf[22], buf[23],
+        ]);
         let name_len = buf[24];
 
-        (end_offset, num_properties as usize, properties_len as usize, name_len as usize)
+        (
+            end_offset,
+            num_properties as usize,
+            properties_len as usize,
+            name_len as usize,
+        )
     } else {
         let mut buf = [0u8; 13];
         reader.read_exact(&mut buf).map_err(|e| e.to_string())?;
@@ -196,7 +207,9 @@ fn parse_node<R: Read + Seek>(reader: &mut R, is_64bit: bool) -> Result<Option<F
 
     // Read name
     let mut name_buf = vec![0u8; name_len];
-    reader.read_exact(&mut name_buf).map_err(|e| e.to_string())?;
+    reader
+        .read_exact(&mut name_buf)
+        .map_err(|e| e.to_string())?;
     let name = String::from_utf8_lossy(&name_buf).to_string();
 
     // Parse properties
@@ -210,14 +223,14 @@ fn parse_node<R: Read + Seek>(reader: &mut R, is_64bit: bool) -> Result<Option<F
     // Parse children
     let mut children = Vec::new();
     let current_pos = reader.stream_position().map_err(|e| e.to_string())?;
-    
+
     if current_pos < end_offset {
         loop {
             let child_pos = reader.stream_position().map_err(|e| e.to_string())?;
             if child_pos >= end_offset {
                 break;
             }
-            
+
             match parse_node(reader, is_64bit) {
                 Ok(Some(child)) => children.push(child),
                 Ok(None) => break,
@@ -227,7 +240,9 @@ fn parse_node<R: Read + Seek>(reader: &mut R, is_64bit: bool) -> Result<Option<F
     }
 
     // Seek to end of node
-    reader.seek(SeekFrom::Start(end_offset)).map_err(|e| e.to_string())?;
+    reader
+        .seek(SeekFrom::Start(end_offset))
+        .map_err(|e| e.to_string())?;
 
     Ok(Some(FbxNode {
         name,
@@ -238,7 +253,9 @@ fn parse_node<R: Read + Seek>(reader: &mut R, is_64bit: bool) -> Result<Option<F
 
 fn parse_property<R: Read>(reader: &mut R) -> Result<FbxProperty, String> {
     let mut type_code = [0u8; 1];
-    reader.read_exact(&mut type_code).map_err(|e| e.to_string())?;
+    reader
+        .read_exact(&mut type_code)
+        .map_err(|e| e.to_string())?;
 
     match type_code[0] {
         b'C' => {
@@ -278,20 +295,22 @@ fn parse_property<R: Read>(reader: &mut R) -> Result<FbxProperty, String> {
             let mut data = vec![0u8; len];
             reader.read_exact(&mut data).map_err(|e| e.to_string())?;
             if type_code[0] == b'S' {
-                Ok(FbxProperty::String(String::from_utf8_lossy(&data).to_string()))
+                Ok(FbxProperty::String(
+                    String::from_utf8_lossy(&data).to_string(),
+                ))
             } else {
                 Ok(FbxProperty::Raw(data))
             }
         }
         b'b' | b'c' => {
-            let (_count, encoding, compressed_len) = read_array_header(reader)?;
-            let data = read_array_data(reader, encoding, compressed_len)?;
+            let (count, encoding, payload_len) = read_array_header(reader)?;
+            let data = read_array_data(reader, encoding, payload_len, count)?;
             let bools: Vec<bool> = data.iter().map(|&b| b != 0).collect();
             Ok(FbxProperty::BoolArray(bools))
         }
         b'i' => {
-            let (count, encoding, compressed_len) = read_array_header(reader)?;
-            let data = read_array_data(reader, encoding, compressed_len)?;
+            let (count, encoding, payload_len) = read_array_header(reader)?;
+            let data = read_array_data(reader, encoding, payload_len, count * 4)?;
             let mut ints = Vec::with_capacity(count);
             for chunk in data.chunks(4) {
                 if chunk.len() == 4 {
@@ -301,22 +320,22 @@ fn parse_property<R: Read>(reader: &mut R) -> Result<FbxProperty, String> {
             Ok(FbxProperty::I32Array(ints))
         }
         b'l' => {
-            let (count, encoding, compressed_len) = read_array_header(reader)?;
-            let data = read_array_data(reader, encoding, compressed_len)?;
+            let (count, encoding, payload_len) = read_array_header(reader)?;
+            let data = read_array_data(reader, encoding, payload_len, count * 8)?;
             let mut longs = Vec::with_capacity(count);
             for chunk in data.chunks(8) {
                 if chunk.len() == 8 {
                     longs.push(i64::from_le_bytes([
-                        chunk[0], chunk[1], chunk[2], chunk[3],
-                        chunk[4], chunk[5], chunk[6], chunk[7],
+                        chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
+                        chunk[7],
                     ]));
                 }
             }
             Ok(FbxProperty::I64Array(longs))
         }
         b'f' => {
-            let (count, encoding, compressed_len) = read_array_header(reader)?;
-            let data = read_array_data(reader, encoding, compressed_len)?;
+            let (count, encoding, payload_len) = read_array_header(reader)?;
+            let data = read_array_data(reader, encoding, payload_len, count * 4)?;
             let mut floats = Vec::with_capacity(count);
             for chunk in data.chunks(4) {
                 if chunk.len() == 4 {
@@ -326,14 +345,14 @@ fn parse_property<R: Read>(reader: &mut R) -> Result<FbxProperty, String> {
             Ok(FbxProperty::F32Array(floats))
         }
         b'd' => {
-            let (count, encoding, compressed_len) = read_array_header(reader)?;
-            let data = read_array_data(reader, encoding, compressed_len)?;
+            let (count, encoding, payload_len) = read_array_header(reader)?;
+            let data = read_array_data(reader, encoding, payload_len, count * 8)?;
             let mut doubles = Vec::with_capacity(count);
             for chunk in data.chunks(8) {
                 if chunk.len() == 8 {
                     doubles.push(f64::from_le_bytes([
-                        chunk[0], chunk[1], chunk[2], chunk[3],
-                        chunk[4], chunk[5], chunk[6], chunk[7],
+                        chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
+                        chunk[7],
                     ]));
                 }
             }
@@ -346,24 +365,44 @@ fn parse_property<R: Read>(reader: &mut R) -> Result<FbxProperty, String> {
 fn read_array_header<R: Read>(reader: &mut R) -> Result<(usize, u32, usize), String> {
     let mut buf = [0u8; 12];
     reader.read_exact(&mut buf).map_err(|e| e.to_string())?;
-    
+
     let count = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
     let encoding = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
-    let compressed_len = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]) as usize;
-    
-    Ok((count, encoding, compressed_len))
+    let payload_len = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]) as usize;
+
+    Ok((count, encoding, payload_len))
 }
 
-fn read_array_data<R: Read>(reader: &mut R, encoding: u32, len: usize) -> Result<Vec<u8>, String> {
-    if encoding != 0 {
-        return Err(format!(
-            "Compressed FBX arrays are not supported in the WASM reader yet (encoding={})",
-            encoding
-        ));
+fn read_array_data<R: Read>(
+    reader: &mut R,
+    encoding: u32,
+    payload_len: usize,
+    expected_uncompressed_len: usize,
+) -> Result<Vec<u8>, String> {
+    match encoding {
+        0 => {
+            let mut data = vec![0u8; expected_uncompressed_len];
+            reader.read_exact(&mut data).map_err(|e| e.to_string())?;
+            Ok(data)
+        }
+        1 => {
+            let mut compressed = vec![0u8; payload_len];
+            reader
+                .read_exact(&mut compressed)
+                .map_err(|e| e.to_string())?;
+            let data = miniz_oxide::inflate::decompress_to_vec_zlib(&compressed)
+                .map_err(|e| format!("Compressed FBX array decompression failed: {:?}", e))?;
+            if data.len() != expected_uncompressed_len {
+                return Err(format!(
+                    "Compressed FBX array length mismatch: expected {} bytes, decoded {} bytes",
+                    expected_uncompressed_len,
+                    data.len()
+                ));
+            }
+            Ok(data)
+        }
+        _ => Err(format!("Unknown FBX array encoding: {}", encoding)),
     }
-    let mut data = vec![0u8; len];
-    reader.read_exact(&mut data).map_err(|e| e.to_string())?;
-    Ok(data)
 }
 
 fn extract_mesh_from_geometry(node: &FbxNode) -> Option<MeshData> {
@@ -419,7 +458,7 @@ fn extract_mesh_from_geometry(node: &FbxNode) -> Option<MeshData> {
         if idx < 0 {
             // End of polygon (index is bitwise complement)
             polygon.push((!idx) as u32);
-            
+
             // Triangulate polygon (fan triangulation)
             for i in 1..polygon.len() - 1 {
                 tri_indices.push(polygon[0]);
@@ -446,6 +485,7 @@ fn extract_mesh_from_geometry(node: &FbxNode) -> Option<MeshData> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use miniz_oxide::deflate::compress_to_vec_zlib;
 
     #[test]
     fn test_invalid_file() {
@@ -454,9 +494,139 @@ mod tests {
     }
 
     #[test]
-    fn test_read_array_data_rejects_compressed_arrays() {
-        let mut cursor = Cursor::new(vec![1u8, 2, 3, 4]);
-        let error = read_array_data(&mut cursor, 1, 4).unwrap_err();
-        assert!(error.contains("Compressed FBX arrays"));
+    fn test_read_array_data_decompresses_compressed_arrays() {
+        let raw = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
+        let compressed = compress_to_vec_zlib(&raw, 6);
+        let mut cursor = Cursor::new(compressed.clone());
+        let decoded = read_array_data(&mut cursor, 1, compressed.len(), raw.len()).unwrap();
+        assert_eq!(decoded, raw);
+    }
+
+    #[test]
+    fn test_read_array_data_rejects_decompressed_length_mismatch() {
+        let raw = vec![1u8, 2, 3, 4];
+        let compressed = compress_to_vec_zlib(&raw, 6);
+        let mut cursor = Cursor::new(compressed.clone());
+        let error = read_array_data(&mut cursor, 1, compressed.len(), raw.len() + 1).unwrap_err();
+        assert!(error.contains("length mismatch"));
+    }
+
+    #[test]
+    fn test_parse_fbx_with_compressed_geometry_arrays() {
+        let mut data = Vec::new();
+        data.extend_from_slice(FBX_MAGIC);
+        data.extend_from_slice(&[0x1A, 0x00]);
+        data.extend_from_slice(&7300u32.to_le_bytes());
+
+        let vertices = prop_f64_array_compressed(&[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+        let indices = prop_i32_array_compressed(&[0, 1, !2]);
+
+        let geometry = TestNode {
+            name: "Geometry",
+            props: vec![
+                prop_i64(1),
+                prop_string("Geometry::Triangle"),
+                prop_string("Mesh"),
+            ],
+            children: vec![
+                TestNode {
+                    name: "Vertices",
+                    props: vec![vertices],
+                    children: vec![],
+                },
+                TestNode {
+                    name: "PolygonVertexIndex",
+                    props: vec![indices],
+                    children: vec![],
+                },
+            ],
+        };
+        let objects = TestNode {
+            name: "Objects",
+            props: vec![],
+            children: vec![geometry],
+        };
+
+        let objects_bytes = encode_node(&objects, data.len() as u64);
+        data.extend_from_slice(&objects_bytes);
+        data.extend_from_slice(&[0u8; 13]);
+
+        let result = parse_fbx_internal(&data);
+        assert!(result.success, "{:?}", result.error);
+        assert_eq!(result.meshes.len(), 1);
+        assert_eq!(result.meshes[0].positions.len(), 9);
+        assert_eq!(result.meshes[0].indices, vec![0, 1, 2]);
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    }
+
+    struct TestNode {
+        name: &'static str,
+        props: Vec<Vec<u8>>,
+        children: Vec<TestNode>,
+    }
+
+    fn encode_node(node: &TestNode, start_abs: u64) -> Vec<u8> {
+        let mut out = vec![0u8; 13];
+        out.extend_from_slice(node.name.as_bytes());
+
+        let props_len: usize = node.props.iter().map(Vec::len).sum();
+        for prop in &node.props {
+            out.extend_from_slice(prop);
+        }
+
+        for child in &node.children {
+            let child_start = start_abs + out.len() as u64;
+            let child_bytes = encode_node(child, child_start);
+            out.extend_from_slice(&child_bytes);
+        }
+        if !node.children.is_empty() {
+            out.extend_from_slice(&[0u8; 13]);
+        }
+
+        let end_abs = start_abs + out.len() as u64;
+        out[0..4].copy_from_slice(&(end_abs as u32).to_le_bytes());
+        out[4..8].copy_from_slice(&(node.props.len() as u32).to_le_bytes());
+        out[8..12].copy_from_slice(&(props_len as u32).to_le_bytes());
+        out[12] = node.name.len() as u8;
+        out
+    }
+
+    fn prop_i64(value: i64) -> Vec<u8> {
+        let mut out = vec![b'L'];
+        out.extend_from_slice(&value.to_le_bytes());
+        out
+    }
+
+    fn prop_string(value: &str) -> Vec<u8> {
+        let mut out = vec![b'S'];
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+        out
+    }
+
+    fn prop_f64_array_compressed(values: &[f64]) -> Vec<u8> {
+        let mut raw = Vec::with_capacity(values.len() * 8);
+        for value in values {
+            raw.extend_from_slice(&value.to_le_bytes());
+        }
+        prop_array_compressed(b'd', values.len(), &raw)
+    }
+
+    fn prop_i32_array_compressed(values: &[i32]) -> Vec<u8> {
+        let mut raw = Vec::with_capacity(values.len() * 4);
+        for value in values {
+            raw.extend_from_slice(&value.to_le_bytes());
+        }
+        prop_array_compressed(b'i', values.len(), &raw)
+    }
+
+    fn prop_array_compressed(type_code: u8, count: usize, raw: &[u8]) -> Vec<u8> {
+        let compressed = compress_to_vec_zlib(raw, 6);
+        let mut out = vec![type_code];
+        out.extend_from_slice(&(count as u32).to_le_bytes());
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+        out.extend_from_slice(&compressed);
+        out
     }
 }
