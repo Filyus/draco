@@ -26,4 +26,51 @@
 version: 1
 last_reviewed: "2026-04-24"
 
-items: []
+items:
+  - id: rust-drc-untrusted-decode-hardening
+    area: draco-core
+    priority: high
+    status: open
+    summary: "Rust DRC decode needs malformed-input and resource-hardening coverage before claiming arbitrary untrusted-stream production readiness."
+    evidence:
+      - path: "crates/draco-core/tests/drc_existing_files_test.rs"
+        note: "Current coverage is positive-path decode of known-good fixtures, including legacy Draco 1.0.0+ smoke fixtures."
+      - path: "crates/draco-core/src/decoder_buffer.rs"
+        note: "DecoderBuffer has bounds-aware APIs, but there is no focused malformed .drc corpus or fuzz/property suite proving graceful failure across truncated, corrupt, oversized, or inconsistent streams."
+    impact: "Controlled Draco 1.0.0+ assets have good practical coverage, but accepting arbitrary external .drc input still carries crash, panic, timeout, and memory-growth risk."
+    next_steps:
+      - "Add a negative decoder test suite with truncated headers, corrupt varints, impossible counts, invalid attribute metadata, and truncated attribute/connectivity payloads."
+      - "Add fuzz or property-test entrypoints for MeshDecoder and PointCloudDecoder that assert no panic and bounded failure behavior."
+      - "Document any explicit input-size or resource assumptions enforced by callers or decoder code."
+
+  - id: rust-drc-encode-cpp-interop-confidence
+    area: draco-core
+    priority: medium
+    status: open
+    summary: "Rust encode production confidence is lower than decode and needs broader C++ interop regression coverage."
+    evidence:
+      - path: "crates/draco-core/tests/rust_vs_cpp_decode_test.rs"
+        note: "There is mandatory Rust-encoded Edgebreaker interop coverage for a multi-attribute mesh, but it is not a broad encode matrix."
+      - path: "crates/draco-core/tests/drc_existing_files_test.rs"
+        note: "Existing legacy work mostly strengthens Rust decode of C++-generated streams; it does not prove Rust encoder output across versions, methods, and attribute layouts."
+    impact: "Decode of known-good files is much closer to production-ready than Rust encode compatibility, especially for downstream C++ consumers and varied attribute/prediction combinations."
+    next_steps:
+      - "Build a small encode interop matrix for mesh sequential, mesh Edgebreaker, and point-cloud sequential using POSITION, NORMAL, TEX_COORD, and COLOR where supported."
+      - "For each Rust-encoded output, require C++ draco_decoder to decode successfully and compare minimal geometry/attribute invariants."
+      - "Keep the matrix small and deterministic so it can run in CI when C++ tools are available."
+
+  - id: rust-drc-production-coverage-matrix
+    area: draco-core
+    priority: medium
+    status: open
+    summary: "Production-readiness confidence needs coverage beyond the current small compatibility fixtures."
+    evidence:
+      - path: "testdata/legacy_draco/README.md"
+        note: "Legacy smoke fixtures intentionally cover a minimal Draco 1.0.0/1.1.0 mesh and point-cloud set, not a full version/attribute/prediction matrix."
+      - path: "implementation_state.yaml"
+        note: "Implementation state records Draco 1.0.0+ as the policy floor and leaves older v1.1/v1.2 fixture skips out of scope."
+    impact: "The current suite gives strong signal for selected known-good streams, but not for the long tail of quantization modes, metadata, prediction schemes, attribute combinations, and real-world assets."
+    next_steps:
+      - "Define a compact production coverage matrix for supported Draco 1.0.0+ decode paths, explicitly listing required geometry types, methods, attributes, transforms, and metadata cases."
+      - "Add only missing high-value fixtures or generated tests from that matrix; avoid committing a large exhaustive fixture zoo."
+      - "Keep out-of-scope pre-Draco-1.0.0 streams documented as policy rather than actionable decoder gaps."
