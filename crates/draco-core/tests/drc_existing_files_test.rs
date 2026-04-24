@@ -73,10 +73,10 @@ fn supports_mesh_bitstream(major: u8, _minor: u8) -> bool {
 
 fn supports_point_cloud_bitstream(major: u8, minor: u8, method: u8) -> bool {
     // Current PointCloudDecoder supports:
-    // - v2.2+ sequential (method=0)
+    // - v2.0+ sequential (method=0), covering the Draco 1.0.0+ policy floor
     // - v2.3 KD-tree (method=1)
     // - our v1.3 sequential format (method=0)
-    (major == 2 && minor >= 2 && method == 0)
+    (major == 2 && method == 0)
         || (major == 2 && minor == 3 && method == 1)
         || (major == 1 && minor == 3 && method == 0)
 }
@@ -299,6 +299,107 @@ fn decode_point_cloud_sequential_v22_v23_from_testdata() {
             pc.num_attributes() > 0,
             "{fixture} decoded with 0 attributes"
         );
+    }
+}
+
+#[test]
+fn decode_generated_legacy_draco_smoke_fixtures() {
+    let fixtures = [
+        (
+            "legacy_draco/cube_att.mesh_seq.1.0.0.drc",
+            2,
+            0,
+            EncodedGeometryType::TriangularMesh,
+            0,
+        ),
+        (
+            "legacy_draco/cube_att.mesh_eb.1.0.0.drc",
+            2,
+            0,
+            EncodedGeometryType::TriangularMesh,
+            1,
+        ),
+        (
+            "legacy_draco/cube_att.mesh_seq.1.1.0.drc",
+            2,
+            1,
+            EncodedGeometryType::TriangularMesh,
+            0,
+        ),
+        (
+            "legacy_draco/cube_att.mesh_eb.1.1.0.drc",
+            2,
+            1,
+            EncodedGeometryType::TriangularMesh,
+            1,
+        ),
+        (
+            "legacy_draco/point_cloud_pos_norm.seq.1.0.0.drc",
+            2,
+            0,
+            EncodedGeometryType::PointCloud,
+            0,
+        ),
+        (
+            "legacy_draco/point_cloud_pos_norm.seq.1.1.0.drc",
+            2,
+            1,
+            EncodedGeometryType::PointCloud,
+            0,
+        ),
+    ];
+
+    for (fixture, expected_major, expected_minor, expected_geometry, expected_method) in fixtures {
+        let path = repo_testdata_dir().join(fixture);
+        let bytes = read_file_bytes(&path);
+        let (major, minor, geometry_type, method) = parse_header(&bytes);
+
+        assert_eq!(major, expected_major, "{fixture} major version mismatch");
+        assert_eq!(minor, expected_minor, "{fixture} minor version mismatch");
+        assert_eq!(
+            geometry_type, expected_geometry,
+            "{fixture} geometry mismatch"
+        );
+        assert_eq!(method, expected_method, "{fixture} method mismatch");
+
+        match geometry_type {
+            EncodedGeometryType::TriangularMesh => {
+                let mut buffer = DecoderBuffer::new(&bytes);
+                let mut mesh = Mesh::new();
+                let mut decoder = MeshDecoder::new();
+                let status = decoder.decode(&mut buffer, &mut mesh);
+
+                assert!(
+                    status.is_ok(),
+                    "generated legacy mesh decode failed for {fixture}: {:?}",
+                    status.err()
+                );
+                assert!(mesh.num_points() > 0, "{fixture} decoded with 0 points");
+                assert!(mesh.num_faces() > 0, "{fixture} decoded with 0 faces");
+                assert!(
+                    mesh.num_attributes() > 0,
+                    "{fixture} decoded with 0 attributes"
+                );
+            }
+            EncodedGeometryType::PointCloud => {
+                let mut buffer = DecoderBuffer::new(&bytes);
+                let mut pc = PointCloud::new();
+                let mut decoder = PointCloudDecoder::new();
+                let status = decoder.decode(&mut buffer, &mut pc);
+
+                assert!(
+                    status.is_ok(),
+                    "generated legacy point-cloud decode failed for {fixture}: {:?}",
+                    status.err()
+                );
+                assert!(pc.num_points() > 0, "{fixture} decoded with 0 points");
+                assert!(
+                    pc.num_attributes() > 0,
+                    "{fixture} decoded with 0 attributes"
+                );
+            }
+            _ => unreachable!(),
+        }
     }
 }
 
