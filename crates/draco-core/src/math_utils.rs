@@ -1,4 +1,3 @@
-
 pub fn int_sqrt(number: u64) -> u64 {
     if number == 0 {
         return 0;

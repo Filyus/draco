@@ -1,8 +1,8 @@
+use draco_core::decoder_buffer::DecoderBuffer;
+use draco_core::mesh::Mesh;
+use draco_core::mesh_decoder::MeshDecoder;
 use std::fs::File;
 use std::io::Read;
-use draco_core::decoder_buffer::DecoderBuffer;
-use draco_core::mesh_decoder::MeshDecoder;
-use draco_core::mesh::Mesh;
 
 fn main() {
     let path = std::env::args().nth(1).expect("Usage: decode_file <path>");
@@ -15,7 +15,11 @@ fn main() {
     let mut decoder = MeshDecoder::new();
     match decoder.decode(&mut decoder_buffer, &mut mesh) {
         Ok(()) => {
-            println!("Decoded mesh: num_points={}, num_faces={}", mesh.num_points(), mesh.num_faces());
+            println!(
+                "Decoded mesh: num_points={}, num_faces={}",
+                mesh.num_points(),
+                mesh.num_faces()
+            );
         }
         Err(e) => {
             println!("Failed to decode: {:?}", e);

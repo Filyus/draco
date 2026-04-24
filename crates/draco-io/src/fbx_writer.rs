@@ -320,11 +320,19 @@ impl<'a, W: Write + Seek> NodeWriter<'a, W> {
         Ok(())
     }
 
-    fn write_property_f64_array(&mut self, values: &[f64], options: &WriterOptions) -> io::Result<()> {
+    fn write_property_f64_array(
+        &mut self,
+        values: &[f64],
+        options: &WriterOptions,
+    ) -> io::Result<()> {
         self.write_array_property(b'd', values, options, |v| v.to_le_bytes().to_vec())
     }
 
-    fn write_property_i32_array(&mut self, values: &[i32], options: &WriterOptions) -> io::Result<()> {
+    fn write_property_i32_array(
+        &mut self,
+        values: &[i32],
+        options: &WriterOptions,
+    ) -> io::Result<()> {
         self.write_array_property(b'i', values, options, |v| v.to_le_bytes().to_vec())
     }
 
@@ -339,7 +347,8 @@ impl<'a, W: Write + Seek> NodeWriter<'a, W> {
         F: Fn(&T) -> Vec<u8>,
     {
         self.writer.write_all(&[type_code])?;
-        self.writer.write_all(&(values.len() as u32).to_le_bytes())?;
+        self.writer
+            .write_all(&(values.len() as u32).to_le_bytes())?;
 
         // Serialize the raw data
         let raw_data: Vec<u8> = values.iter().flat_map(&to_bytes).collect();
@@ -356,7 +365,8 @@ impl<'a, W: Write + Seek> NodeWriter<'a, W> {
             // Only use compression if it actually saves space
             if compressed.len() < raw_size {
                 self.writer.write_all(&1u32.to_le_bytes())?; // encoding = 1 (zlib)
-                self.writer.write_all(&(compressed.len() as u32).to_le_bytes())?;
+                self.writer
+                    .write_all(&(compressed.len() as u32).to_le_bytes())?;
                 self.writer.write_all(&compressed)?;
                 self.num_properties += 1;
                 return Ok(());
@@ -403,8 +413,10 @@ impl<'a, W: Write + Seek> NodeWriter<'a, W> {
             self.writer.write_all(&property_list_len.to_le_bytes())?;
         } else {
             self.writer.write_all(&(end_pos as u32).to_le_bytes())?;
-            self.writer.write_all(&(self.num_properties as u32).to_le_bytes())?;
-            self.writer.write_all(&(property_list_len as u32).to_le_bytes())?;
+            self.writer
+                .write_all(&(self.num_properties as u32).to_le_bytes())?;
+            self.writer
+                .write_all(&(property_list_len as u32).to_le_bytes())?;
         }
 
         // Seek back to end
@@ -414,7 +426,11 @@ impl<'a, W: Write + Seek> NodeWriter<'a, W> {
 
     fn finalize_header(self) -> io::Result<()> {
         let end_pos = self.writer.stream_position()?;
-        let null_size = if self.is_64 { NULL_RECORD_SIZE_64 } else { NULL_RECORD_SIZE_32 };
+        let null_size = if self.is_64 {
+            NULL_RECORD_SIZE_64
+        } else {
+            NULL_RECORD_SIZE_32
+        };
         let property_list_len = if self.num_properties > 0 {
             end_pos - self.properties_start - null_size as u64
         } else {
@@ -429,8 +445,10 @@ impl<'a, W: Write + Seek> NodeWriter<'a, W> {
             self.writer.write_all(&property_list_len.to_le_bytes())?;
         } else {
             self.writer.write_all(&(end_pos as u32).to_le_bytes())?;
-            self.writer.write_all(&(self.num_properties as u32).to_le_bytes())?;
-            self.writer.write_all(&(property_list_len as u32).to_le_bytes())?;
+            self.writer
+                .write_all(&(self.num_properties as u32).to_le_bytes())?;
+            self.writer
+                .write_all(&(property_list_len as u32).to_le_bytes())?;
         }
 
         // Seek back to end
@@ -440,7 +458,11 @@ impl<'a, W: Write + Seek> NodeWriter<'a, W> {
 }
 
 fn write_null_record<W: Write>(writer: &mut W, is_64: bool) -> io::Result<()> {
-    let size = if is_64 { NULL_RECORD_SIZE_64 } else { NULL_RECORD_SIZE_32 };
+    let size = if is_64 {
+        NULL_RECORD_SIZE_64
+    } else {
+        NULL_RECORD_SIZE_32
+    };
     writer.write_all(&vec![0u8; size])
 }
 
@@ -602,7 +624,11 @@ fn write_objects<W: Write + Seek>(
     })
 }
 
-fn write_model<W: Write + Seek>(writer: &mut W, mesh_data: &MeshData, is_64: bool) -> io::Result<()> {
+fn write_model<W: Write + Seek>(
+    writer: &mut W,
+    mesh_data: &MeshData,
+    is_64: bool,
+) -> io::Result<()> {
     let mut node = NodeWriter::start(writer, "Model", is_64)?;
     node.write_property_i64(mesh_data.model_id)?;
     // Name::Class separator format
@@ -772,7 +798,13 @@ mod tests {
         let mut mesh = Mesh::new();
         let mut pos_att = PointAttribute::new();
 
-        pos_att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, 3);
+        pos_att.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Float32,
+            false,
+            3,
+        );
         let buffer = pos_att.buffer_mut();
         let positions: [[f32; 3]; 3] = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
         for (i, pos) in positions.iter().enumerate() {

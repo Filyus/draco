@@ -2,7 +2,9 @@ use crate::corner_table::CornerTable;
 use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
 use crate::geometry_indices::{CornerIndex, INVALID_CORNER_INDEX};
 use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
-use crate::prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
+use crate::prediction_scheme::{
+    PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType,
+};
 use std::marker::PhantomData;
 
 #[cfg(feature = "decoder")]
@@ -57,21 +59,26 @@ pub(crate) fn compute_parallelogram_prediction<DataType: ParallelogramDataType>(
     let vert_opp_idx = table.vertex(oci).0 as usize;
     let vert_next_idx = table.vertex(table.next(oci)).0 as usize;
     let vert_prev_idx = table.vertex(table.previous(oci)).0 as usize;
-    
-    if vert_opp_idx >= vertex_to_data_map.len() 
-        || vert_next_idx >= vertex_to_data_map.len() 
-        || vert_prev_idx >= vertex_to_data_map.len() {
+
+    if vert_opp_idx >= vertex_to_data_map.len()
+        || vert_next_idx >= vertex_to_data_map.len()
+        || vert_prev_idx >= vertex_to_data_map.len()
+    {
         return false;
     }
-    
+
     let vert_opp = vertex_to_data_map[vert_opp_idx];
     let vert_next = vertex_to_data_map[vert_next_idx];
     let vert_prev = vertex_to_data_map[vert_prev_idx];
 
     // Ensure all three neighbors have been processed already.
-    if vert_opp >= 0 && vert_next >= 0 && vert_prev >= 0 
-        && vert_opp < data_entry_id && vert_next < data_entry_id && vert_prev < data_entry_id {
-        
+    if vert_opp >= 0
+        && vert_next >= 0
+        && vert_prev >= 0
+        && vert_opp < data_entry_id
+        && vert_next < data_entry_id
+        && vert_prev < data_entry_id
+    {
         let v_opp_off = (vert_opp as usize) * num_components;
         let v_next_off = (vert_next as usize) * num_components;
         let v_prev_off = (vert_prev as usize) * num_components;
@@ -84,12 +91,13 @@ pub(crate) fn compute_parallelogram_prediction<DataType: ParallelogramDataType>(
                 in_data[v_opp_off + c],
             );
         }
-        
+
         // Debug logging for first few predictions
         if std::env::var("DRACO_VERBOSE").is_ok() {
-            println!("{} Pred p={} c={} (o={}): entries({}, {}, {})", 
-                label, data_entry_id, ci.0, oci.0,
-                vert_opp, vert_next, vert_prev);
+            println!(
+                "{} Pred p={} c={} (o={}): entries({}, {}, {})",
+                label, data_entry_id, ci.0, oci.0, vert_opp, vert_next, vert_prev
+            );
         }
         return true;
     }
@@ -102,7 +110,9 @@ pub struct PredictionSchemeParallelogramEncodingTransform<DataType, CorrType> {
 }
 
 #[cfg(feature = "encoder")]
-impl<DataType, CorrType> Default for PredictionSchemeParallelogramEncodingTransform<DataType, CorrType> {
+impl<DataType, CorrType> Default
+    for PredictionSchemeParallelogramEncodingTransform<DataType, CorrType>
+{
     fn default() -> Self {
         Self::new()
     }
@@ -163,7 +173,9 @@ pub struct PredictionSchemeParallelogramDecodingTransform<DataType, CorrType> {
 }
 
 #[cfg(feature = "decoder")]
-impl<DataType, CorrType> Default for PredictionSchemeParallelogramDecodingTransform<DataType, CorrType> {
+impl<DataType, CorrType> Default
+    for PredictionSchemeParallelogramDecodingTransform<DataType, CorrType>
+{
     fn default() -> Self {
         Self::new()
     }
@@ -182,7 +194,11 @@ impl<DataType, CorrType> PredictionSchemeParallelogramDecodingTransform<DataType
 impl<DataType, CorrType> PredictionSchemeDecodingTransform<DataType, CorrType>
     for PredictionSchemeParallelogramDecodingTransform<DataType, CorrType>
 where
-    DataType: ParallelogramDataType + std::ops::Add<Output = DataType> + From<CorrType> + From<i32> + Into<i64>,
+    DataType: ParallelogramDataType
+        + std::ops::Add<Output = DataType>
+        + From<CorrType>
+        + From<i32>
+        + Into<i64>,
     CorrType: Copy + Default + Into<i32>,
     i64: From<DataType>,
     i32: From<CorrType>,
@@ -209,7 +225,10 @@ where
         }
     }
 
-    fn decode_transform_data(&mut self, _buffer: &mut crate::decoder_buffer::DecoderBuffer) -> bool {
+    fn decode_transform_data(
+        &mut self,
+        _buffer: &mut crate::decoder_buffer::DecoderBuffer,
+    ) -> bool {
         true
     }
 }
@@ -324,7 +343,8 @@ where
             } else {
                 let original = &in_data[dst_offset..dst_offset + num_components];
                 let corr = &mut out_corr[dst_offset..dst_offset + num_components];
-                self.transform.compute_correction(original, &pred_vals, corr);
+                self.transform
+                    .compute_correction(original, &pred_vals, corr);
             }
         }
 
@@ -431,8 +451,7 @@ where
         let zero_vals = vec![DataType::default(); num_components];
         let corr = &in_corr[0..num_components];
         let out = &mut out_data[0..num_components];
-        self.transform
-            .compute_original_value(&zero_vals, corr, out);
+        self.transform.compute_original_value(&zero_vals, corr, out);
 
         for p in 1..data_to_corner_map.len() {
             let corner_id = CornerIndex(data_to_corner_map[p]);
@@ -471,7 +490,10 @@ where
         true
     }
 
-    fn decode_prediction_data(&mut self, buffer: &mut crate::decoder_buffer::DecoderBuffer) -> bool {
+    fn decode_prediction_data(
+        &mut self,
+        buffer: &mut crate::decoder_buffer::DecoderBuffer,
+    ) -> bool {
         self.transform.decode_transform_data(buffer)
     }
 }

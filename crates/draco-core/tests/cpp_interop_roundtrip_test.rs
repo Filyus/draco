@@ -4,17 +4,17 @@ use std::process::Command;
 
 use draco_core::compression_config::EncodedGeometryType;
 use draco_core::decoder_buffer::DecoderBuffer;
+use draco_core::draco_types::DataType;
 use draco_core::encoder_buffer::EncoderBuffer;
 use draco_core::encoder_options::EncoderOptions;
 use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
+use draco_core::geometry_indices::INVALID_ATTRIBUTE_VALUE_INDEX;
 use draco_core::geometry_indices::{FaceIndex, PointIndex};
 use draco_core::mesh::Mesh;
 use draco_core::mesh_decoder::MeshDecoder;
 use draco_core::mesh_encoder::MeshEncoder;
 use draco_core::point_cloud::PointCloud;
 use draco_core::point_cloud_decoder::PointCloudDecoder;
-use draco_core::draco_types::DataType;
-use draco_core::geometry_indices::INVALID_ATTRIBUTE_VALUE_INDEX;
 use draco_io::gltf_reader::GltfReader;
 use draco_io::obj_reader;
 use draco_io::ply_reader;
@@ -53,7 +53,11 @@ fn decode_drc(bytes: &[u8]) {
             let mut pc = PointCloud::new();
             let mut decoder = PointCloudDecoder::new();
             let status = decoder.decode(&mut buffer, &mut pc);
-            assert!(status.is_ok(), "point cloud decode failed: {:?}", status.err());
+            assert!(
+                status.is_ok(),
+                "point cloud decode failed: {:?}",
+                status.err()
+            );
             assert!(pc.num_points() > 0);
         }
         _ => unreachable!(),
@@ -68,7 +72,11 @@ fn extract_mesh_positions(mesh: &Mesh) -> Vec<[f32; 3]> {
     let pos_id = mesh.named_attribute_id(GeometryAttributeType::Position);
     assert!(pos_id >= 0, "mesh has no POSITION attribute");
     let att = mesh.attribute(pos_id);
-    assert_eq!(att.data_type(), DataType::Float32, "expected float32 positions");
+    assert_eq!(
+        att.data_type(),
+        DataType::Float32,
+        "expected float32 positions"
+    );
     assert_eq!(att.num_components(), 3, "expected 3-component positions");
 
     let stride = att.byte_stride() as usize;
@@ -96,7 +104,10 @@ fn extract_point_cloud_positions(pc: &PointCloud) -> Vec<[f32; 3]> {
     let pos_id = pc.named_attribute_id(GeometryAttributeType::Position);
     if pos_id < 0 {
         let mut desc = String::new();
-        desc.push_str(&format!("point cloud has no POSITION attribute; num_attributes={}\n", pc.num_attributes()));
+        desc.push_str(&format!(
+            "point cloud has no POSITION attribute; num_attributes={}\n",
+            pc.num_attributes()
+        ));
         for i in 0..pc.num_attributes() {
             let att = pc.attribute(i);
             desc.push_str(&format!(
@@ -111,7 +122,11 @@ fn extract_point_cloud_positions(pc: &PointCloud) -> Vec<[f32; 3]> {
         panic!("{desc}");
     }
     let att = pc.attribute(pos_id);
-    assert_eq!(att.data_type(), DataType::Float32, "expected float32 positions");
+    assert_eq!(
+        att.data_type(),
+        DataType::Float32,
+        "expected float32 positions"
+    );
     assert_eq!(att.num_components(), 3, "expected 3-component positions");
 
     let stride = att.byte_stride() as usize;
@@ -304,14 +319,17 @@ fn make_rust_triangle_mesh() -> Mesh {
     let mut mesh = Mesh::new();
     mesh.set_num_points(3);
     mesh.set_num_faces(1);
-    mesh.set_face(
-        FaceIndex(0),
-        [PointIndex(0), PointIndex(1), PointIndex(2)],
-    );
+    mesh.set_face(FaceIndex(0), [PointIndex(0), PointIndex(1), PointIndex(2)]);
 
     // Position attribute: 3 components float32.
     let mut pos_att = PointAttribute::new();
-    pos_att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, 3);
+    pos_att.init(
+        GeometryAttributeType::Position,
+        3,
+        DataType::Float32,
+        false,
+        3,
+    );
 
     let positions: [f32; 9] = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
     let dst = pos_att.buffer_mut().data_mut();
@@ -341,7 +359,16 @@ fn cpp_encode_then_rust_decode() {
     write_simple_triangle_obj(&obj_path);
 
     let out = Command::new(&cpp_encoder)
-        .args(["-i", obj_path.to_string_lossy().as_ref(), "-o", drc_path.to_string_lossy().as_ref(), "-cl", "7", "-qp", "11"])
+        .args([
+            "-i",
+            obj_path.to_string_lossy().as_ref(),
+            "-o",
+            drc_path.to_string_lossy().as_ref(),
+            "-cl",
+            "7",
+            "-qp",
+            "11",
+        ])
         .output()
         .expect("failed to run draco_encoder");
 
@@ -423,7 +450,11 @@ fn cpp_and_rust_decode_positions_match() {
     let mut mesh = Mesh::new();
     let mut decoder = MeshDecoder::new();
     let status = decoder.decode(&mut buffer, &mut mesh);
-    assert!(status.is_ok(), "Rust mesh decode failed: {:?}", status.err());
+    assert!(
+        status.is_ok(),
+        "Rust mesh decode failed: {:?}",
+        status.err()
+    );
 
     let rust_positions = extract_mesh_positions(&mesh);
     assert_positions_close(&rust_positions, &cpp_positions, 1e-5);
@@ -448,15 +479,24 @@ fn rust_encode_then_cpp_decode() {
     let mut options = EncoderOptions::new();
     options.set_global_int("encoding_method", 0); // Sequential encoding
     options.set_attribute_int(0, "quantization_bits", 14);
-    
+
     let mut enc = EncoderBuffer::new();
     let status = encoder.encode(&options, &mut enc);
-    assert!(status.is_ok(), "Rust MeshEncoder failed: {:?}", status.err());
+    assert!(
+        status.is_ok(),
+        "Rust MeshEncoder failed: {:?}",
+        status.err()
+    );
 
     fs::write(&drc_path, enc.data()).expect("failed to write drc");
 
     let out = Command::new(&cpp_decoder)
-        .args(["-i", drc_path.to_string_lossy().as_ref(), "-o", out_path.to_string_lossy().as_ref()])
+        .args([
+            "-i",
+            drc_path.to_string_lossy().as_ref(),
+            "-o",
+            out_path.to_string_lossy().as_ref(),
+        ])
         .output()
         .expect("failed to run draco_decoder");
 
@@ -469,7 +509,10 @@ fn rust_encode_then_cpp_decode() {
     );
 
     let out_bytes = fs::read(&out_path).expect("failed to read decoder output");
-    assert!(!out_bytes.is_empty(), "C++ draco_decoder produced empty output");
+    assert!(
+        !out_bytes.is_empty(),
+        "C++ draco_decoder produced empty output"
+    );
 }
 
 #[test]
@@ -489,7 +532,16 @@ fn cpp_encode_rust_decode_rust_encode_cpp_decode_chain() {
 
     // C++ encode.
     let out = Command::new(&cpp_encoder)
-        .args(["-i", obj_path.to_string_lossy().as_ref(), "-o", drc_cpp_path.to_string_lossy().as_ref(), "-cl", "7", "-qp", "11"])
+        .args([
+            "-i",
+            obj_path.to_string_lossy().as_ref(),
+            "-o",
+            drc_cpp_path.to_string_lossy().as_ref(),
+            "-cl",
+            "7",
+            "-qp",
+            "11",
+        ])
         .output()
         .expect("failed to run draco_encoder");
     assert!(
@@ -509,7 +561,11 @@ fn cpp_encode_rust_decode_rust_encode_cpp_decode_chain() {
     let mut mesh = Mesh::new();
     let mut decoder = MeshDecoder::new();
     let status = decoder.decode(&mut buffer, &mut mesh);
-    assert!(status.is_ok(), "Rust MeshDecoder failed: {:?}", status.err());
+    assert!(
+        status.is_ok(),
+        "Rust MeshDecoder failed: {:?}",
+        status.err()
+    );
     assert!(mesh.num_points() > 0);
 
     // Rust encode back.
@@ -521,12 +577,21 @@ fn cpp_encode_rust_decode_rust_encode_cpp_decode_chain() {
     options.set_attribute_int(0, "quantization_bits", 14);
     let mut enc = EncoderBuffer::new();
     let status = encoder.encode(&options, &mut enc);
-    assert!(status.is_ok(), "Rust MeshEncoder failed: {:?}", status.err());
+    assert!(
+        status.is_ok(),
+        "Rust MeshEncoder failed: {:?}",
+        status.err()
+    );
     fs::write(&drc_rust_path, enc.data()).expect("failed to write rust drc");
 
     // C++ decode Rust-produced drc.
     let out = Command::new(&cpp_decoder)
-        .args(["-i", drc_rust_path.to_string_lossy().as_ref(), "-o", out_obj_path.to_string_lossy().as_ref()])
+        .args([
+            "-i",
+            drc_rust_path.to_string_lossy().as_ref(),
+            "-o",
+            out_obj_path.to_string_lossy().as_ref(),
+        ])
         .output()
         .expect("failed to run draco_decoder");
 
@@ -539,7 +604,10 @@ fn cpp_encode_rust_decode_rust_encode_cpp_decode_chain() {
     );
 
     let out_bytes = fs::read(&out_obj_path).expect("failed to read decoder output");
-    assert!(!out_bytes.is_empty(), "C++ draco_decoder produced empty output");
+    assert!(
+        !out_bytes.is_empty(),
+        "C++ draco_decoder produced empty output"
+    );
 }
 
 #[test]
@@ -620,43 +688,43 @@ fn rust_encode_speed_0_cpp_decode_simple_cube() {
         eprintln!("Skipping: C++ draco_decoder not found.");
         return;
     };
-    
+
     let glb_path = repo_root_dir().join("testdata/IridescenceLamp.glb");
     if !glb_path.exists() {
         eprintln!("Skipping: IridescenceLamp.glb not found at {:?}", glb_path);
         return;
     }
-    
+
     // Load the GLB
     let reader = GltfReader::open(&glb_path).expect("Failed to open GLB");
     let meshes = reader.decode_all_meshes().expect("Failed to decode meshes");
     let mesh = meshes.first().expect("No meshes in file");
-    
+
     // Extract original positions
     let original_positions = extract_mesh_positions(mesh);
     assert!(!original_positions.is_empty(), "No positions in mesh");
     println!("Original mesh: {} vertices", original_positions.len());
-    
+
     let tmp = create_temp_dir("rust_encode_speed_0_cpp_decode_iridescence_lamp");
     let drc_path = tmp.join("lamp_speed0.drc");
     let obj_path = tmp.join("lamp_decoded.obj");
-    
+
     // Encode with Rust using speed 0 (CMPM)
     let mut encoder = MeshEncoder::new();
     encoder.set_mesh(mesh.clone());
-    
+
     let mut options = EncoderOptions::new();
-    options.set_global_int("encoding_method", 1);  // Edgebreaker
-    options.set_global_int("encoding_speed", 8);   // Speed 8 = Parallelogram (simpler)
+    options.set_global_int("encoding_method", 1); // Edgebreaker
+    options.set_global_int("encoding_speed", 8); // Speed 8 = Parallelogram (simpler)
     options.set_attribute_int(0, "quantization_bits", 14);
-    
+
     let mut enc = EncoderBuffer::new();
     let status = encoder.encode(&options, &mut enc);
     assert!(status.is_ok(), "Rust encode failed: {:?}", status.err());
-    
+
     fs::write(&drc_path, enc.data()).expect("Failed to write DRC");
     println!("Encoded to {} bytes", enc.data().len());
-    
+
     // First, verify Rust can decode its own output
     let bytes = fs::read(&drc_path).expect("Failed to read DRC");
     let mut buffer = DecoderBuffer::new(&bytes);
@@ -664,19 +732,21 @@ fn rust_encode_speed_0_cpp_decode_simple_cube() {
     let mut rust_decoder = MeshDecoder::new();
     let status = rust_decoder.decode(&mut buffer, &mut rust_decoded_mesh);
     assert!(status.is_ok(), "Rust decode failed: {:?}", status.err());
-    
+
     let rust_decoded_positions = extract_mesh_positions(&rust_decoded_mesh);
     println!("Rust decoded: {} vertices", rust_decoded_positions.len());
-    
+
     // Decode with C++
     let out = Command::new(&cpp_decoder)
         .args([
-            "-i", drc_path.to_string_lossy().as_ref(),
-            "-o", obj_path.to_string_lossy().as_ref(),
+            "-i",
+            drc_path.to_string_lossy().as_ref(),
+            "-o",
+            obj_path.to_string_lossy().as_ref(),
         ])
         .output()
         .expect("Failed to run draco_decoder");
-    
+
     assert!(
         out.status.success(),
         "C++ draco_decoder failed: {:?}\nstdout: {}\nstderr: {}",
@@ -684,28 +754,32 @@ fn rust_encode_speed_0_cpp_decode_simple_cube() {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
-    
+
     // Read decoded positions
     let cpp_decoded_positions = parse_obj_positions(&obj_path);
     println!("C++ decoded: {} vertices", cpp_decoded_positions.len());
-    
-    assert_eq!(rust_decoded_positions.len(), cpp_decoded_positions.len(), 
-        "Vertex count mismatch: rust_decoded={}, cpp_decoded={}", 
-        rust_decoded_positions.len(), cpp_decoded_positions.len());
-    
+
+    assert_eq!(
+        rust_decoded_positions.len(),
+        cpp_decoded_positions.len(),
+        "Vertex count mismatch: rust_decoded={}, cpp_decoded={}",
+        rust_decoded_positions.len(),
+        cpp_decoded_positions.len()
+    );
+
     // Compare Rust and C++ decoded positions
     // First check: do they have the same SET of values (possibly reordered)?
     // Use nearest-point matching to see if it's just an ordering issue
     let mut unmatched_rust = 0;
     let mut unmatched_cpp = 0;
     let tolerance = 1e-5;
-    
+
     // Check if each Rust position has a matching C++ position
     for (i, rust_pos) in rust_decoded_positions.iter().enumerate() {
         let has_match = cpp_decoded_positions.iter().any(|cpp_pos| {
-            (rust_pos[0] - cpp_pos[0]).abs() < tolerance &&
-            (rust_pos[1] - cpp_pos[1]).abs() < tolerance &&
-            (rust_pos[2] - cpp_pos[2]).abs() < tolerance
+            (rust_pos[0] - cpp_pos[0]).abs() < tolerance
+                && (rust_pos[1] - cpp_pos[1]).abs() < tolerance
+                && (rust_pos[2] - cpp_pos[2]).abs() < tolerance
         });
         if !has_match {
             if unmatched_rust < 5 {
@@ -714,13 +788,13 @@ fn rust_encode_speed_0_cpp_decode_simple_cube() {
             unmatched_rust += 1;
         }
     }
-    
+
     // Check if each C++ position has a matching Rust position
     for (i, cpp_pos) in cpp_decoded_positions.iter().enumerate() {
         let has_match = rust_decoded_positions.iter().any(|rust_pos| {
-            (rust_pos[0] - cpp_pos[0]).abs() < tolerance &&
-            (rust_pos[1] - cpp_pos[1]).abs() < tolerance &&
-            (rust_pos[2] - cpp_pos[2]).abs() < tolerance
+            (rust_pos[0] - cpp_pos[0]).abs() < tolerance
+                && (rust_pos[1] - cpp_pos[1]).abs() < tolerance
+                && (rust_pos[2] - cpp_pos[2]).abs() < tolerance
         });
         if !has_match {
             if unmatched_cpp < 5 {
@@ -729,37 +803,60 @@ fn rust_encode_speed_0_cpp_decode_simple_cube() {
             unmatched_cpp += 1;
         }
     }
-    
-    println!("Set comparison: {} Rust positions unmatched, {} C++ positions unmatched", 
-        unmatched_rust, unmatched_cpp);
-    
+
+    println!(
+        "Set comparison: {} Rust positions unmatched, {} C++ positions unmatched",
+        unmatched_rust, unmatched_cpp
+    );
+
     if unmatched_rust == 0 && unmatched_cpp == 0 {
         println!("GOOD: Same SET of positions, just different ordering (this is OK)");
     } else {
         // Also show index-based comparison for debugging
         let mut index_mismatches = 0;
-        for (i, (rust_pos, cpp_pos)) in rust_decoded_positions.iter().zip(cpp_decoded_positions.iter()).enumerate() {
+        for (i, (rust_pos, cpp_pos)) in rust_decoded_positions
+            .iter()
+            .zip(cpp_decoded_positions.iter())
+            .enumerate()
+        {
             let dx = (rust_pos[0] - cpp_pos[0]).abs();
             let dy = (rust_pos[1] - cpp_pos[1]).abs();
             let dz = (rust_pos[2] - cpp_pos[2]).abs();
             if dx > tolerance || dy > tolerance || dz > tolerance {
                 if index_mismatches < 10 {
-                    println!("Index {} mismatch: rust={:?} cpp={:?}", i, rust_pos, cpp_pos);
+                    println!(
+                        "Index {} mismatch: rust={:?} cpp={:?}",
+                        i, rust_pos, cpp_pos
+                    );
                 }
                 index_mismatches += 1;
             }
         }
-        println!("Index-based mismatches: {} / {}", index_mismatches, rust_decoded_positions.len());
-        
-        assert!(false, "C++ and Rust decoders produce different vertex VALUES (not just ordering)")
+        println!(
+            "Index-based mismatches: {} / {}",
+            index_mismatches,
+            rust_decoded_positions.len()
+        );
+
+        assert!(
+            false,
+            "C++ and Rust decoders produce different vertex VALUES (not just ordering)"
+        )
     }
-    
+
     // Compare original to decoded (with quantization tolerance)
     // Quantization bits 14 with typical mesh bounds gives ~0.001 tolerance
-    let quant_tolerance = 0.005;  // Allow for quantization error
-    assert_positions_close_by_nearest(&original_positions, &rust_decoded_positions, quant_tolerance);
-    
-    println!("SUCCESS: Speed 0 encoding verified with {} vertices", original_positions.len());
+    let quant_tolerance = 0.005; // Allow for quantization error
+    assert_positions_close_by_nearest(
+        &original_positions,
+        &rust_decoded_positions,
+        quant_tolerance,
+    );
+
+    println!(
+        "SUCCESS: Speed 0 encoding verified with {} vertices",
+        original_positions.len()
+    );
 }
 
 /// Compare positions using closest-point matching.
@@ -771,9 +868,9 @@ fn assert_positions_close_by_nearest(original: &[[f32; 3]], decoded: &[[f32; 3]]
         let mut min_dist = f32::MAX;
         let mut closest_idx = 0;
         for (j, dec) in decoded.iter().enumerate() {
-            let dist = (orig[0] - dec[0]).powi(2) + 
-                       (orig[1] - dec[1]).powi(2) + 
-                       (orig[2] - dec[2]).powi(2);
+            let dist = (orig[0] - dec[0]).powi(2)
+                + (orig[1] - dec[1]).powi(2)
+                + (orig[2] - dec[2]).powi(2);
             if dist < min_dist {
                 min_dist = dist;
                 closest_idx = j;
@@ -783,7 +880,11 @@ fn assert_positions_close_by_nearest(original: &[[f32; 3]], decoded: &[[f32; 3]]
         assert!(
             min_dist <= tolerance,
             "Original vertex {} ({:?}) has no close match. Closest is {} ({:?}) at distance {}",
-            i, orig, closest_idx, decoded[closest_idx], min_dist
+            i,
+            orig,
+            closest_idx,
+            decoded[closest_idx],
+            min_dist
         );
     }
 }

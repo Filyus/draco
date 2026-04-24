@@ -25,7 +25,9 @@ impl std::ops::Sub<u32> for CornerIndex {
 }
 
 impl From<CornerIndex> for u32 {
-    fn from(ci: CornerIndex) -> u32 { ci.0 }
+    fn from(ci: CornerIndex) -> u32 {
+        ci.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

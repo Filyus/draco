@@ -1,9 +1,9 @@
 #[cfg(feature = "decoder")]
+use crate::decoder_buffer::DecoderBuffer;
+#[cfg(feature = "decoder")]
 use crate::direct_bit_decoder::DirectBitDecoder;
 #[cfg(feature = "encoder")]
 use crate::direct_bit_encoder::DirectBitEncoder;
-#[cfg(feature = "decoder")]
-use crate::decoder_buffer::DecoderBuffer;
 #[cfg(feature = "encoder")]
 use crate::encoder_buffer::EncoderBuffer;
 #[cfg(feature = "decoder")]
@@ -22,7 +22,11 @@ fn most_significant_bit(value: u32) -> u32 {
 
 fn increment_mod(v: u32, m: u32) -> u32 {
     let next = v + 1;
-    if next >= m { 0 } else { next }
+    if next >= m {
+        0
+    } else {
+        next
+    }
 }
 
 #[derive(Clone)]
@@ -173,7 +177,12 @@ impl DynamicIntegerPointsKdTreeEncoder {
         }
     }
 
-    pub fn encode_points(&mut self, points: &mut PointDVector, bit_length: u32, buffer: &mut EncoderBuffer) -> bool {
+    pub fn encode_points(
+        &mut self,
+        points: &mut PointDVector,
+        bit_length: u32,
+        buffer: &mut EncoderBuffer,
+    ) -> bool {
         self.bit_length = bit_length;
         buffer.encode_u32(self.bit_length);
         buffer.encode_u32(points.num_points() as u32);
@@ -195,7 +204,15 @@ impl DynamicIntegerPointsKdTreeEncoder {
         true
     }
 
-    fn get_and_encode_axis(&mut self, points: &PointDVector, begin: usize, end: usize, old_base: &[u32], levels: &[u32], last_axis: u32) -> u32 {
+    fn get_and_encode_axis(
+        &mut self,
+        points: &PointDVector,
+        begin: usize,
+        end: usize,
+        old_base: &[u32],
+        levels: &[u32],
+        last_axis: u32,
+    ) -> u32 {
         if self.compression_level != 6 {
             return increment_mod(last_axis, self.dimension);
         }
@@ -230,20 +247,21 @@ impl DynamicIntegerPointsKdTreeEncoder {
             let mut max_value = 0u32;
             best_axis = 0;
             for i in 0..self.dimension as usize {
-                if self.num_remaining_bits[i] != 0
-                    && self.deviations[i] > max_value {
-                        max_value = self.deviations[i];
-                        best_axis = i as u32;
-                    }
+                if self.num_remaining_bits[i] != 0 && self.deviations[i] > max_value {
+                    max_value = self.deviations[i];
+                    best_axis = i as u32;
+                }
             }
-            self.axis_encoder.encode_least_significant_bits32(4, best_axis);
+            self.axis_encoder
+                .encode_least_significant_bits32(4, best_axis);
         }
 
         best_axis
     }
 
     fn encode_number(&mut self, nbits: u32, value: u32) {
-        self.numbers_encoder.encode_least_significant_bits32(nbits, value);
+        self.numbers_encoder
+            .encode_least_significant_bits32(nbits, value);
     }
 
     fn encode_internal(&mut self, points: &mut PointDVector) {
@@ -293,8 +311,10 @@ impl DynamicIntegerPointsKdTreeEncoder {
                     for j in 0..self.dimension as usize {
                         let num_bits = self.bit_length - levels[self.axes[j] as usize];
                         if num_bits != 0 {
-                            self.remaining_bits_encoder
-                                .encode_least_significant_bits32(num_bits, point[self.axes[j] as usize]);
+                            self.remaining_bits_encoder.encode_least_significant_bits32(
+                                num_bits,
+                                point[self.axes[j] as usize],
+                            );
                         }
                     }
                 }
@@ -436,7 +456,11 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
         self.num_decoded_points
     }
 
-    pub fn decode_points(&mut self, buffer: &mut DecoderBuffer<'a>, oit_max_points: u32) -> Option<Vec<u32>> {
+    pub fn decode_points(
+        &mut self,
+        buffer: &mut DecoderBuffer<'a>,
+        oit_max_points: u32,
+    ) -> Option<Vec<u32>> {
         self.bit_length = buffer.decode_u32().ok()?;
         if self.bit_length > 32 {
             return None;
@@ -465,7 +489,8 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
             return None;
         }
 
-        let mut out: Vec<u32> = Vec::with_capacity(self.num_points as usize * self.dimension as usize);
+        let mut out: Vec<u32> =
+            Vec::with_capacity(self.num_points as usize * self.dimension as usize);
         if !self.decode_internal(self.num_points, &mut out) {
             return None;
         }
@@ -500,7 +525,8 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
     }
 
     fn decode_number(&mut self, nbits: u32, value: &mut u32) -> bool {
-        self.numbers_decoder.decode_least_significant_bits32(nbits, value)
+        self.numbers_decoder
+            .decode_least_significant_bits32(nbits, value)
     }
 
     fn decode_internal(&mut self, num_points: u32, out: &mut Vec<u32>) -> bool {
@@ -559,9 +585,10 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
                         self.p[self.axes[j] as usize] = 0;
                         let num_bits = self.bit_length - levels[self.axes[j] as usize];
                         if num_bits != 0 {
-                            let ok = self
-                                .remaining_bits_decoder
-                                .decode_least_significant_bits32(num_bits, &mut self.p[self.axes[j] as usize]);
+                            let ok = self.remaining_bits_decoder.decode_least_significant_bits32(
+                                num_bits,
+                                &mut self.p[self.axes[j] as usize],
+                            );
                             if !ok {
                                 return false;
                             }
@@ -596,10 +623,9 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
             first_half -= number;
             let mut second_half = num_remaining_points - first_half;
 
-            if first_half != second_half
-                && !self.half_decoder.decode_next_bit() {
-                    std::mem::swap(&mut first_half, &mut second_half);
-                }
+            if first_half != second_half && !self.half_decoder.decode_next_bit() {
+                std::mem::swap(&mut first_half, &mut second_half);
+            }
 
             self.levels_stack[stack_pos][axis as usize] += 1;
             self.levels_stack[stack_pos + 1] = self.levels_stack[stack_pos].clone();

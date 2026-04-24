@@ -3,9 +3,9 @@
 //! Provides glTF 2.0 file generation functionality for web applications.
 //! Supports both .gltf (JSON) and .glb (binary) formats with optional Draco compression.
 
-use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -126,12 +126,19 @@ pub fn supported_extensions() -> Vec<String> {
 pub fn create_gltf(meshes_js: JsValue, options_js: JsValue) -> JsValue {
     let meshes: Vec<MeshInput> = match serde_wasm_bindgen::from_value::<Vec<MeshInput>>(meshes_js) {
         Ok(m) => {
-            debug_log(&format!("[GLTF_WRITER] Deserialized {} meshes from JS", m.len()));
+            debug_log(&format!(
+                "[GLTF_WRITER] Deserialized {} meshes from JS",
+                m.len()
+            ));
             for (i, mesh) in m.iter().enumerate() {
-                debug_log(&format!("[GLTF_WRITER] Mesh {}: positions={}, indices={}, normals={:?}, uvs={:?}",
-                    i, mesh.positions.len(), mesh.indices.len(),
+                debug_log(&format!(
+                    "[GLTF_WRITER] Mesh {}: positions={}, indices={}, normals={:?}, uvs={:?}",
+                    i,
+                    mesh.positions.len(),
+                    mesh.indices.len(),
                     mesh.normals.as_ref().map(|n: &Vec<f32>| n.len()),
-                    mesh.uvs.as_ref().map(|u: &Vec<f32>| u.len())));
+                    mesh.uvs.as_ref().map(|u: &Vec<f32>| u.len())
+                ));
             }
             m
         }
@@ -148,12 +155,12 @@ pub fn create_gltf(meshes_js: JsValue, options_js: JsValue) -> JsValue {
     };
 
     let options: ExportOptions = serde_wasm_bindgen::from_value(options_js).unwrap_or_default();
-    
+
     // Catch any panics and convert to error result
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         create_gltf_internal(&meshes, &options)
     }));
-    
+
     let result = match result {
         Ok(r) => r,
         Err(e) => {
@@ -173,13 +180,17 @@ pub fn create_gltf(meshes_js: JsValue, options_js: JsValue) -> JsValue {
             }
         }
     };
-    
+
     serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
 }
 
 /// Create glTF with scene graph.
 #[wasm_bindgen]
-pub fn create_gltf_with_scene(meshes_js: JsValue, nodes_js: JsValue, options_js: JsValue) -> JsValue {
+pub fn create_gltf_with_scene(
+    meshes_js: JsValue,
+    nodes_js: JsValue,
+    options_js: JsValue,
+) -> JsValue {
     let meshes: Vec<MeshInput> = match serde_wasm_bindgen::from_value(meshes_js) {
         Ok(m) => m,
         Err(e) => {
@@ -258,8 +269,12 @@ fn create_gltf_with_scene_internal(
 
         #[cfg(feature = "console_error_panic_hook")]
         {
-            debug_log(&format!("[GLTF_WRITER] Mesh: positions.len()={}, indices.len()={}, vertex_count={}",
-                mesh.positions.len(), mesh.indices.len(), vertex_count));
+            debug_log(&format!(
+                "[GLTF_WRITER] Mesh: positions.len()={}, indices.len()={}, vertex_count={}",
+                mesh.positions.len(),
+                mesh.indices.len(),
+                vertex_count
+            ));
         }
 
         if use_draco {
@@ -277,7 +292,7 @@ fn create_gltf_with_scene_internal(
                     } else if let Some(stats) = total_draco_stats.as_mut() {
                         stats.compressed_size += draco_result.data.len();
                     }
-                    
+
                     let bv_offset = binary_data.len();
                     binary_data.extend_from_slice(&draco_result.data);
                     // Pad to 4-byte alignment
@@ -315,9 +330,12 @@ fn create_gltf_with_scene_internal(
                         "min": pos_min,
                         "max": pos_max
                     }));
-                    
+
                     {
-                        debug_log(&format!("[GLTF] Position accessor: idx={}, count={}", pos_accessor_idx, vertex_count));
+                        debug_log(&format!(
+                            "[GLTF] Position accessor: idx={}, count={}",
+                            pos_accessor_idx, vertex_count
+                        ));
                     }
 
                     // Accessor for indices
@@ -327,9 +345,13 @@ fn create_gltf_with_scene_internal(
                         "componentType": 5125,
                         "type": "SCALAR"
                     }));
-                    
+
                     {
-                        debug_log(&format!("[GLTF] Indices accessor: idx={}, count={}", idx_accessor_idx, mesh.indices.len()));
+                        debug_log(&format!(
+                            "[GLTF] Indices accessor: idx={}, count={}",
+                            idx_accessor_idx,
+                            mesh.indices.len()
+                        ));
                     }
 
                     let mut attributes = serde_json::json!({
@@ -342,7 +364,9 @@ fn create_gltf_with_scene_internal(
                     });
 
                     // Add normals accessor if present
-                    if mesh.normals.as_ref().map_or(false, |n| !n.is_empty()) && draco_result.normal_attr_id >= 0 {
+                    if mesh.normals.as_ref().map_or(false, |n| !n.is_empty())
+                        && draco_result.normal_attr_id >= 0
+                    {
                         let norm_accessor_idx = accessors.len();
                         accessors.push(serde_json::json!({
                             "count": vertex_count,
@@ -354,7 +378,9 @@ fn create_gltf_with_scene_internal(
                     }
 
                     // Add UV accessor if present
-                    if mesh.uvs.as_ref().map_or(false, |u| !u.is_empty()) && draco_result.texcoord_attr_id >= 0 {
+                    if mesh.uvs.as_ref().map_or(false, |u| !u.is_empty())
+                        && draco_result.texcoord_attr_id >= 0
+                    {
                         let uv_accessor_idx = accessors.len();
                         accessors.push(serde_json::json!({
                             "count": vertex_count,
@@ -362,7 +388,8 @@ fn create_gltf_with_scene_internal(
                             "type": "VEC2"
                         }));
                         attributes["TEXCOORD_0"] = serde_json::json!(uv_accessor_idx);
-                        draco_attributes["TEXCOORD_0"] = serde_json::json!(draco_result.texcoord_attr_id);
+                        draco_attributes["TEXCOORD_0"] =
+                            serde_json::json!(draco_result.texcoord_attr_id);
                     }
 
                     gltf_meshes.push(serde_json::json!({
@@ -601,7 +628,10 @@ fn create_gltf_with_scene_internal(
         _ => {
             // Embedded glTF with base64 data URI
             let base64_data = base64_encode(&binary_data);
-            gltf_json["buffers"][0]["uri"] = serde_json::json!(format!("data:application/octet-stream;base64,{}", base64_data));
+            gltf_json["buffers"][0]["uri"] = serde_json::json!(format!(
+                "data:application/octet-stream;base64,{}",
+                base64_data
+            ));
 
             let json_string = serde_json::to_string_pretty(&gltf_json).unwrap();
 
@@ -616,49 +646,67 @@ fn create_gltf_with_scene_internal(
     }
 }
 
-fn encode_draco_mesh(mesh: &MeshInput, options: &ExportOptions) -> Result<DracoEncodingResult, String> {
+fn encode_draco_mesh(
+    mesh: &MeshInput,
+    options: &ExportOptions,
+) -> Result<DracoEncodingResult, String> {
+    use draco_core::draco_types::DataType;
     use draco_core::encoder_buffer::EncoderBuffer;
     use draco_core::encoder_options::EncoderOptions;
+    use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
+    use draco_core::geometry_indices::PointIndex;
     use draco_core::mesh::Mesh as DracoMesh;
     use draco_core::mesh_encoder::MeshEncoder;
-    use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
-    use draco_core::draco_types::DataType;
-    use draco_core::geometry_indices::PointIndex;
     debug_log(&format!("[DRACO] Starting encode_draco_mesh"));
     debug_log(&format!("[DRACO] Mesh name: {:?}", mesh.name));
-    debug_log(&format!("[DRACO] Positions length: {}", mesh.positions.len()));
+    debug_log(&format!(
+        "[DRACO] Positions length: {}",
+        mesh.positions.len()
+    ));
     debug_log(&format!("[DRACO] Indices length: {}", mesh.indices.len()));
     debug_log(&format!("[DRACO] Has normals: {}", mesh.normals.is_some()));
     debug_log(&format!("[DRACO] Has UVs: {}", mesh.uvs.is_some()));
 
     // Validate input data
     if mesh.positions.len() % 3 != 0 {
-        return Err(format!("Invalid positions array length: {}", mesh.positions.len()));
+        return Err(format!(
+            "Invalid positions array length: {}",
+            mesh.positions.len()
+        ));
     }
     if mesh.indices.len() % 3 != 0 {
-        return Err(format!("Invalid indices array length: {}", mesh.indices.len()));
+        return Err(format!(
+            "Invalid indices array length: {}",
+            mesh.indices.len()
+        ));
     }
-    
+
     let vertex_count = mesh.positions.len() / 3;
     let face_count = mesh.indices.len() / 3;
-    
+
     debug_log(&format!("[DRACO] Vertex count: {}", vertex_count));
     debug_log(&format!("[DRACO] Face count: {}", face_count));
-    
+
     if vertex_count == 0 {
         return Err("No vertices in mesh".to_string());
     }
     if face_count == 0 {
         return Err("No faces in mesh".to_string());
     }
-    
+
     // Check that all indices are valid
     let max_index = mesh.indices.iter().max().copied().unwrap_or(0);
     let min_index = mesh.indices.iter().min().copied().unwrap_or(0);
-    debug_log(&format!("[DRACO] Index range: {} to {}", min_index, max_index));
-    
+    debug_log(&format!(
+        "[DRACO] Index range: {} to {}",
+        min_index, max_index
+    ));
+
     if max_index >= vertex_count as u32 {
-        return Err(format!("Index out of bounds: {} >= {}", max_index, vertex_count));
+        return Err(format!(
+            "Index out of bounds: {} >= {}",
+            max_index, vertex_count
+        ));
     }
 
     debug_log(&format!("[DRACO] Creating Draco mesh"));
@@ -685,7 +733,10 @@ fn encode_draco_mesh(mesh: &MeshInput, options: &ExportOptions) -> Result<DracoE
     // Add normal attribute if present
     if let Some(ref normals) = mesh.normals {
         if !normals.is_empty() {
-            debug_log(&format!("[DRACO] Adding normal attribute ({} values)", normals.len()));
+            debug_log(&format!(
+                "[DRACO] Adding normal attribute ({} values)",
+                normals.len()
+            ));
             let mut norm_attr = PointAttribute::new();
             norm_attr.init(
                 GeometryAttributeType::Normal,
@@ -706,7 +757,10 @@ fn encode_draco_mesh(mesh: &MeshInput, options: &ExportOptions) -> Result<DracoE
     // Add UV attribute if present
     if let Some(ref uvs) = mesh.uvs {
         if !uvs.is_empty() {
-            debug_log(&format!("[DRACO] Adding UV attribute ({} values)", uvs.len()));
+            debug_log(&format!(
+                "[DRACO] Adding UV attribute ({} values)",
+                uvs.len()
+            ));
             let mut uv_attr = PointAttribute::new();
             uv_attr.init(
                 GeometryAttributeType::TexCoord,
@@ -775,41 +829,64 @@ fn encode_draco_mesh(mesh: &MeshInput, options: &ExportOptions) -> Result<DracoE
 
     debug_log(&format!("[DRACO] Setting mesh on encoder"));
     encoder.set_mesh(draco_mesh.clone());
-    
+
     // Get the actual attribute IDs assigned by Draco
     let pos_attr_id = draco_mesh.named_attribute_id(GeometryAttributeType::Position);
     let norm_attr_id = draco_mesh.named_attribute_id(GeometryAttributeType::Normal);
     let uv_attr_id = draco_mesh.named_attribute_id(GeometryAttributeType::TexCoord);
-    
-    debug_log(&format!("[DRACO] Attribute IDs - Position: {}, Normal: {}, TexCoord: {}", pos_attr_id, norm_attr_id, uv_attr_id));
+
+    debug_log(&format!(
+        "[DRACO] Attribute IDs - Position: {}, Normal: {}, TexCoord: {}",
+        pos_attr_id, norm_attr_id, uv_attr_id
+    ));
 
     // Diagnostic: print quantization bits for each attribute (fallback -1 means not set)
     let pos_q = enc_options.get_attribute_int(pos_attr_id, "quantization_bits", -1);
-    debug_log(&format!("[DRACO] Position quantization bits (att {}) = {}", pos_attr_id, pos_q));
+    debug_log(&format!(
+        "[DRACO] Position quantization bits (att {}) = {}",
+        pos_attr_id, pos_q
+    ));
     if norm_attr_id >= 0 {
         let norm_q = enc_options.get_attribute_int(norm_attr_id, "quantization_bits", -1);
-        debug_log(&format!("[DRACO] Normal quantization bits (att {}) = {}", norm_attr_id, norm_q));
+        debug_log(&format!(
+            "[DRACO] Normal quantization bits (att {}) = {}",
+            norm_attr_id, norm_q
+        ));
     }
     if uv_attr_id >= 0 {
         let uv_q = enc_options.get_attribute_int(uv_attr_id, "quantization_bits", -1);
-        debug_log(&format!("[DRACO] TexCoord quantization bits (att {}) = {}", uv_attr_id, uv_q));
+        debug_log(&format!(
+            "[DRACO] TexCoord quantization bits (att {}) = {}",
+            uv_attr_id, uv_q
+        ));
     }
 
     debug_log(&format!("[DRACO] Starting encode..."));
     match encoder.encode(&enc_options, &mut encoder_buffer) {
         Ok(_) => {
-            debug_log(&format!("[DRACO] Encode successful, buffer size: {}", encoder_buffer.data().len()));
+            debug_log(&format!(
+                "[DRACO] Encode successful, buffer size: {}",
+                encoder_buffer.data().len()
+            ));
             // Determine which method was actually used
             let method_used = if let Some(method) = enc_options.get_encoding_method() {
-                if method == 1 { "edgebreaker" } else { "sequential" }
+                if method == 1 {
+                    "edgebreaker"
+                } else {
+                    "sequential"
+                }
             } else {
                 // Auto mode: edgebreaker unless speed == 10
                 let speed = enc_options.get_speed();
-                if speed == 10 { "sequential" } else { "edgebreaker" }
+                if speed == 10 {
+                    "sequential"
+                } else {
+                    "edgebreaker"
+                }
             };
-            
+
             let speed_used = enc_options.get_speed();
-            
+
             // Determine primary prediction scheme based on speed and method
             // This matches the C++ SelectPredictionMethod() from prediction_scheme_encoder_factory.cc
             let prediction_scheme = if method_used == "sequential" {
@@ -826,8 +903,11 @@ fn encode_draco_mesh(mesh: &MeshInput, options: &ExportOptions) -> Result<DracoE
                 // C++: speeds 0-1 use CONSTRAINED_MULTI_PARALLELOGRAM
                 "CONSTRAINED_MULTI_PARALLELOGRAM".to_string()
             };
-            
-            debug_log(&format!("[DRACO] Method: {}, Speed: {}, Prediction: {}", method_used, speed_used, prediction_scheme));
+
+            debug_log(&format!(
+                "[DRACO] Method: {}, Speed: {}, Prediction: {}",
+                method_used, speed_used, prediction_scheme
+            ));
             // Verify produced buffer is decodable by the Rust decoder to catch encoding issues
             {
                 use draco_core::decoder_buffer::DecoderBuffer;
@@ -837,7 +917,11 @@ fn encode_draco_mesh(mesh: &MeshInput, options: &ExportOptions) -> Result<DracoE
                 let mut decoder_check = MeshDecoder::new();
                 match decoder_check.decode(&mut decoder_buffer_check, &mut mesh_check) {
                     Ok(_) => {
-                        debug_log(&format!("[DRACO] Post-encode check: decoded successfully (points={}, faces={})", mesh_check.num_points(), mesh_check.num_faces()));
+                        debug_log(&format!(
+                            "[DRACO] Post-encode check: decoded successfully (points={}, faces={})",
+                            mesh_check.num_points(),
+                            mesh_check.num_faces()
+                        ));
                         return Ok(DracoEncodingResult {
                             data: encoder_buffer.data().to_vec(),
                             position_attr_id: pos_attr_id,
@@ -875,33 +959,41 @@ struct DracoEncodingResult {
 
 fn base64_encode(data: &[u8]) -> String {
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    
+
     let mut result = String::new();
     let mut i = 0;
-    
+
     while i < data.len() {
         let b0 = data[i] as usize;
-        let b1 = if i + 1 < data.len() { data[i + 1] as usize } else { 0 };
-        let b2 = if i + 2 < data.len() { data[i + 2] as usize } else { 0 };
-        
+        let b1 = if i + 1 < data.len() {
+            data[i + 1] as usize
+        } else {
+            0
+        };
+        let b2 = if i + 2 < data.len() {
+            data[i + 2] as usize
+        } else {
+            0
+        };
+
         result.push(ALPHABET[b0 >> 2] as char);
         result.push(ALPHABET[((b0 & 0x03) << 4) | (b1 >> 4)] as char);
-        
+
         if i + 1 < data.len() {
             result.push(ALPHABET[((b1 & 0x0f) << 2) | (b2 >> 6)] as char);
         } else {
             result.push('=');
         }
-        
+
         if i + 2 < data.len() {
             result.push(ALPHABET[b2 & 0x3f] as char);
         } else {
             result.push('=');
         }
-        
+
         i += 3;
     }
-    
+
     result
 }
 

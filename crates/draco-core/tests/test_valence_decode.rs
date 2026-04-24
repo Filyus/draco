@@ -15,19 +15,25 @@ fn get_testdata_path() -> PathBuf {
 
 #[test]
 fn test_decode_speed_0_cube() {
-    let path = get_testdata_path().join("reference_cpp").join("cpp_encoded_cube_speed_0.drc");
+    let path = get_testdata_path()
+        .join("reference_cpp")
+        .join("cpp_encoded_cube_speed_0.drc");
     if !path.exists() {
         println!("Skipping test - file not found: {:?}", path);
         return;
     }
-    
+
     let data = std::fs::read(&path).expect("Failed to read file");
     let mut buffer = DecoderBuffer::new(&data);
     let mut mesh = Mesh::new();
-    
+
     match MeshDecoder::new().decode(&mut buffer, &mut mesh) {
         Ok(_) => {
-            println!("SUCCESS: faces={} points={}", mesh.num_faces(), mesh.num_points());
+            println!(
+                "SUCCESS: faces={} points={}",
+                mesh.num_faces(),
+                mesh.num_points()
+            );
             assert!(mesh.num_faces() > 0, "Expected faces > 0");
             assert!(mesh.num_points() > 0, "Expected points > 0");
         }
@@ -43,14 +49,18 @@ fn test_decode_bunny_cpp_standard() {
         println!("Skipping test - file not found: {:?}", path);
         return;
     }
-    
+
     let data = std::fs::read(&path).expect("Failed to read file");
     let mut buffer = DecoderBuffer::new(&data);
     let mut mesh = Mesh::new();
-    
+
     match MeshDecoder::new().decode(&mut buffer, &mut mesh) {
         Ok(_) => {
-            println!("SUCCESS: faces={} points={}", mesh.num_faces(), mesh.num_points());
+            println!(
+                "SUCCESS: faces={} points={}",
+                mesh.num_faces(),
+                mesh.num_points()
+            );
             assert!(mesh.num_faces() > 0, "Expected faces > 0");
             assert!(mesh.num_points() > 0, "Expected points > 0");
         }
@@ -62,7 +72,7 @@ fn test_decode_bunny_cpp_standard() {
 fn test_decode_all_speed_0_files() {
     // Test all speed 0 files in testdata
     let testdata = get_testdata_path();
-    
+
     for entry in std::fs::read_dir(&testdata).unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
@@ -72,14 +82,19 @@ fn test_decode_all_speed_0_files() {
             let data = std::fs::read(&path).expect("Failed to read file");
             let mut buffer = DecoderBuffer::new(&data);
             let mut mesh = Mesh::new();
-            
+
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 MeshDecoder::new().decode(&mut buffer, &mut mesh)
             }));
-            
+
             match result {
                 Ok(Ok(_)) => {
-                    println!("OK: {} -> faces={} points={}", name, mesh.num_faces(), mesh.num_points());
+                    println!(
+                        "OK: {} -> faces={} points={}",
+                        name,
+                        mesh.num_faces(),
+                        mesh.num_points()
+                    );
                 }
                 Ok(Err(e)) => {
                     // Only panic if it's a valence-related error

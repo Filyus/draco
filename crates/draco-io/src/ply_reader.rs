@@ -56,7 +56,10 @@ impl ParsedPlyPositionData {
 #[derive(Debug, Clone)]
 enum PlyPropertyKind {
     Scalar(DataType),
-    List { count_type: DataType, item_type: DataType },
+    List {
+        count_type: DataType,
+        item_type: DataType,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -188,10 +191,7 @@ impl PlyReader {
         }
 
         if let Some(normals) = parsed.normals.as_ref() {
-            mesh.add_attribute(make_f32x3_attribute(
-                GeometryAttributeType::Normal,
-                normals,
-            ));
+            mesh.add_attribute(make_f32x3_attribute(GeometryAttributeType::Normal, normals));
         }
 
         if let Some(colors) = parsed.colors.as_ref() {
@@ -213,7 +213,7 @@ impl PlyReader {
                 ],
             );
         }
-        
+
         if mesh.num_faces() > 0 {
             // Match C++ Draco behavior: deduplicate point IDs in face-traversal order.
             // This ensures binary compatibility when encoding.
@@ -240,16 +240,27 @@ impl crate::traits::SceneReader for PlyReader {
         let meshes = self.read_meshes()?;
         let mut parts = Vec::with_capacity(meshes.len());
         let scene_name = match &self.source {
-            PlyReaderSource::Path(path) => path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()),
+            PlyReaderSource::Path(path) => path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string()),
             PlyReaderSource::Bytes(_) => None,
         };
         let mut root = crate::traits::SceneNode::new(scene_name);
         for mesh in meshes {
-            let part = crate::traits::SceneObject { name: None, mesh: mesh.clone(), transform: None };
+            let part = crate::traits::SceneObject {
+                name: None,
+                mesh: mesh.clone(),
+                transform: None,
+            };
             root.parts.push(part.clone());
             parts.push(part);
         }
-        Ok(crate::traits::Scene { name: root.name.clone(), parts, root_nodes: vec![root] })
+        Ok(crate::traits::Scene {
+            name: root.name.clone(),
+            parts,
+            root_nodes: vec![root],
+        })
     }
 }
 
@@ -278,7 +289,10 @@ fn make_f32x3_attribute(
 
     let buffer = attribute.buffer_mut();
     for (i, value) in values.iter().enumerate() {
-        let bytes: Vec<u8> = value.iter().flat_map(|component| component.to_le_bytes()).collect();
+        let bytes: Vec<u8> = value
+            .iter()
+            .flat_map(|component| component.to_le_bytes())
+            .collect();
         buffer.write(i * 12, &bytes);
     }
 
@@ -294,7 +308,10 @@ fn make_i32x3_attribute(
 
     let buffer = attribute.buffer_mut();
     for (i, value) in values.iter().enumerate() {
-        let bytes: Vec<u8> = value.iter().flat_map(|component| component.to_le_bytes()).collect();
+        let bytes: Vec<u8> = value
+            .iter()
+            .flat_map(|component| component.to_le_bytes())
+            .collect();
         buffer.write(i * 12, &bytes);
     }
 
@@ -403,9 +420,7 @@ fn parse_ply_header(bytes: &[u8]) -> io::Result<(PlyHeader, usize)> {
         .map_err(|_| invalid_ply("PLY header must be valid UTF-8/ASCII"))?;
 
     let mut lines = header_text.lines();
-    let first_line = lines
-        .next()
-        .ok_or_else(|| invalid_ply("Empty PLY file"))?;
+    let first_line = lines.next().ok_or_else(|| invalid_ply("Empty PLY file"))?;
     if first_line.trim() != "ply" {
         return Err(invalid_ply("Missing PLY header"));
     }
@@ -497,17 +512,18 @@ fn parse_ply_header(bytes: &[u8]) -> io::Result<(PlyHeader, usize)> {
     ))
 }
 
-fn skip_ascii_element_lines<'a>(
-    lines: &mut std::str::Lines<'a>,
-    count: usize,
-) {
+fn skip_ascii_element_lines<'a>(lines: &mut std::str::Lines<'a>, count: usize) {
     for _ in 0..count {
         let _ = lines.next();
     }
 }
 
 fn ascii_scalar_token_count(data_type: DataType) -> usize {
-    if data_type == DataType::Invalid { 0 } else { 1 }
+    if data_type == DataType::Invalid {
+        0
+    } else {
+        1
+    }
 }
 
 fn split_ascii_vertex_lines<'a>(
@@ -1062,26 +1078,32 @@ fn read_ply_binary_body(
                 PlyPropertyKind::Scalar(data_type) => match property.name.as_str() {
                     "x" => match schema.position_data_type {
                         DataType::Int32 => {
-                            int_position[0] = read_binary_scalar_as_i32(&mut cursor, data_type, endian)?
+                            int_position[0] =
+                                read_binary_scalar_as_i32(&mut cursor, data_type, endian)?
                         }
                         _ => {
-                            float_position[0] = read_binary_scalar_as_f32(&mut cursor, data_type, endian)?
+                            float_position[0] =
+                                read_binary_scalar_as_f32(&mut cursor, data_type, endian)?
                         }
                     },
                     "y" => match schema.position_data_type {
                         DataType::Int32 => {
-                            int_position[1] = read_binary_scalar_as_i32(&mut cursor, data_type, endian)?
+                            int_position[1] =
+                                read_binary_scalar_as_i32(&mut cursor, data_type, endian)?
                         }
                         _ => {
-                            float_position[1] = read_binary_scalar_as_f32(&mut cursor, data_type, endian)?
+                            float_position[1] =
+                                read_binary_scalar_as_f32(&mut cursor, data_type, endian)?
                         }
                     },
                     "z" => match schema.position_data_type {
                         DataType::Int32 => {
-                            int_position[2] = read_binary_scalar_as_i32(&mut cursor, data_type, endian)?
+                            int_position[2] =
+                                read_binary_scalar_as_i32(&mut cursor, data_type, endian)?
                         }
                         _ => {
-                            float_position[2] = read_binary_scalar_as_f32(&mut cursor, data_type, endian)?
+                            float_position[2] =
+                                read_binary_scalar_as_f32(&mut cursor, data_type, endian)?
                         }
                     },
                     "nx" if schema.has_normals => {
@@ -1131,7 +1153,9 @@ fn read_ply_binary_body(
         .position(|element| element.name == "face");
     if let Some(face_element_index) = face_element_index {
         if face_element_index < vertex_element_index {
-            return Err(invalid_ply("PLY face element before vertex element is not supported"));
+            return Err(invalid_ply(
+                "PLY face element before vertex element is not supported",
+            ));
         }
         for element in &header.elements[vertex_element_index + 1..face_element_index] {
             skip_binary_element(&mut cursor, element, endian)?;
@@ -1213,7 +1237,7 @@ fn read_ply_bytes(bytes: &[u8]) -> io::Result<ParsedPlyData> {
 /// Write point positions to an ASCII PLY file.
 pub fn write_ply_positions<P: AsRef<Path>>(path: P, points: &[[f32; 3]]) -> io::Result<()> {
     let mut file = fs::File::create(path)?;
-    
+
     writeln!(file, "ply")?;
     writeln!(file, "format ascii 1.0")?;
     writeln!(file, "element vertex {}", points.len())?;
@@ -1221,11 +1245,11 @@ pub fn write_ply_positions<P: AsRef<Path>>(path: P, points: &[[f32; 3]]) -> io::
     writeln!(file, "property float y")?;
     writeln!(file, "property float z")?;
     writeln!(file, "end_header")?;
-    
+
     for p in points {
         writeln!(file, "{:.6} {:.6} {:.6}", p[0], p[1], p[2])?;
     }
-    
+
     Ok(())
 }
 
@@ -1234,7 +1258,7 @@ mod tests {
     use super::*;
     use draco_core::geometry_attribute::GeometryAttributeType;
     use tempfile::NamedTempFile;
-    
+
     #[test]
     fn test_read_write_ply() {
         let expected = vec![
@@ -1244,16 +1268,19 @@ mod tests {
             [0.0, 0.0, 1.0],
             [-1.0, -1.0, -1.0],
         ];
-        
+
         let file = NamedTempFile::new().unwrap();
         write_ply_positions(file.path(), &expected).unwrap();
-        
+
         let positions = read_ply_positions(file.path()).unwrap();
         assert_eq!(positions.len(), expected.len());
-        
+
         for (i, (a, b)) in positions.iter().zip(expected.iter()).enumerate() {
             let diff = (a[0] - b[0]).abs() + (a[1] - b[1]).abs() + (a[2] - b[2]).abs();
-            assert!(diff < 1e-5, "Position mismatch at index {i}: {a:?} vs {b:?}");
+            assert!(
+                diff < 1e-5,
+                "Position mismatch at index {i}: {a:?} vs {b:?}"
+            );
         }
     }
 
@@ -1284,9 +1311,18 @@ end_header
 
         assert_eq!(mesh.num_points(), 4);
         assert_eq!(mesh.num_faces(), 3);
-        assert_eq!(mesh.face(draco_core::geometry_indices::FaceIndex(0)), [0u32.into(), 1u32.into(), 2u32.into()]);
-        assert_eq!(mesh.face(draco_core::geometry_indices::FaceIndex(1)), [0u32.into(), 1u32.into(), 2u32.into()]);
-        assert_eq!(mesh.face(draco_core::geometry_indices::FaceIndex(2)), [0u32.into(), 2u32.into(), 3u32.into()]);
+        assert_eq!(
+            mesh.face(draco_core::geometry_indices::FaceIndex(0)),
+            [0u32.into(), 1u32.into(), 2u32.into()]
+        );
+        assert_eq!(
+            mesh.face(draco_core::geometry_indices::FaceIndex(1)),
+            [0u32.into(), 1u32.into(), 2u32.into()]
+        );
+        assert_eq!(
+            mesh.face(draco_core::geometry_indices::FaceIndex(2)),
+            [0u32.into(), 2u32.into(), 3u32.into()]
+        );
     }
 
     #[test]
@@ -1358,7 +1394,9 @@ end_header
         let mut reader = PlyReader::open(file.path()).unwrap();
         let mesh = reader.read_mesh().unwrap();
 
-        let position_att = mesh.named_attribute(GeometryAttributeType::Position).unwrap();
+        let position_att = mesh
+            .named_attribute(GeometryAttributeType::Position)
+            .unwrap();
         assert_eq!(position_att.data_type(), DataType::Int32);
         assert_eq!(position_att.num_components(), 3);
         assert!(!position_att.normalized());
@@ -1519,7 +1557,9 @@ end_header
         let mut reader = PlyReader::open(file.path()).unwrap();
         let mesh = reader.read_mesh().unwrap();
 
-        let position_att = mesh.named_attribute(GeometryAttributeType::Position).unwrap();
+        let position_att = mesh
+            .named_attribute(GeometryAttributeType::Position)
+            .unwrap();
         assert_eq!(position_att.data_type(), DataType::Int32);
         assert_eq!(position_att.num_components(), 3);
 
@@ -1591,4 +1631,3 @@ end_header
         );
     }
 }
-

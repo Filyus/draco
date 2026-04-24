@@ -7,7 +7,6 @@ pub struct DirectBitEncoder {
     num_local_bits: u32,
 }
 
-
 impl DirectBitEncoder {
     pub fn new() -> Self {
         Self::default()

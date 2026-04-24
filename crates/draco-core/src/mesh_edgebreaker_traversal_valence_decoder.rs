@@ -1,11 +1,11 @@
-use crate::decoder_buffer::DecoderBuffer;
-use crate::edgebreaker_connectivity_decoder::{EdgebreakerTraversalDecoder};
 use crate::corner_table::CornerTable;
+use crate::decoder_buffer::DecoderBuffer;
+use crate::edgebreaker_connectivity_decoder::EdgebreakerTraversalDecoder;
 use crate::geometry_indices::{CornerIndex, VertexIndex};
 use crate::mesh_edgebreaker_shared::{EdgeFaceName, TopologySplitEventData};
+use crate::rans_bit_decoder::RAnsBitDecoder;
 use crate::symbol_encoding::decode_symbols;
 use crate::symbol_encoding::SymbolEncodingOptions;
-use crate::rans_bit_decoder::RAnsBitDecoder;
 
 pub struct MeshEdgebreakerTraversalValenceDecoder<'a> {
     #[allow(dead_code)]
@@ -76,7 +76,13 @@ impl<'a> MeshEdgebreakerTraversalValenceDecoder<'a> {
             if num_symbols > 0 {
                 self.context_symbols[i].resize(num_symbols, 0);
                 let options = SymbolEncodingOptions::default();
-                if !decode_symbols(num_symbols, 1, &options, in_buffer, &mut self.context_symbols[i]) {
+                if !decode_symbols(
+                    num_symbols,
+                    1,
+                    &options,
+                    in_buffer,
+                    &mut self.context_symbols[i],
+                ) {
                     return false;
                 }
                 // Set counter to read from back
@@ -124,7 +130,9 @@ impl<'a> EdgebreakerTraversalDecoder for MeshEdgebreakerTraversalValenceDecoder<
     }
 
     fn merge_vertices(&mut self, dest: VertexIndex, source: VertexIndex) {
-        if (dest.0 as usize) < self.vertex_valences.len() && (source.0 as usize) < self.vertex_valences.len() {
+        if (dest.0 as usize) < self.vertex_valences.len()
+            && (source.0 as usize) < self.vertex_valences.len()
+        {
             self.vertex_valences[dest.0 as usize] += self.vertex_valences[source.0 as usize];
         }
     }
@@ -167,21 +175,25 @@ impl<'a> EdgebreakerTraversalDecoder for MeshEdgebreakerTraversalValenceDecoder<
         let next = corner_table.next(corner);
         let prev = corner_table.previous(corner);
         match self.last_symbol {
-            0 | 1 => { // Center (C) or Split (S)
+            0 | 1 => {
+                // Center (C) or Split (S)
                 self.vertex_valences[corner_table.vertex(next).0 as usize] += 1;
                 self.vertex_valences[corner_table.vertex(prev).0 as usize] += 1;
             }
-            3 => { // Right (R)
+            3 => {
+                // Right (R)
                 self.vertex_valences[corner_table.vertex(corner).0 as usize] += 1;
                 self.vertex_valences[corner_table.vertex(next).0 as usize] += 1;
                 self.vertex_valences[corner_table.vertex(prev).0 as usize] += 2;
             }
-            2 => { // Left (L)
+            2 => {
+                // Left (L)
                 self.vertex_valences[corner_table.vertex(corner).0 as usize] += 1;
                 self.vertex_valences[corner_table.vertex(next).0 as usize] += 2;
                 self.vertex_valences[corner_table.vertex(prev).0 as usize] += 1;
             }
-            4 => { // End (E)
+            4 => {
+                // End (E)
                 self.vertex_valences[corner_table.vertex(corner).0 as usize] += 2;
                 self.vertex_valences[corner_table.vertex(next).0 as usize] += 2;
                 self.vertex_valences[corner_table.vertex(prev).0 as usize] += 2;
@@ -190,7 +202,13 @@ impl<'a> EdgebreakerTraversalDecoder for MeshEdgebreakerTraversalValenceDecoder<
         }
 
         let active_valence = self.vertex_valences[corner_table.vertex(next).0 as usize];
-        let clamped = if active_valence < self.min_valence { self.min_valence } else if active_valence > self.max_valence { self.max_valence } else { active_valence };
+        let clamped = if active_valence < self.min_valence {
+            self.min_valence
+        } else if active_valence > self.max_valence {
+            self.max_valence
+        } else {
+            active_valence
+        };
         self.active_context = (clamped - self.min_valence) as i32;
 
         // Record processed connectivity corner (like InternalTraversalDecoder)

@@ -1,24 +1,25 @@
-use crate::prediction_scheme::{PredictionScheme, PredictionSchemeDecoder, PredictionSchemeMethod, PredictionSchemeTransformType};
+use crate::corner_table::CornerTable;
 use crate::decoder_buffer::DecoderBuffer;
+use crate::draco_types::DataType;
+use crate::geometry_attribute::PointAttribute;
 use crate::geometry_indices::{CornerIndex, PointIndex, INVALID_CORNER_INDEX};
-use crate::point_cloud_decoder::PointCloudDecoder;
+use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
 use crate::point_cloud::PointCloud;
-use crate::prediction_scheme_delta::PredictionSchemeDeltaDecoder;
-use crate::prediction_scheme_parallelogram::PredictionSchemeParallelogramDecoder;
-use crate::prediction_scheme_multi_parallelogram::PredictionSchemeMultiParallelogramDecoder;
+use crate::point_cloud_decoder::PointCloudDecoder;
+use crate::prediction_scheme::{
+    PredictionScheme, PredictionSchemeDecoder, PredictionSchemeMethod,
+    PredictionSchemeTransformType,
+};
 use crate::prediction_scheme_constrained_multi_parallelogram::PredictionSchemeConstrainedMultiParallelogramDecoder;
+use crate::prediction_scheme_delta::PredictionSchemeDeltaDecoder;
+use crate::prediction_scheme_geometric_normal::MeshPredictionSchemeGeometricNormalDecoder;
+use crate::prediction_scheme_multi_parallelogram::PredictionSchemeMultiParallelogramDecoder;
+use crate::prediction_scheme_normal_octahedron_canonicalized_decoding_transform::PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform;
+use crate::prediction_scheme_parallelogram::PredictionSchemeParallelogramDecoder;
 use crate::prediction_scheme_tex_coords_deprecated::PredictionSchemeTexCoordsDeprecatedDecoder;
 use crate::prediction_scheme_tex_coords_portable::PredictionSchemeTexCoordsPortableDecoder;
-use crate::prediction_scheme_geometric_normal::{
-    MeshPredictionSchemeGeometricNormalDecoder,
-};
-use crate::prediction_scheme_normal_octahedron_canonicalized_decoding_transform::PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform;
 use crate::prediction_scheme_wrap::PredictionSchemeWrapDecodingTransform;
-use crate::corner_table::CornerTable;
-use crate::geometry_attribute::PointAttribute;
-use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
 use crate::symbol_encoding::{decode_symbols, SymbolEncodingOptions};
-use crate::draco_types::DataType;
 
 pub struct SequentialIntegerAttributeDecoder {
     attribute: i32,
@@ -43,12 +44,15 @@ impl SequentialIntegerAttributeDecoder {
         self.attribute = attribute_id;
         true
     }
-    
+
     pub fn attribute_id(&self) -> i32 {
         self.attribute
     }
-    
-    pub fn set_prediction_scheme(&mut self, scheme: Box<dyn PredictionSchemeDecoder<'static, i32, i32>>) {
+
+    pub fn set_prediction_scheme(
+        &mut self,
+        scheme: Box<dyn PredictionSchemeDecoder<'static, i32, i32>>,
+    ) {
         self.prediction_scheme = Some(scheme);
     }
 
@@ -82,7 +86,7 @@ impl SequentialIntegerAttributeDecoder {
         } else {
             point_cloud.attribute(att_id)
         };
-        
+
         let num_components = attribute.num_components() as usize;
         let num_values = num_points * num_components;
 
@@ -95,8 +99,6 @@ impl SequentialIntegerAttributeDecoder {
             }
         };
 
-
-
         // Draco stores prediction method as int8 (0xFF == -1 == None).
         let selected_method = if method_byte == 0xFF {
             PredictionSchemeMethod::None
@@ -108,7 +110,7 @@ impl SequentialIntegerAttributeDecoder {
                 }
             }
         };
-        
+
         let mut selected_transform: Option<PredictionSchemeTransformType> = None;
         if selected_method != PredictionSchemeMethod::None {
             // Draco stores prediction transform type as int8 (0xFF == -1 == None).
@@ -127,24 +129,60 @@ impl SequentialIntegerAttributeDecoder {
         }
 
         if let Some(ref scheme) = self.prediction_scheme {
-             // println!("DEBUG: Decoder scheme method: {:?}", scheme.get_prediction_method());
-             if scheme.get_prediction_method() != selected_method {
-                 eprintln!("Prediction method mismatch. Stream: {:?}, Scheme: {:?}", selected_method, scheme.get_prediction_method());
-                 return false;
-             }
+            // println!("DEBUG: Decoder scheme method: {:?}", scheme.get_prediction_method());
+            if scheme.get_prediction_method() != selected_method {
+                eprintln!(
+                    "Prediction method mismatch. Stream: {:?}, Scheme: {:?}",
+                    selected_method,
+                    scheme.get_prediction_method()
+                );
+                return false;
+            }
         }
 
-        let mut predictor_opt: Option<PredictionSchemeDeltaDecoder<i32, i32, PredictionSchemeWrapDecodingTransform<i32>>> = None;
-        let mut predictor_normal_octa_diff_opt: Option<
-            PredictionSchemeDeltaDecoder<i32, i32, PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform>,
+        let mut predictor_opt: Option<
+            PredictionSchemeDeltaDecoder<i32, i32, PredictionSchemeWrapDecodingTransform<i32>>,
         > = None;
-        let mut predictor_parallelogram_opt: Option<PredictionSchemeParallelogramDecoder<i32, i32, PredictionSchemeWrapDecodingTransform<i32>>> = None;
-        let mut predictor_multi_parallelogram_opt: Option<PredictionSchemeMultiParallelogramDecoder<'_, i32, i32, PredictionSchemeWrapDecodingTransform<i32>>> = None;
-        let mut predictor_constrained_multi_parallelogram_opt: Option<PredictionSchemeConstrainedMultiParallelogramDecoder<'_, i32, i32, PredictionSchemeWrapDecodingTransform<i32>>> = None;
-        let mut predictor_tex_coords_deprecated_opt: Option<PredictionSchemeTexCoordsDeprecatedDecoder<'_, PredictionSchemeWrapDecodingTransform<i32>>> = None;
+        let mut predictor_normal_octa_diff_opt: Option<
+            PredictionSchemeDeltaDecoder<
+                i32,
+                i32,
+                PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform,
+            >,
+        > = None;
+        let mut predictor_parallelogram_opt: Option<
+            PredictionSchemeParallelogramDecoder<
+                i32,
+                i32,
+                PredictionSchemeWrapDecodingTransform<i32>,
+            >,
+        > = None;
+        let mut predictor_multi_parallelogram_opt: Option<
+            PredictionSchemeMultiParallelogramDecoder<
+                '_,
+                i32,
+                i32,
+                PredictionSchemeWrapDecodingTransform<i32>,
+            >,
+        > = None;
+        let mut predictor_constrained_multi_parallelogram_opt: Option<
+            PredictionSchemeConstrainedMultiParallelogramDecoder<
+                '_,
+                i32,
+                i32,
+                PredictionSchemeWrapDecodingTransform<i32>,
+            >,
+        > = None;
+        let mut predictor_tex_coords_deprecated_opt: Option<
+            PredictionSchemeTexCoordsDeprecatedDecoder<
+                '_,
+                PredictionSchemeWrapDecodingTransform<i32>,
+            >,
+        > = None;
         let mut predictor_tex_coords_opt: Option<PredictionSchemeTexCoordsPortableDecoder> = None;
-        let mut predictor_geometric_normal_opt: Option<MeshPredictionSchemeGeometricNormalDecoder> = None;
-        
+        let mut predictor_geometric_normal_opt: Option<MeshPredictionSchemeGeometricNormalDecoder> =
+            None;
+
         // Maps need to live long enough
         let mut vertex_to_data_map: Vec<i32> = Vec::new();
         let mut data_to_corner_map: Vec<u32> = Vec::new();
@@ -152,87 +190,87 @@ impl SequentialIntegerAttributeDecoder {
             _ if self.prediction_scheme.is_some() => {
                 // Do nothing, scheme already set
             }
-            PredictionSchemeMethod::Difference => {
-                match selected_transform {
-                    Some(PredictionSchemeTransformType::NormalOctahedronCanonicalized) => {
-                        let transform = PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform::new();
-                        let predictor = PredictionSchemeDeltaDecoder::new(transform);
-                        predictor_normal_octa_diff_opt = Some(predictor);
-                    }
-                    _ => {
-                        let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
-                        let predictor = PredictionSchemeDeltaDecoder::new(transform);
-                        predictor_opt = Some(predictor);
-                    }
+            PredictionSchemeMethod::Difference => match selected_transform {
+                Some(PredictionSchemeTransformType::NormalOctahedronCanonicalized) => {
+                    let transform =
+                        PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform::new();
+                    let predictor = PredictionSchemeDeltaDecoder::new(transform);
+                    predictor_normal_octa_diff_opt = Some(predictor);
                 }
-            }
+                _ => {
+                    let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
+                    let predictor = PredictionSchemeDeltaDecoder::new(transform);
+                    predictor_opt = Some(predictor);
+                }
+            },
             PredictionSchemeMethod::MeshPredictionParallelogram => {
                 if let Some(corner_table) = corner_table {
-                         // Generate maps
-                         data_to_corner_map.resize(num_points, 0);
+                    // Generate maps
+                    data_to_corner_map.resize(num_points, 0);
 
-                         // vertex_to_data_map_override takes priority when available
-                         // (it's built by the decoder's own DFS traversal)
-                         if let Some(map) = vertex_to_data_map_override {
-                             // Use the pre-built vertex_to_data_map from mesh decoder
-                             if map.len() != corner_table.num_vertices() {
-                                 eprintln!("Invalid vertex_to_data_map_override length");
-                                 return false;
-                             }
-                             vertex_to_data_map.resize(map.len(), 0);
-                             vertex_to_data_map.copy_from_slice(map);
-                             
-                             // Also set data_to_corner_map if override is available
-                             if let Some(dcm) = data_to_corner_map_override {
-                                 if dcm.len() != num_points {
-                                     eprintln!("Invalid data_to_corner_map_override length");
-                                     return false;
-                                 }
-                                 data_to_corner_map.copy_from_slice(dcm);
-                             }
-                         } else if let Some(map) = data_to_corner_map_override {
-                             if map.len() != num_points {
-                                 eprintln!("Invalid data_to_corner_map_override length");
-                                 return false;
-                             }
-                             data_to_corner_map.copy_from_slice(map);
+                    // vertex_to_data_map_override takes priority when available
+                    // (it's built by the decoder's own DFS traversal)
+                    if let Some(map) = vertex_to_data_map_override {
+                        // Use the pre-built vertex_to_data_map from mesh decoder
+                        if map.len() != corner_table.num_vertices() {
+                            eprintln!("Invalid vertex_to_data_map_override length");
+                            return false;
+                        }
+                        vertex_to_data_map.resize(map.len(), 0);
+                        vertex_to_data_map.copy_from_slice(map);
 
-                             // When using an override, the corner table may contain seam-split
-                             // vertices with ids outside the original point range. Build the
-                             // vertex->data map from the data->corner map.
-                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                                 let corner_id = CornerIndex(corner_u32);
-                                 if corner_id == INVALID_CORNER_INDEX {
-                                     continue;
-                                 }
-                                 let v = corner_table.vertex(corner_id).0 as usize;
-                                 if v < vertex_to_data_map.len() {
-                                     vertex_to_data_map[v] = data_id as i32;
-                                 }
-                             }
-                         } else {
-                             // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
-                             // This is the same logic as the 'if' branch above
-                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                                 let corner_id = CornerIndex(corner_u32);
-                                 if corner_id == INVALID_CORNER_INDEX {
-                                     continue;
-                                 }
-                                 let v = corner_table.vertex(corner_id).0 as usize;
-                                 if v < vertex_to_data_map.len() {
-                                     vertex_to_data_map[v] = data_id as i32;
-                                 }
-                             }
-                         }
+                        // Also set data_to_corner_map if override is available
+                        if let Some(dcm) = data_to_corner_map_override {
+                            if dcm.len() != num_points {
+                                eprintln!("Invalid data_to_corner_map_override length");
+                                return false;
+                            }
+                            data_to_corner_map.copy_from_slice(dcm);
+                        }
+                    } else if let Some(map) = data_to_corner_map_override {
+                        if map.len() != num_points {
+                            eprintln!("Invalid data_to_corner_map_override length");
+                            return false;
+                        }
+                        data_to_corner_map.copy_from_slice(map);
 
-                         let mut mesh_data = MeshPredictionSchemeData::new();
-                         mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
+                        // When using an override, the corner table may contain seam-split
+                        // vertices with ids outside the original point range. Build the
+                        // vertex->data map from the data->corner map.
+                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                            let corner_id = CornerIndex(corner_u32);
+                            if corner_id == INVALID_CORNER_INDEX {
+                                continue;
+                            }
+                            let v = corner_table.vertex(corner_id).0 as usize;
+                            if v < vertex_to_data_map.len() {
+                                vertex_to_data_map[v] = data_id as i32;
+                            }
+                        }
+                    } else {
+                        // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
+                        // This is the same logic as the 'if' branch above
+                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                            let corner_id = CornerIndex(corner_u32);
+                            if corner_id == INVALID_CORNER_INDEX {
+                                continue;
+                            }
+                            let v = corner_table.vertex(corner_id).0 as usize;
+                            if v < vertex_to_data_map.len() {
+                                vertex_to_data_map[v] = data_id as i32;
+                            }
+                        }
+                    }
 
-                         let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
-                         let predictor = PredictionSchemeParallelogramDecoder::new(attribute, transform, mesh_data);
-                         predictor_parallelogram_opt = Some(predictor);
+                    let mut mesh_data = MeshPredictionSchemeData::new();
+                    mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
+
+                    let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
+                    let predictor =
+                        PredictionSchemeParallelogramDecoder::new(attribute, transform, mesh_data);
+                    predictor_parallelogram_opt = Some(predictor);
                 } else {
                     eprintln!("Parallelogram prediction requires corner table");
                     return false;
@@ -240,61 +278,62 @@ impl SequentialIntegerAttributeDecoder {
             }
             PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
                 if let Some(corner_table) = corner_table {
-                         data_to_corner_map.resize(num_points, 0);
+                    data_to_corner_map.resize(num_points, 0);
 
-                         if let Some(map) = vertex_to_data_map_override {
-                             if map.len() != corner_table.num_vertices() {
-                                 eprintln!("Invalid vertex_to_data_map_override length");
-                                 return false;
-                             }
-                             vertex_to_data_map.resize(map.len(), 0);
-                             vertex_to_data_map.copy_from_slice(map);
+                    if let Some(map) = vertex_to_data_map_override {
+                        if map.len() != corner_table.num_vertices() {
+                            eprintln!("Invalid vertex_to_data_map_override length");
+                            return false;
+                        }
+                        vertex_to_data_map.resize(map.len(), 0);
+                        vertex_to_data_map.copy_from_slice(map);
 
-                             if let Some(dcm) = data_to_corner_map_override {
-                                 if dcm.len() != num_points {
-                                     eprintln!("Invalid data_to_corner_map_override length");
-                                     return false;
-                                 }
-                                 data_to_corner_map.copy_from_slice(dcm);
-                             }
-                         } else if let Some(map) = data_to_corner_map_override {
-                             if map.len() != num_points {
-                                 eprintln!("Invalid data_to_corner_map_override length");
-                                 return false;
-                             }
-                             data_to_corner_map.copy_from_slice(map);
+                        if let Some(dcm) = data_to_corner_map_override {
+                            if dcm.len() != num_points {
+                                eprintln!("Invalid data_to_corner_map_override length");
+                                return false;
+                            }
+                            data_to_corner_map.copy_from_slice(dcm);
+                        }
+                    } else if let Some(map) = data_to_corner_map_override {
+                        if map.len() != num_points {
+                            eprintln!("Invalid data_to_corner_map_override length");
+                            return false;
+                        }
+                        data_to_corner_map.copy_from_slice(map);
 
-                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                                 let corner_id = CornerIndex(corner_u32);
-                                 if corner_id == INVALID_CORNER_INDEX {
-                                     continue;
-                                 }
-                                 let v = corner_table.vertex(corner_id).0 as usize;
-                                 if v < vertex_to_data_map.len() {
-                                     vertex_to_data_map[v] = data_id as i32;
-                                 }
-                             }
-                         } else {
-                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                                 let corner_id = CornerIndex(corner_u32);
-                                 if corner_id == INVALID_CORNER_INDEX {
-                                     continue;
-                                 }
-                                 let v = corner_table.vertex(corner_id).0 as usize;
-                                 if v < vertex_to_data_map.len() {
-                                     vertex_to_data_map[v] = data_id as i32;
-                                 }
-                             }
-                         }
+                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                            let corner_id = CornerIndex(corner_u32);
+                            if corner_id == INVALID_CORNER_INDEX {
+                                continue;
+                            }
+                            let v = corner_table.vertex(corner_id).0 as usize;
+                            if v < vertex_to_data_map.len() {
+                                vertex_to_data_map[v] = data_id as i32;
+                            }
+                        }
+                    } else {
+                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                            let corner_id = CornerIndex(corner_u32);
+                            if corner_id == INVALID_CORNER_INDEX {
+                                continue;
+                            }
+                            let v = corner_table.vertex(corner_id).0 as usize;
+                            if v < vertex_to_data_map.len() {
+                                vertex_to_data_map[v] = data_id as i32;
+                            }
+                        }
+                    }
 
-                         let mut mesh_data = MeshPredictionSchemeData::new();
-                         mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
+                    let mut mesh_data = MeshPredictionSchemeData::new();
+                    mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
 
-                         let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
-                         let predictor = PredictionSchemeMultiParallelogramDecoder::new(transform, mesh_data);
-                         predictor_multi_parallelogram_opt = Some(predictor);
+                    let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
+                    let predictor =
+                        PredictionSchemeMultiParallelogramDecoder::new(transform, mesh_data);
+                    predictor_multi_parallelogram_opt = Some(predictor);
                 } else {
                     eprintln!("MultiParallelogram prediction requires corner table");
                     return false;
@@ -302,68 +341,70 @@ impl SequentialIntegerAttributeDecoder {
             }
             PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram => {
                 if let Some(corner_table) = corner_table {
-                         // Generate maps
-                         data_to_corner_map.resize(num_points, 0);
+                    // Generate maps
+                    data_to_corner_map.resize(num_points, 0);
 
-                         // vertex_to_data_map_override takes priority when available
-                         // (it's built by the decoder's own DFS traversal)
-                         if let Some(map) = vertex_to_data_map_override {
-                             // Use the pre-built vertex_to_data_map from mesh decoder
-                             if map.len() != corner_table.num_vertices() {
-                                 eprintln!("Invalid vertex_to_data_map_override length");
-                                 return false;
-                             }
-                             vertex_to_data_map.resize(map.len(), 0);
-                             vertex_to_data_map.copy_from_slice(map);
-                             
-                             // Also set data_to_corner_map if override is available
-                             if let Some(dcm) = data_to_corner_map_override {
-                                 if dcm.len() != num_points {
-                                     eprintln!("Invalid data_to_corner_map_override length");
-                                     return false;
-                                 }
-                                 data_to_corner_map.copy_from_slice(dcm);
-                             }
-                         } else if let Some(map) = data_to_corner_map_override {
-                             if map.len() != num_points {
-                                 eprintln!("Invalid data_to_corner_map_override length");
-                                 return false;
-                             }
-                             data_to_corner_map.copy_from_slice(map);
+                    // vertex_to_data_map_override takes priority when available
+                    // (it's built by the decoder's own DFS traversal)
+                    if let Some(map) = vertex_to_data_map_override {
+                        // Use the pre-built vertex_to_data_map from mesh decoder
+                        if map.len() != corner_table.num_vertices() {
+                            eprintln!("Invalid vertex_to_data_map_override length");
+                            return false;
+                        }
+                        vertex_to_data_map.resize(map.len(), 0);
+                        vertex_to_data_map.copy_from_slice(map);
 
-                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                                 let corner_id = CornerIndex(corner_u32);
-                                 if corner_id == INVALID_CORNER_INDEX {
-                                     continue;
-                                 }
-                                 let v = corner_table.vertex(corner_id).0 as usize;
-                                 if v < vertex_to_data_map.len() {
-                                     vertex_to_data_map[v] = data_id as i32;
-                                 }
-                             }
-                         } else {
-                             // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
-                             // This is the same logic as the 'if' branch above
-                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                                 let corner_id = CornerIndex(corner_u32);
-                                 if corner_id == INVALID_CORNER_INDEX {
-                                     continue;
-                                 }
-                                 let v = corner_table.vertex(corner_id).0 as usize;
-                                 if v < vertex_to_data_map.len() {
-                                     vertex_to_data_map[v] = data_id as i32;
-                                 }
-                             }
-                         }
-                         
-                         let mut mesh_data = MeshPredictionSchemeData::new();
-                         mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
-                         
-                         let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
-                         let predictor = PredictionSchemeConstrainedMultiParallelogramDecoder::new(transform, mesh_data);
-                         predictor_constrained_multi_parallelogram_opt = Some(predictor);
+                        // Also set data_to_corner_map if override is available
+                        if let Some(dcm) = data_to_corner_map_override {
+                            if dcm.len() != num_points {
+                                eprintln!("Invalid data_to_corner_map_override length");
+                                return false;
+                            }
+                            data_to_corner_map.copy_from_slice(dcm);
+                        }
+                    } else if let Some(map) = data_to_corner_map_override {
+                        if map.len() != num_points {
+                            eprintln!("Invalid data_to_corner_map_override length");
+                            return false;
+                        }
+                        data_to_corner_map.copy_from_slice(map);
+
+                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                            let corner_id = CornerIndex(corner_u32);
+                            if corner_id == INVALID_CORNER_INDEX {
+                                continue;
+                            }
+                            let v = corner_table.vertex(corner_id).0 as usize;
+                            if v < vertex_to_data_map.len() {
+                                vertex_to_data_map[v] = data_id as i32;
+                            }
+                        }
+                    } else {
+                        // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
+                        // This is the same logic as the 'if' branch above
+                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                            let corner_id = CornerIndex(corner_u32);
+                            if corner_id == INVALID_CORNER_INDEX {
+                                continue;
+                            }
+                            let v = corner_table.vertex(corner_id).0 as usize;
+                            if v < vertex_to_data_map.len() {
+                                vertex_to_data_map[v] = data_id as i32;
+                            }
+                        }
+                    }
+
+                    let mut mesh_data = MeshPredictionSchemeData::new();
+                    mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
+
+                    let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
+                    let predictor = PredictionSchemeConstrainedMultiParallelogramDecoder::new(
+                        transform, mesh_data,
+                    );
+                    predictor_constrained_multi_parallelogram_opt = Some(predictor);
                 } else {
                     eprintln!("ConstrainedMultiParallelogram prediction requires corner table");
                     return false;
@@ -371,75 +412,77 @@ impl SequentialIntegerAttributeDecoder {
             }
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
                 if let Some(corner_table) = corner_table {
-                         data_to_corner_map.resize(num_points, 0);
+                    data_to_corner_map.resize(num_points, 0);
 
-                         if let Some(map) = vertex_to_data_map_override {
-                             if map.len() != corner_table.num_vertices() {
-                                 eprintln!("Invalid vertex_to_data_map_override length");
-                                 return false;
-                             }
-                             vertex_to_data_map.resize(map.len(), 0);
-                             vertex_to_data_map.copy_from_slice(map);
+                    if let Some(map) = vertex_to_data_map_override {
+                        if map.len() != corner_table.num_vertices() {
+                            eprintln!("Invalid vertex_to_data_map_override length");
+                            return false;
+                        }
+                        vertex_to_data_map.resize(map.len(), 0);
+                        vertex_to_data_map.copy_from_slice(map);
 
-                             if let Some(dcm) = data_to_corner_map_override {
-                                 if dcm.len() != num_points {
-                                     eprintln!("Invalid data_to_corner_map_override length");
-                                     return false;
-                                 }
-                                 data_to_corner_map.copy_from_slice(dcm);
-                             }
-                         } else if let Some(map) = data_to_corner_map_override {
-                             if map.len() != num_points {
-                                 eprintln!("Invalid data_to_corner_map_override length");
-                                 return false;
-                             }
-                             data_to_corner_map.copy_from_slice(map);
+                        if let Some(dcm) = data_to_corner_map_override {
+                            if dcm.len() != num_points {
+                                eprintln!("Invalid data_to_corner_map_override length");
+                                return false;
+                            }
+                            data_to_corner_map.copy_from_slice(dcm);
+                        }
+                    } else if let Some(map) = data_to_corner_map_override {
+                        if map.len() != num_points {
+                            eprintln!("Invalid data_to_corner_map_override length");
+                            return false;
+                        }
+                        data_to_corner_map.copy_from_slice(map);
 
-                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                                 let corner_id = CornerIndex(corner_u32);
-                                 if corner_id == INVALID_CORNER_INDEX {
-                                     continue;
-                                 }
-                                 let v = corner_table.vertex(corner_id).0 as usize;
-                                 if v < vertex_to_data_map.len() {
-                                     vertex_to_data_map[v] = data_id as i32;
-                                 }
-                             }
-                         } else {
-                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                                 let corner_id = CornerIndex(corner_u32);
-                                 if corner_id == INVALID_CORNER_INDEX {
-                                     continue;
-                                 }
-                                 let v = corner_table.vertex(corner_id).0 as usize;
-                                 if v < vertex_to_data_map.len() {
-                                     vertex_to_data_map[v] = data_id as i32;
-                                 }
-                             }
-                         }
+                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                            let corner_id = CornerIndex(corner_u32);
+                            if corner_id == INVALID_CORNER_INDEX {
+                                continue;
+                            }
+                            let v = corner_table.vertex(corner_id).0 as usize;
+                            if v < vertex_to_data_map.len() {
+                                vertex_to_data_map[v] = data_id as i32;
+                            }
+                        }
+                    } else {
+                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                            let corner_id = CornerIndex(corner_u32);
+                            if corner_id == INVALID_CORNER_INDEX {
+                                continue;
+                            }
+                            let v = corner_table.vertex(corner_id).0 as usize;
+                            if v < vertex_to_data_map.len() {
+                                vertex_to_data_map[v] = data_id as i32;
+                            }
+                        }
+                    }
 
-                         let mut mesh_data = MeshPredictionSchemeData::new();
-                         mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
+                    let mut mesh_data = MeshPredictionSchemeData::new();
+                    mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
 
-                         let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
-                         let mut predictor = PredictionSchemeTexCoordsDeprecatedDecoder::new(transform);
-                         predictor.init(&mesh_data);
+                    let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
+                    let mut predictor = PredictionSchemeTexCoordsDeprecatedDecoder::new(transform);
+                    predictor.init(&mesh_data);
 
-                         let pos_att_id = point_cloud.named_attribute_id(crate::geometry_attribute::GeometryAttributeType::Position);
-                         if pos_att_id >= 0 {
-                             let pos_att = point_cloud.attribute(pos_att_id);
-                             if !predictor.set_parent_attribute(pos_att) {
-                                 eprintln!("Failed to set parent attribute for TexCoordsDeprecated");
-                                 return false;
-                             }
-                         } else {
-                             eprintln!("Position attribute not found for TexCoordsDeprecated");
-                             return false;
-                         }
+                    let pos_att_id = point_cloud.named_attribute_id(
+                        crate::geometry_attribute::GeometryAttributeType::Position,
+                    );
+                    if pos_att_id >= 0 {
+                        let pos_att = point_cloud.attribute(pos_att_id);
+                        if !predictor.set_parent_attribute(pos_att) {
+                            eprintln!("Failed to set parent attribute for TexCoordsDeprecated");
+                            return false;
+                        }
+                    } else {
+                        eprintln!("Position attribute not found for TexCoordsDeprecated");
+                        return false;
+                    }
 
-                         predictor_tex_coords_deprecated_opt = Some(predictor);
+                    predictor_tex_coords_deprecated_opt = Some(predictor);
                 } else {
                     eprintln!("TexCoordsDeprecated prediction requires corner table");
                     return false;
@@ -447,82 +490,84 @@ impl SequentialIntegerAttributeDecoder {
             }
             PredictionSchemeMethod::MeshPredictionTexCoordsPortable => {
                 if let Some(corner_table) = corner_table {
-                         data_to_corner_map.resize(num_points, 0);
+                    data_to_corner_map.resize(num_points, 0);
 
-                         // vertex_to_data_map_override takes priority when available
-                         // (it's built by the decoder's own DFS traversal)
-                         if let Some(map) = vertex_to_data_map_override {
-                             // Use the pre-built vertex_to_data_map from mesh decoder
-                             if map.len() != corner_table.num_vertices() {
-                                 eprintln!("Invalid vertex_to_data_map_override length");
-                                 return false;
-                             }
-                             vertex_to_data_map.resize(map.len(), 0);
-                             vertex_to_data_map.copy_from_slice(map);
-                             
-                             // Also set data_to_corner_map if override is available
-                             if let Some(dcm) = data_to_corner_map_override {
-                                 if dcm.len() != num_points {
-                                     eprintln!("Invalid data_to_corner_map_override length");
-                                     return false;
-                                 }
-                                 data_to_corner_map.copy_from_slice(dcm);
-                             }
-                         } else if let Some(map) = data_to_corner_map_override {
-                             if map.len() != num_points {
-                                 eprintln!("Invalid data_to_corner_map_override length");
-                                 return false;
-                             }
-                             data_to_corner_map.copy_from_slice(map);
+                    // vertex_to_data_map_override takes priority when available
+                    // (it's built by the decoder's own DFS traversal)
+                    if let Some(map) = vertex_to_data_map_override {
+                        // Use the pre-built vertex_to_data_map from mesh decoder
+                        if map.len() != corner_table.num_vertices() {
+                            eprintln!("Invalid vertex_to_data_map_override length");
+                            return false;
+                        }
+                        vertex_to_data_map.resize(map.len(), 0);
+                        vertex_to_data_map.copy_from_slice(map);
 
-                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                                 let corner_id = CornerIndex(corner_u32);
-                                 if corner_id == INVALID_CORNER_INDEX {
-                                     continue;
-                                 }
-                                 let v = corner_table.vertex(corner_id).0 as usize;
-                                 if v < vertex_to_data_map.len() {
-                                     vertex_to_data_map[v] = data_id as i32;
-                                 }
-                             }
-                         } else {
-                             // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
-                             // This is the same logic as the 'if' branch above
-                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                                 let corner_id = CornerIndex(corner_u32);
-                                 if corner_id == INVALID_CORNER_INDEX {
-                                     continue;
-                                 }
-                                 let v = corner_table.vertex(corner_id).0 as usize;
-                                 if v < vertex_to_data_map.len() {
-                                     vertex_to_data_map[v] = data_id as i32;
-                                 }
-                             }
-                         }
-                         
-                         let mut mesh_data = MeshPredictionSchemeData::new();
-                         mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
-                         
-                         let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
-                         let mut predictor = PredictionSchemeTexCoordsPortableDecoder::new(transform);
-                         predictor.init(&mesh_data);
-                         
-                         // Set parent attribute (Position)
-                         let pos_att_id = point_cloud.named_attribute_id(crate::geometry_attribute::GeometryAttributeType::Position);
-                         if pos_att_id >= 0 {
-                             let pos_att = point_cloud.attribute(pos_att_id);
-                             if !predictor.set_parent_attribute(pos_att) {
-                                 eprintln!("Failed to set parent attribute for TexCoordsPortable");
-                                 return false;
-                             }
-                         } else {
-                             eprintln!("Position attribute not found for TexCoordsPortable");
-                             return false;
-                         }
+                        // Also set data_to_corner_map if override is available
+                        if let Some(dcm) = data_to_corner_map_override {
+                            if dcm.len() != num_points {
+                                eprintln!("Invalid data_to_corner_map_override length");
+                                return false;
+                            }
+                            data_to_corner_map.copy_from_slice(dcm);
+                        }
+                    } else if let Some(map) = data_to_corner_map_override {
+                        if map.len() != num_points {
+                            eprintln!("Invalid data_to_corner_map_override length");
+                            return false;
+                        }
+                        data_to_corner_map.copy_from_slice(map);
 
-                         predictor_tex_coords_opt = Some(predictor);
+                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                            let corner_id = CornerIndex(corner_u32);
+                            if corner_id == INVALID_CORNER_INDEX {
+                                continue;
+                            }
+                            let v = corner_table.vertex(corner_id).0 as usize;
+                            if v < vertex_to_data_map.len() {
+                                vertex_to_data_map[v] = data_id as i32;
+                            }
+                        }
+                    } else {
+                        // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
+                        // This is the same logic as the 'if' branch above
+                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                            let corner_id = CornerIndex(corner_u32);
+                            if corner_id == INVALID_CORNER_INDEX {
+                                continue;
+                            }
+                            let v = corner_table.vertex(corner_id).0 as usize;
+                            if v < vertex_to_data_map.len() {
+                                vertex_to_data_map[v] = data_id as i32;
+                            }
+                        }
+                    }
+
+                    let mut mesh_data = MeshPredictionSchemeData::new();
+                    mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
+
+                    let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
+                    let mut predictor = PredictionSchemeTexCoordsPortableDecoder::new(transform);
+                    predictor.init(&mesh_data);
+
+                    // Set parent attribute (Position)
+                    let pos_att_id = point_cloud.named_attribute_id(
+                        crate::geometry_attribute::GeometryAttributeType::Position,
+                    );
+                    if pos_att_id >= 0 {
+                        let pos_att = point_cloud.attribute(pos_att_id);
+                        if !predictor.set_parent_attribute(pos_att) {
+                            eprintln!("Failed to set parent attribute for TexCoordsPortable");
+                            return false;
+                        }
+                    } else {
+                        eprintln!("Position attribute not found for TexCoordsPortable");
+                        return false;
+                    }
+
+                    predictor_tex_coords_opt = Some(predictor);
                 } else {
                     eprintln!("TexCoordsPortable prediction requires corner table");
                     return false;
@@ -530,85 +575,88 @@ impl SequentialIntegerAttributeDecoder {
             }
             PredictionSchemeMethod::MeshPredictionGeometricNormal => {
                 if let Some(corner_table) = corner_table {
-                         data_to_corner_map.resize(num_points, 0);
+                    data_to_corner_map.resize(num_points, 0);
 
-                         // vertex_to_data_map_override takes priority when available
-                         // (it's built by the decoder's own DFS traversal)
-                         if let Some(map) = vertex_to_data_map_override {
-                             // Use the pre-built vertex_to_data_map from mesh decoder
-                             if map.len() != corner_table.num_vertices() {
-                                 eprintln!("Invalid vertex_to_data_map_override length");
-                                 return false;
-                             }
-                             vertex_to_data_map.resize(map.len(), 0);
-                             vertex_to_data_map.copy_from_slice(map);
-                             
-                             // Also set data_to_corner_map if override is available
-                             if let Some(dcm) = data_to_corner_map_override {
-                                 if dcm.len() != num_points {
-                                     eprintln!("Invalid data_to_corner_map_override length");
-                                     return false;
-                                 }
-                                 data_to_corner_map.copy_from_slice(dcm);
-                             }
-                         } else if let Some(map) = data_to_corner_map_override {
-                             if map.len() != num_points {
-                                 eprintln!("Invalid data_to_corner_map_override length");
-                                 return false;
-                             }
-                             data_to_corner_map.copy_from_slice(map);
+                    // vertex_to_data_map_override takes priority when available
+                    // (it's built by the decoder's own DFS traversal)
+                    if let Some(map) = vertex_to_data_map_override {
+                        // Use the pre-built vertex_to_data_map from mesh decoder
+                        if map.len() != corner_table.num_vertices() {
+                            eprintln!("Invalid vertex_to_data_map_override length");
+                            return false;
+                        }
+                        vertex_to_data_map.resize(map.len(), 0);
+                        vertex_to_data_map.copy_from_slice(map);
 
-                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                                 let corner_id = CornerIndex(corner_u32);
-                                 if corner_id == INVALID_CORNER_INDEX {
-                                     continue;
-                                 }
-                                 let v = corner_table.vertex(corner_id).0 as usize;
-                                 if v < vertex_to_data_map.len() {
-                                     vertex_to_data_map[v] = data_id as i32;
-                                 }
-                             }
-                         } else {
-                             // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
-                             // This is the same logic as the 'if' branch above
-                             vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                             for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                                 let corner_id = CornerIndex(corner_u32);
-                                 if corner_id == INVALID_CORNER_INDEX {
-                                     continue;
-                                 }
-                                 let v = corner_table.vertex(corner_id).0 as usize;
-                                 if v < vertex_to_data_map.len() {
-                                     vertex_to_data_map[v] = data_id as i32;
-                                 }
-                             }
-                         }
-                         
-                         let mut mesh_data = MeshPredictionSchemeData::new();
-                         mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
+                        // Also set data_to_corner_map if override is available
+                        if let Some(dcm) = data_to_corner_map_override {
+                            if dcm.len() != num_points {
+                                eprintln!("Invalid data_to_corner_map_override length");
+                                return false;
+                            }
+                            data_to_corner_map.copy_from_slice(dcm);
+                        }
+                    } else if let Some(map) = data_to_corner_map_override {
+                        if map.len() != num_points {
+                            eprintln!("Invalid data_to_corner_map_override length");
+                            return false;
+                        }
+                        data_to_corner_map.copy_from_slice(map);
 
-                         let transform = PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform::new();
-                         let mut predictor = MeshPredictionSchemeGeometricNormalDecoder::new(transform);
-                         predictor.init(&mesh_data);
+                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                            let corner_id = CornerIndex(corner_u32);
+                            if corner_id == INVALID_CORNER_INDEX {
+                                continue;
+                            }
+                            let v = corner_table.vertex(corner_id).0 as usize;
+                            if v < vertex_to_data_map.len() {
+                                vertex_to_data_map[v] = data_id as i32;
+                            }
+                        }
+                    } else {
+                        // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
+                        // This is the same logic as the 'if' branch above
+                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+                            let corner_id = CornerIndex(corner_u32);
+                            if corner_id == INVALID_CORNER_INDEX {
+                                continue;
+                            }
+                            let v = corner_table.vertex(corner_id).0 as usize;
+                            if v < vertex_to_data_map.len() {
+                                vertex_to_data_map[v] = data_id as i32;
+                            }
+                        }
+                    }
 
-                         // Provide mapping from decoded-entry index to original point id.
-                         predictor.set_entry_to_point_id_map(point_ids);
+                    let mut mesh_data = MeshPredictionSchemeData::new();
+                    mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
 
-                         // Set parent attribute (Position)
-                         let pos_att_id = point_cloud.named_attribute_id(crate::geometry_attribute::GeometryAttributeType::Position);
-                         if pos_att_id >= 0 {
-                             let pos_att = point_cloud.attribute(pos_att_id);
-                             if !predictor.set_parent_attribute(pos_att) {
-                                 eprintln!("Failed to set parent attribute for GeometricNormal");
-                                 return false;
-                             }
-                         } else {
-                             eprintln!("Position attribute not found for GeometricNormal");
-                             return false;
-                         }
+                    let transform =
+                        PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform::new();
+                    let mut predictor = MeshPredictionSchemeGeometricNormalDecoder::new(transform);
+                    predictor.init(&mesh_data);
 
-                         predictor_geometric_normal_opt = Some(predictor);
+                    // Provide mapping from decoded-entry index to original point id.
+                    predictor.set_entry_to_point_id_map(point_ids);
+
+                    // Set parent attribute (Position)
+                    let pos_att_id = point_cloud.named_attribute_id(
+                        crate::geometry_attribute::GeometryAttributeType::Position,
+                    );
+                    if pos_att_id >= 0 {
+                        let pos_att = point_cloud.attribute(pos_att_id);
+                        if !predictor.set_parent_attribute(pos_att) {
+                            eprintln!("Failed to set parent attribute for GeometricNormal");
+                            return false;
+                        }
+                    } else {
+                        eprintln!("Position attribute not found for GeometricNormal");
+                        return false;
+                    }
+
+                    predictor_geometric_normal_opt = Some(predictor);
                 } else {
                     eprintln!("GeometricNormal prediction requires corner table");
                     return false;
@@ -620,7 +668,7 @@ impl SequentialIntegerAttributeDecoder {
                 return false;
             }
         }
-        
+
         // 1. Decode correction symbols.
         // For v < 2.0, transform-specific parameters (quantization, octahedron)
         // are stored BEFORE the integer values. The caller provides a hook.
@@ -636,12 +684,12 @@ impl SequentialIntegerAttributeDecoder {
         };
 
         let mut symbols = vec![0u32; num_values];
-        
+
         // Check if the prediction scheme produces positive corrections (no ZigZag needed)
         // Octahedron transforms (for normals) produce positive corrections
         let are_corrections_positive = match selected_transform {
-            Some(PredictionSchemeTransformType::NormalOctahedron) |
-            Some(PredictionSchemeTransformType::NormalOctahedronCanonicalized) => true,
+            Some(PredictionSchemeTransformType::NormalOctahedron)
+            | Some(PredictionSchemeTransformType::NormalOctahedronCanonicalized) => true,
             _ => {
                 // Fallback: check self.prediction_scheme if it's set
                 if let Some(ref scheme) = self.prediction_scheme {
@@ -651,21 +699,27 @@ impl SequentialIntegerAttributeDecoder {
                 }
             }
         };
-        
+
         let needs_zigzag_conversion;
         if compressed > 0 {
             // Entropy-coded symbols are zigzag encoded UNLESS the prediction scheme
             // guarantees positive corrections (e.g., normal octahedron transform)
             needs_zigzag_conversion = !are_corrections_positive;
             let options = SymbolEncodingOptions::default();
-            if !decode_symbols(num_values, num_components, &options, in_buffer, &mut symbols) {
+            if !decode_symbols(
+                num_values,
+                num_components,
+                &options,
+                in_buffer,
+                &mut symbols,
+            ) {
                 return false;
             }
         } else {
             // Raw uncompressed integers. Read directly as bytes.
             // ZigZag conversion is needed unless the scheme guarantees positive corrections.
             needs_zigzag_conversion = !are_corrections_positive;
-            
+
             let num_bytes = match in_buffer.decode_u8() {
                 Ok(v) => v as usize,
                 Err(_) => return false,
@@ -696,9 +750,10 @@ impl SequentialIntegerAttributeDecoder {
 
         // 2. Convert symbols to signed corrections in-place.
         let corrections: Vec<i32> = if needs_zigzag_conversion {
-            symbols.into_iter().map(|s| {
-                ((s >> 1) as i32) ^ (-((s & 1) as i32))
-            }).collect()
+            symbols
+                .into_iter()
+                .map(|s| ((s >> 1) as i32) ^ (-((s & 1) as i32)))
+                .collect()
         } else {
             symbols.into_iter().map(|s| s as i32).collect()
         };
@@ -759,7 +814,9 @@ impl SequentialIntegerAttributeDecoder {
                 }
             }
             PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram => {
-                let predictor = predictor_constrained_multi_parallelogram_opt.as_mut().unwrap();
+                let predictor = predictor_constrained_multi_parallelogram_opt
+                    .as_mut()
+                    .unwrap();
                 if !predictor.decode_prediction_data(in_buffer) {
                     eprintln!(
                         "Failed to decode prediction data (att_id={}, method={:?}, transform={:?})",
@@ -815,10 +872,18 @@ impl SequentialIntegerAttributeDecoder {
                     | PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram
                     | PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated
                     | PredictionSchemeMethod::MeshPredictionTexCoordsPortable
-                    | PredictionSchemeMethod::MeshPredictionGeometricNormal => Some(entry_to_point_id_map.as_slice()),
+                    | PredictionSchemeMethod::MeshPredictionGeometricNormal => {
+                        Some(entry_to_point_id_map.as_slice())
+                    }
                     _ => None,
                 };
-                if !scheme.compute_original_values(&corrections, &mut values, num_values, num_components, map_opt) {
+                if !scheme.compute_original_values(
+                    &corrections,
+                    &mut values,
+                    num_values,
+                    num_components,
+                    map_opt,
+                ) {
                     eprintln!(
                         "Failed to compute original values (att_id={}, method={:?}, transform={:?})",
                         att_id, selected_method, selected_transform
@@ -828,7 +893,13 @@ impl SequentialIntegerAttributeDecoder {
             }
             PredictionSchemeMethod::Difference => {
                 if let Some(predictor) = predictor_normal_octa_diff_opt.as_mut() {
-                    if !predictor.compute_original_values(&corrections, &mut values, num_values, num_components, None) {
+                    if !predictor.compute_original_values(
+                        &corrections,
+                        &mut values,
+                        num_values,
+                        num_components,
+                        None,
+                    ) {
                         eprintln!(
                             "Failed to compute original values (att_id={}, method={:?}, transform={:?})",
                             att_id, selected_method, selected_transform
@@ -837,7 +908,13 @@ impl SequentialIntegerAttributeDecoder {
                     }
                 } else {
                     let predictor = predictor_opt.as_mut().unwrap();
-                    if !predictor.compute_original_values(&corrections, &mut values, num_values, num_components, None) {
+                    if !predictor.compute_original_values(
+                        &corrections,
+                        &mut values,
+                        num_values,
+                        num_components,
+                        None,
+                    ) {
                         eprintln!(
                             "Failed to compute original values (att_id={}, method={:?}, transform={:?})",
                             att_id, selected_method, selected_transform
@@ -848,7 +925,13 @@ impl SequentialIntegerAttributeDecoder {
             }
             PredictionSchemeMethod::MeshPredictionParallelogram => {
                 let predictor = predictor_parallelogram_opt.as_mut().unwrap();
-                if !predictor.compute_original_values(&corrections, &mut values, num_values, num_components, None) {
+                if !predictor.compute_original_values(
+                    &corrections,
+                    &mut values,
+                    num_values,
+                    num_components,
+                    None,
+                ) {
                     eprintln!(
                         "Failed to compute original values (att_id={}, method={:?}, transform={:?})",
                         att_id, selected_method, selected_transform
@@ -858,7 +941,13 @@ impl SequentialIntegerAttributeDecoder {
             }
             PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
                 let predictor = predictor_multi_parallelogram_opt.as_mut().unwrap();
-                if !predictor.compute_original_values(&corrections, &mut values, num_values, num_components, None) {
+                if !predictor.compute_original_values(
+                    &corrections,
+                    &mut values,
+                    num_values,
+                    num_components,
+                    None,
+                ) {
                     eprintln!(
                         "Failed to compute original values (att_id={}, method={:?}, transform={:?})",
                         att_id, selected_method, selected_transform
@@ -867,8 +956,16 @@ impl SequentialIntegerAttributeDecoder {
                 }
             }
             PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram => {
-                let predictor = predictor_constrained_multi_parallelogram_opt.as_mut().unwrap();
-                if !predictor.compute_original_values(&corrections, &mut values, num_values, num_components, None) {
+                let predictor = predictor_constrained_multi_parallelogram_opt
+                    .as_mut()
+                    .unwrap();
+                if !predictor.compute_original_values(
+                    &corrections,
+                    &mut values,
+                    num_values,
+                    num_components,
+                    None,
+                ) {
                     eprintln!(
                         "Failed to compute original values (att_id={}, method={:?}, transform={:?})",
                         att_id, selected_method, selected_transform
@@ -937,21 +1034,26 @@ impl SequentialIntegerAttributeDecoder {
         }
 
         if num_points > 0 && cfg!(feature = "debug_logs") {
-             println!("Sequential Decoded: Point 0 ID = {:?}, Value[0] = {}", point_ids[0], values[0]);
-             // Debug: print all decoded values (quantized) and where they go
-             println!("DEBUG decoded values (first 25 x/y/z):");
-             for i in 0..std::cmp::min(25, num_points) {
-                 let x = values[i * 3];
-                 let y = values[i * 3 + 1];
-                 let z = values[i * 3 + 2];
-                 println!("  data_id={} -> point_ids[{}]={:?}: quantized({}, {}, {})", 
-                     i, i, point_ids[i], x, y, z);
-             }
+            println!(
+                "Sequential Decoded: Point 0 ID = {:?}, Value[0] = {}",
+                point_ids[0], values[0]
+            );
+            // Debug: print all decoded values (quantized) and where they go
+            println!("DEBUG decoded values (first 25 x/y/z):");
+            for i in 0..std::cmp::min(25, num_points) {
+                let x = values[i * 3];
+                let y = values[i * 3 + 1];
+                let z = values[i * 3 + 2];
+                println!(
+                    "  data_id={} -> point_ids[{}]={:?}: quantized({}, {}, {})",
+                    i, i, point_ids[i], x, y, z
+                );
+            }
         }
 
         // 5. Store values (+ optional inverse transform)
         if let Some(portable_att) = portable_attribute {
-             store_i32_values_to_attribute(portable_att, &values, num_points, num_components);
+            store_i32_values_to_attribute(portable_att, &values, num_points, num_components);
         } else {
             let dst_attribute = point_cloud.attribute_mut(att_id);
             store_i32_values_to_attribute(dst_attribute, &values, num_points, num_components);
@@ -982,8 +1084,7 @@ fn store_i32_values_to_attribute(
     }
 
     // Fast path: i32/u32 tightly packed — bulk memcpy the entire values array.
-    if (data_type == DataType::Int32 || data_type == DataType::Uint32)
-        && byte_stride == packed_row
+    if (data_type == DataType::Int32 || data_type == DataType::Uint32) && byte_stride == packed_row
     {
         let n = std::cmp::min(num_points, values.len() / num_components);
         let src: &[u8] = bytemuck::cast_slice(&values[..n * num_components]);
@@ -1011,7 +1112,12 @@ fn store_i32_values_to_attribute(
 }
 
 #[inline(always)]
-fn write_value_from_i32(buffer: &mut crate::data_buffer::DataBuffer, offset: usize, data_type: DataType, val: i32) {
+fn write_value_from_i32(
+    buffer: &mut crate::data_buffer::DataBuffer,
+    offset: usize,
+    data_type: DataType,
+    val: i32,
+) {
     match data_type {
         DataType::Int8 => {
             buffer.write(offset, &(val as i8).to_le_bytes());
@@ -1034,9 +1140,3 @@ fn write_value_from_i32(buffer: &mut crate::data_buffer::DataBuffer, offset: usi
         _ => {}
     }
 }
-
-
-
-
-
-

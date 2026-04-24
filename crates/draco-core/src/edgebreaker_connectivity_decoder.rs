@@ -1,6 +1,8 @@
 use crate::corner_table::CornerTable;
-use crate::geometry_indices::{CornerIndex, FaceIndex, VertexIndex, INVALID_CORNER_INDEX, INVALID_VERTEX_INDEX};
-use crate::mesh_edgebreaker_shared::{EdgeFaceName};
+use crate::geometry_indices::{
+    CornerIndex, FaceIndex, VertexIndex, INVALID_CORNER_INDEX, INVALID_VERTEX_INDEX,
+};
+use crate::mesh_edgebreaker_shared::EdgeFaceName;
 use std::collections::HashMap;
 
 pub trait EdgebreakerTraversalDecoder {
@@ -53,25 +55,32 @@ impl EdgebreakerConnectivityDecoder {
             let symbol = traversal_decoder.decode_symbol();
 
             if std::env::var("DRACO_CONN_DEBUG").is_ok() {
-                eprintln!("CONN_DEBUG: symbol_id={} symbol={} (face={})", symbol_id, symbol, face.0);
+                eprintln!(
+                    "CONN_DEBUG: symbol_id={} symbol={} (face={})",
+                    symbol_id, symbol, face.0
+                );
             }
 
             // Internal symbol mapping (see `EdgebreakerSymbol`):
             //   Center = 0, Split = 1, Left = 2, Right = 3, End = 4
-            if symbol == 0 { // TOPOLOGY_C
+            if symbol == 0 {
+                // TOPOLOGY_C
                 if self.active_corner_stack.is_empty() {
                     return Err("active_corner_stack empty in TOPOLOGY_C".to_string());
                 }
 
                 let corner_a = *self.active_corner_stack.last().unwrap();
                 let vertex_x = self.corner_table.vertex(self.corner_table.next(corner_a));
-                let corner_b = self.corner_table.next(self.corner_table.left_most_corner(vertex_x));
+                let corner_b = self
+                    .corner_table
+                    .next(self.corner_table.left_most_corner(vertex_x));
 
                 if corner_a == corner_b {
                     return Err("corner_a == corner_b in TOPOLOGY_C".to_string());
                 }
-                if self.corner_table.opposite(corner_a) != INVALID_CORNER_INDEX ||
-                   self.corner_table.opposite(corner_b) != INVALID_CORNER_INDEX {
+                if self.corner_table.opposite(corner_a) != INVALID_CORNER_INDEX
+                    || self.corner_table.opposite(corner_b) != INVALID_CORNER_INDEX
+                {
                     return Err("Edge already opposite in TOPOLOGY_C".to_string());
                 }
 
@@ -79,20 +88,26 @@ impl EdgebreakerConnectivityDecoder {
                 self.set_opposite_corners(corner_a, corner + 1);
                 self.set_opposite_corners(corner_b, corner + 2);
 
-                let vert_a_prev = self.corner_table.vertex(self.corner_table.previous(corner_a));
+                let vert_a_prev = self
+                    .corner_table
+                    .vertex(self.corner_table.previous(corner_a));
                 let vert_b_next = self.corner_table.vertex(self.corner_table.next(corner_b));
                 if vertex_x == vert_a_prev || vertex_x == vert_b_next {
                     return Err("Degenerate face in TOPOLOGY_C".to_string());
                 }
 
                 self.corner_table.map_corner_to_vertex(corner, vertex_x);
-                self.corner_table.map_corner_to_vertex(corner + 1, vert_b_next);
-                self.corner_table.map_corner_to_vertex(corner + 2, vert_a_prev);
-                self.corner_table.set_left_most_corner(vert_a_prev, corner + 2);
+                self.corner_table
+                    .map_corner_to_vertex(corner + 1, vert_b_next);
+                self.corner_table
+                    .map_corner_to_vertex(corner + 2, vert_a_prev);
+                self.corner_table
+                    .set_left_most_corner(vert_a_prev, corner + 2);
 
                 self.is_vert_hole[vertex_x.0 as usize] = false;
                 *self.active_corner_stack.last_mut().unwrap() = corner;
-            } else if symbol == 3 || symbol == 2 { // Right or Left
+            } else if symbol == 3 || symbol == 2 {
+                // Right or Left
                 // Symbol 3 = Right, Symbol 2 = Left.
                 if self.active_corner_stack.is_empty() {
                     return Err("active_corner_stack empty in TOPOLOGY_R/L".to_string());
@@ -122,37 +137,52 @@ impl EdgebreakerConnectivityDecoder {
                     return Err("Unexpected number of vertices in TOPOLOGY_R/L".to_string());
                 }
 
-                self.corner_table.map_corner_to_vertex(opp_corner, new_vert_index);
-                self.corner_table.set_left_most_corner(new_vert_index, opp_corner);
+                self.corner_table
+                    .map_corner_to_vertex(opp_corner, new_vert_index);
+                self.corner_table
+                    .set_left_most_corner(new_vert_index, opp_corner);
 
-                let vertex_r = self.corner_table.vertex(self.corner_table.previous(corner_a));
+                let vertex_r = self
+                    .corner_table
+                    .vertex(self.corner_table.previous(corner_a));
                 self.corner_table.map_corner_to_vertex(corner_r, vertex_r);
                 self.corner_table.set_left_most_corner(vertex_r, corner_r);
 
-                self.corner_table.map_corner_to_vertex(corner_l, self.corner_table.vertex(self.corner_table.next(corner_a)));
+                self.corner_table.map_corner_to_vertex(
+                    corner_l,
+                    self.corner_table.vertex(self.corner_table.next(corner_a)),
+                );
                 *self.active_corner_stack.last_mut().unwrap() = corner;
                 check_topology_split = true;
-            } else if symbol == 1 { // TOPOLOGY_S
+            } else if symbol == 1 {
+                // TOPOLOGY_S
                 if self.active_corner_stack.is_empty() {
                     return Err("active_corner_stack empty in TOPOLOGY_S".to_string());
                 }
                 let corner_b = self.active_corner_stack.pop().unwrap();
 
                 let decoder_split_symbol_id = symbol_id;
-                if let Some(corner_from_map) = self.topology_split_active_corners.get(&decoder_split_symbol_id).cloned() {
+                if let Some(corner_from_map) = self
+                    .topology_split_active_corners
+                    .get(&decoder_split_symbol_id)
+                    .cloned()
+                {
                     self.active_corner_stack.push(corner_from_map);
                 }
 
                 if self.active_corner_stack.is_empty() {
-                    return Err("active_corner_stack empty in TOPOLOGY_S after split retrieval".to_string());
+                    return Err(
+                        "active_corner_stack empty in TOPOLOGY_S after split retrieval".to_string(),
+                    );
                 }
                 let corner_a = *self.active_corner_stack.last().unwrap();
 
                 if corner_a == corner_b {
                     return Err("corner_a == corner_b in TOPOLOGY_S".to_string());
                 }
-                if self.corner_table.opposite(corner_a) != INVALID_CORNER_INDEX ||
-                   self.corner_table.opposite(corner_b) != INVALID_CORNER_INDEX {
+                if self.corner_table.opposite(corner_a) != INVALID_CORNER_INDEX
+                    || self.corner_table.opposite(corner_b) != INVALID_CORNER_INDEX
+                {
                     return Err("Edge already opposite in TOPOLOGY_S".to_string());
                 }
 
@@ -160,36 +190,49 @@ impl EdgebreakerConnectivityDecoder {
                 self.set_opposite_corners(corner_a, corner + 2);
                 self.set_opposite_corners(corner_b, corner + 1);
 
-                let vertex_p = self.corner_table.vertex(self.corner_table.previous(corner_a));
+                let vertex_p = self
+                    .corner_table
+                    .vertex(self.corner_table.previous(corner_a));
                 self.corner_table.map_corner_to_vertex(corner, vertex_p);
-                self.corner_table.map_corner_to_vertex(corner + 1, self.corner_table.vertex(self.corner_table.next(corner_a)));
+                self.corner_table.map_corner_to_vertex(
+                    corner + 1,
+                    self.corner_table.vertex(self.corner_table.next(corner_a)),
+                );
 
-                let vert_b_prev = self.corner_table.vertex(self.corner_table.previous(corner_b));
-                self.corner_table.map_corner_to_vertex(corner + 2, vert_b_prev);
-                self.corner_table.set_left_most_corner(vert_b_prev, corner + 2);
+                let vert_b_prev = self
+                    .corner_table
+                    .vertex(self.corner_table.previous(corner_b));
+                self.corner_table
+                    .map_corner_to_vertex(corner + 2, vert_b_prev);
+                self.corner_table
+                    .set_left_most_corner(vert_b_prev, corner + 2);
 
                 let mut corner_n = self.corner_table.next(corner_b);
                 let vertex_n = self.corner_table.vertex(corner_n);
-                
+
                 if vertex_n != vertex_p && vertex_n != INVALID_VERTEX_INDEX {
-                     traversal_decoder.merge_vertices(vertex_p, vertex_n);
-                     self.corner_table.set_left_most_corner(vertex_p, self.corner_table.left_most_corner(vertex_n));
+                    traversal_decoder.merge_vertices(vertex_p, vertex_n);
+                    self.corner_table.set_left_most_corner(
+                        vertex_p,
+                        self.corner_table.left_most_corner(vertex_n),
+                    );
 
-                     let first_corner = corner_n;
-                     while corner_n != INVALID_CORNER_INDEX {
-                         self.corner_table.map_corner_to_vertex(corner_n, vertex_p);
-                         corner_n = self.corner_table.swing_left(corner_n);
-                         if corner_n == first_corner {
-                             return Err("Cycle detected in vertex merge".to_string());
-                         }
-                     }
+                    let first_corner = corner_n;
+                    while corner_n != INVALID_CORNER_INDEX {
+                        self.corner_table.map_corner_to_vertex(corner_n, vertex_p);
+                        corner_n = self.corner_table.swing_left(corner_n);
+                        if corner_n == first_corner {
+                            return Err("Cycle detected in vertex merge".to_string());
+                        }
+                    }
 
-                     self.corner_table.make_vertex_isolated(vertex_n);
-                     self.invalid_vertices.push(vertex_n);
+                    self.corner_table.make_vertex_isolated(vertex_n);
+                    self.invalid_vertices.push(vertex_n);
                 }
                 *self.active_corner_stack.last_mut().unwrap() = corner;
                 traversal_decoder.on_split_symbol_decoded(corner);
-            } else if symbol == 4 { // TOPOLOGY_E
+            } else if symbol == 4 {
+                // TOPOLOGY_E
                 let corner = CornerIndex(3 * face.0);
                 let v0 = self.corner_table.add_new_vertex();
                 let v1 = self.corner_table.add_new_vertex();
@@ -222,7 +265,9 @@ impl EdgebreakerConnectivityDecoder {
                 // Rust loop symbol_id goes 0..num_symbols
                 // so this matches.
                 let encoder_symbol_id = num_symbols - symbol_id - 1;
-                while let Some((split_edge, encoder_split_symbol_id)) = traversal_decoder.is_topology_split(encoder_symbol_id) {
+                while let Some((split_edge, encoder_split_symbol_id)) =
+                    traversal_decoder.is_topology_split(encoder_symbol_id)
+                {
                     if encoder_split_symbol_id < 0 {
                         return Err("Invalid split symbol id".to_string());
                     }
@@ -232,7 +277,8 @@ impl EdgebreakerConnectivityDecoder {
                         EdgeFaceName::LeftFaceEdge => self.corner_table.previous(act_top_corner),
                     };
                     let decoder_split_symbol_id = num_symbols - encoder_split_symbol_id - 1;
-                    self.topology_split_active_corners.insert(decoder_split_symbol_id, new_active_corner);
+                    self.topology_split_active_corners
+                        .insert(decoder_split_symbol_id, new_active_corner);
                 }
             }
 
@@ -262,14 +308,18 @@ impl EdgebreakerConnectivityDecoder {
                 if self.corner_table.left_most_corner(vert_n) == INVALID_CORNER_INDEX {
                     return Err(format!("Invalid left_most_corner for vert_n={}", vert_n.0));
                 }
-                
-                let corner_b = self.corner_table.next(self.corner_table.left_most_corner(vert_n));
+
+                let corner_b = self
+                    .corner_table
+                    .next(self.corner_table.left_most_corner(vert_n));
                 let vert_x = self.corner_table.vertex(self.corner_table.next(corner_b));
                 if self.corner_table.left_most_corner(vert_x) == INVALID_CORNER_INDEX {
                     return Err("Invalid left_most_corner for vert_x".to_string());
                 }
-                
-                let corner_c = self.corner_table.next(self.corner_table.left_most_corner(vert_x));
+
+                let corner_c = self
+                    .corner_table
+                    .next(self.corner_table.left_most_corner(vert_x));
                 let vert_p = self.corner_table.vertex(self.corner_table.next(corner_c));
 
                 let face = FaceIndex(num_faces as u32);
@@ -280,8 +330,10 @@ impl EdgebreakerConnectivityDecoder {
                 self.set_opposite_corners(new_corner + 2, corner_c);
 
                 self.corner_table.map_corner_to_vertex(new_corner, vert_x);
-                self.corner_table.map_corner_to_vertex(new_corner + 1, vert_p);
-                self.corner_table.map_corner_to_vertex(new_corner + 2, vert_n);
+                self.corner_table
+                    .map_corner_to_vertex(new_corner + 1, vert_p);
+                self.corner_table
+                    .map_corner_to_vertex(new_corner + 2, vert_n);
 
                 for i in 0..3 {
                     self.is_vert_hole[self.corner_table.vertex(new_corner + i).0 as usize] = false;
@@ -299,21 +351,25 @@ impl EdgebreakerConnectivityDecoder {
         }
 
         let mut num_vertices = self.corner_table.num_vertices() as i32;
-        
+
         // Compact vertices (remove isolated/invalid ones)
         // Match C++ logic: iterate invalid_vertices (in order added!)
         for invalid_vert in &self.invalid_vertices {
             let invalid_vert = *invalid_vert;
-            
+
             // Find the last valid vertex (src_vert)
             let mut src_vert = VertexIndex(num_vertices as u32 - 1);
-            while src_vert.0 > 0 && self.corner_table.left_most_corner(src_vert) == INVALID_CORNER_INDEX {
+            while src_vert.0 > 0
+                && self.corner_table.left_most_corner(src_vert) == INVALID_CORNER_INDEX
+            {
                 num_vertices -= 1;
-                if num_vertices == 0 { break; }
+                if num_vertices == 0 {
+                    break;
+                }
                 src_vert = VertexIndex(num_vertices as u32 - 1);
             }
             if src_vert < invalid_vert {
-                continue;  // No need to swap
+                continue; // No need to swap
             }
 
             // Remap all corners mapped to src_vert to invalid_vert
@@ -324,21 +380,29 @@ impl EdgebreakerConnectivityDecoder {
                 loop {
                     // Check logic: C++ "if (corner_table_->Vertex(cid) != src_vert) { Error }"
                     if self.corner_table.vertex(c) != src_vert {
-                        return Err(format!("Vertex mismatch during compaction: corner {} maps to {} expected {}", c.0, self.corner_table.vertex(c).0, src_vert.0));
+                        return Err(format!(
+                            "Vertex mismatch during compaction: corner {} maps to {} expected {}",
+                            c.0,
+                            self.corner_table.vertex(c).0,
+                            src_vert.0
+                        ));
                     }
                     self.corner_table.map_corner_to_vertex(c, invalid_vert);
                     c = self.corner_table.swing_right(c);
                     if c == INVALID_CORNER_INDEX || c == start_corner {
-                         break;
+                        break;
                     }
                 }
             }
 
-            self.corner_table.set_left_most_corner(invalid_vert, self.corner_table.left_most_corner(src_vert));
+            self.corner_table
+                .set_left_most_corner(invalid_vert, self.corner_table.left_most_corner(src_vert));
             traversal_decoder.on_vertices_swapped(invalid_vert, src_vert);
             self.corner_table.make_vertex_isolated(src_vert);
-            
-            if (invalid_vert.0 as usize) < self.is_vert_hole.len() && (src_vert.0 as usize) < self.is_vert_hole.len() {
+
+            if (invalid_vert.0 as usize) < self.is_vert_hole.len()
+                && (src_vert.0 as usize) < self.is_vert_hole.len()
+            {
                 self.is_vert_hole[invalid_vert.0 as usize] = self.is_vert_hole[src_vert.0 as usize];
                 self.is_vert_hole[src_vert.0 as usize] = false;
             }
@@ -351,9 +415,16 @@ impl EdgebreakerConnectivityDecoder {
             eprintln!("Rust CONN: Corner table after connectivity:");
             let max_corners = 12.min(self.corner_table.num_faces() * 3);
             for c in 0..max_corners {
-                eprintln!("  corner {} -> vertex {}", c, self.corner_table.vertex(CornerIndex(c as u32)).0);
+                eprintln!(
+                    "  corner {} -> vertex {}",
+                    c,
+                    self.corner_table.vertex(CornerIndex(c as u32)).0
+                );
             }
-            eprintln!("Rust CONN: num_vertices after compaction = {}", num_vertices);
+            eprintln!(
+                "Rust CONN: num_vertices after compaction = {}",
+                num_vertices
+            );
         }
 
         Ok(num_vertices)

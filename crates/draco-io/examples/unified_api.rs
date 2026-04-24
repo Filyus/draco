@@ -43,7 +43,7 @@ fn main() -> io::Result<()> {
 
     // glTF with default quantization (using simplified API)
     let mut gltf = GltfWriter::new();
-    gltf.add_draco_mesh(&mesh, Some("HighQuality"), None)  // None = use defaults
+    gltf.add_draco_mesh(&mesh, Some("HighQuality"), None) // None = use defaults
         .map_err(io::Error::other)?;
     gltf.write_glb("high_quality.glb")
         .map_err(io::Error::other)?;
@@ -80,7 +80,13 @@ fn create_test_mesh() -> draco_core::mesh::Mesh {
     let mut mesh = Mesh::new();
     let mut pos_att = PointAttribute::new();
 
-    pos_att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, 3);
+    pos_att.init(
+        GeometryAttributeType::Position,
+        3,
+        DataType::Float32,
+        false,
+        3,
+    );
     let buffer = pos_att.buffer_mut();
     let positions: [[f32; 3]; 3] = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.5, 1.0, 0.0]];
     for (i, pos) in positions.iter().enumerate() {

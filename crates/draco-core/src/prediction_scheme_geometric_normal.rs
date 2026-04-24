@@ -7,7 +7,9 @@ use crate::geometry_indices::{CornerIndex, PointIndex, INVALID_CORNER_INDEX};
 use crate::geometry_indices::INVALID_ATTRIBUTE_VALUE_INDEX;
 use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
 use crate::normal_compression_utils::OctahedronToolBox;
-use crate::prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
+use crate::prediction_scheme::{
+    PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType,
+};
 
 #[cfg(feature = "decoder")]
 use crate::decoder_buffer::DecoderBuffer;
@@ -53,13 +55,14 @@ impl PredictionSchemeGeometricNormalDecodingTransform {
 }
 
 #[cfg(feature = "decoder")]
-impl PredictionSchemeDecodingTransform<i32, i32> for PredictionSchemeGeometricNormalDecodingTransform {
+impl PredictionSchemeDecodingTransform<i32, i32>
+    for PredictionSchemeGeometricNormalDecodingTransform
+{
     fn get_type(&self) -> PredictionSchemeTransformType {
         PredictionSchemeTransformType::GeometricNormal
     }
 
-    fn init(&mut self, _num_components: usize) {
-    }
+    fn init(&mut self, _num_components: usize) {}
 
     fn compute_original_value(
         &self,
@@ -71,10 +74,10 @@ impl PredictionSchemeDecodingTransform<i32, i32> for PredictionSchemeGeometricNo
         let pt = predicted_vals[1];
         let cs = corr_vals[0];
         let ct = corr_vals[1];
-        
+
         let os = self.octahedron_tool_box.mod_max_positive(ps + cs);
         let ot = self.octahedron_tool_box.mod_max_positive(pt + ct);
-        
+
         out_original_vals[0] = os;
         out_original_vals[1] = ot;
     }
@@ -84,7 +87,8 @@ impl PredictionSchemeDecodingTransform<i32, i32> for PredictionSchemeGeometricNo
             Ok(v) => v,
             Err(_) => return false,
         };
-        self.octahedron_tool_box.set_quantization_bits(quantization_bits as i32)
+        self.octahedron_tool_box
+            .set_quantization_bits(quantization_bits as i32)
     }
 }
 
@@ -146,7 +150,8 @@ impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
             .as_ref()
             .and_then(|m| m.corner_table())
             .is_some()
-            && self.mesh_data
+            && self
+                .mesh_data
                 .as_ref()
                 .and_then(|m| m.data_to_corner_map())
                 .is_some()
@@ -328,7 +333,9 @@ impl<'a> PredictionSchemeDecoder<'a, i32, i32> for MeshPredictionSchemeGeometric
         let mesh_data = self.mesh_data.as_ref().unwrap();
         let data_to_corner_map = mesh_data.data_to_corner_map().unwrap();
         let corner_map_size = data_to_corner_map.len();
-        if corner_map_size * num_components > in_corr.len() || corner_map_size * num_components > out_data.len() {
+        if corner_map_size * num_components > in_corr.len()
+            || corner_map_size * num_components > out_data.len()
+        {
             return false;
         }
 
@@ -337,9 +344,15 @@ impl<'a> PredictionSchemeDecoder<'a, i32, i32> for MeshPredictionSchemeGeometric
         for i in 0..corner_map_size {
             let corner_id = CornerIndex(data_to_corner_map[i]);
             self.compute_predicted_value(corner_id, &mut pred_normal_3d);
-            self.octahedron_tool_box.canonicalize_integer_vector(&mut pred_normal_3d);
+            self.octahedron_tool_box
+                .canonicalize_integer_vector(&mut pred_normal_3d);
 
-            if self.flip_normal_bits.get(self.flip_normal_bit_index).copied().unwrap_or(false) {
+            if self
+                .flip_normal_bits
+                .get(self.flip_normal_bit_index)
+                .copied()
+                .unwrap_or(false)
+            {
                 pred_normal_3d[0] = -pred_normal_3d[0];
                 pred_normal_3d[1] = -pred_normal_3d[1];
                 pred_normal_3d[2] = -pred_normal_3d[2];
@@ -439,7 +452,12 @@ impl<'a> PredictionSchemeGeometricNormalDecoder<'a> {
         true
     }
 
-    fn compute_predicted_value(&self, corner_id: CornerIndex, prediction: &mut [i32; 3], map: &[u32]) {
+    fn compute_predicted_value(
+        &self,
+        corner_id: CornerIndex,
+        prediction: &mut [i32; 3],
+        map: &[u32],
+    ) {
         if corner_id == INVALID_CORNER_INDEX {
             prediction[0] = 0;
             prediction[1] = 0;
@@ -449,17 +467,17 @@ impl<'a> PredictionSchemeGeometricNormalDecoder<'a> {
 
         let mesh_data = self.mesh_data.as_ref().unwrap();
         let corner_table = mesh_data.corner_table().unwrap();
-        
+
         let mut cit = VertexCornersIterator::new(corner_table, corner_id);
-        
+
         let pos_cent = self.get_position_for_corner_with_map(corner_id, map);
-        
+
         let mut normal = [0i64; 3];
-        
+
         while !cit.end() {
             let c_next;
             let c_prev;
-            
+
             if self.prediction_mode == NormalPredictionMode::OneTriangle {
                 c_next = corner_table.next(corner_id);
                 c_prev = corner_table.previous(corner_id);
@@ -467,29 +485,37 @@ impl<'a> PredictionSchemeGeometricNormalDecoder<'a> {
                 c_next = corner_table.next(cit.corner());
                 c_prev = corner_table.previous(cit.corner());
             }
-            
+
             let pos_next = self.get_position_for_corner_with_map(c_next, map);
             let pos_prev = self.get_position_for_corner_with_map(c_prev, map);
-            
-            let delta_next = [pos_next[0] - pos_cent[0], pos_next[1] - pos_cent[1], pos_next[2] - pos_cent[2]];
-            let delta_prev = [pos_prev[0] - pos_cent[0], pos_prev[1] - pos_cent[1], pos_prev[2] - pos_cent[2]];
-            
+
+            let delta_next = [
+                pos_next[0] - pos_cent[0],
+                pos_next[1] - pos_cent[1],
+                pos_next[2] - pos_cent[2],
+            ];
+            let delta_prev = [
+                pos_prev[0] - pos_cent[0],
+                pos_prev[1] - pos_cent[1],
+                pos_prev[2] - pos_cent[2],
+            ];
+
             let cross = cross_product(&delta_next, &delta_prev);
-            
+
             normal[0] += cross[0];
             normal[1] += cross[1];
             normal[2] += cross[2];
-            
+
             cit.next(corner_table);
-            
+
             if self.prediction_mode == NormalPredictionMode::OneTriangle {
                 break;
             }
         }
-        
+
         let upper_bound = 1 << 29;
         let abs_sum = normal[0].abs() + normal[1].abs() + normal[2].abs();
-        
+
         if abs_sum > upper_bound {
             let quotient = abs_sum / upper_bound;
             if quotient > 0 {
@@ -498,7 +524,7 @@ impl<'a> PredictionSchemeGeometricNormalDecoder<'a> {
                 normal[2] /= quotient;
             }
         }
-        
+
         prediction[0] = normal[0] as i32;
         prediction[1] = normal[1] as i32;
         prediction[2] = normal[2] as i32;
@@ -508,14 +534,14 @@ impl<'a> PredictionSchemeGeometricNormalDecoder<'a> {
         let mesh_data = self.mesh_data.as_ref().unwrap();
         let corner_table = mesh_data.corner_table().unwrap();
         let vertex_to_data_map = mesh_data.vertex_to_data_map().unwrap();
-        
+
         let vert_id = corner_table.vertex(ci);
         let data_id = vertex_to_data_map[vert_id.0 as usize];
-        
+
         let point_id = map[data_id as usize];
         let pos_att = self.pos_attribute.unwrap();
         let pos_val_id = pos_att.mapped_index(PointIndex(point_id));
-        
+
         let mut pos = [0i64; 3];
         read_vector3_as_i64(pos_att, pos_val_id.0 as usize, &mut pos);
         pos
@@ -571,7 +597,7 @@ impl<'a> PredictionSchemeDecoder<'a, i32, i32> for PredictionSchemeGeometricNorm
         if !self.is_initialized() {
             return false;
         }
-        
+
         let map = match entry_to_point_id_map {
             Some(m) => m,
             None => return false,
@@ -581,31 +607,36 @@ impl<'a> PredictionSchemeDecoder<'a, i32, i32> for PredictionSchemeGeometricNorm
 
         let mesh_data = self.mesh_data.as_ref().unwrap();
         let data_to_corner_map = mesh_data.data_to_corner_map().unwrap();
-        
+
         let mut pred_normal_3d = [0i32; 3];
 
         for i in 0..size {
             let corner_id = CornerIndex(data_to_corner_map[i]);
-            
+
             self.compute_predicted_value(corner_id, &mut pred_normal_3d, map);
-            
-            self.transform.octahedron_tool_box.canonicalize_integer_vector(&mut pred_normal_3d);
-            
+
+            self.transform
+                .octahedron_tool_box
+                .canonicalize_integer_vector(&mut pred_normal_3d);
+
             if self.flip_normal_bits[self.flip_normal_bit_index] {
                 pred_normal_3d[0] = -pred_normal_3d[0];
                 pred_normal_3d[1] = -pred_normal_3d[1];
                 pred_normal_3d[2] = -pred_normal_3d[2];
             }
             self.flip_normal_bit_index += 1;
-            
-            let (s, t) = self.transform.octahedron_tool_box.integer_vector_to_quantized_octahedral_coords(&pred_normal_3d);
+
+            let (s, t) = self
+                .transform
+                .octahedron_tool_box
+                .integer_vector_to_quantized_octahedral_coords(&pred_normal_3d);
             let prediction = [s, t];
-            
+
             let offset = i * num_components;
             self.transform.compute_original_value(
                 &prediction,
                 &in_corr[offset..offset + num_components],
-                &mut out_data[offset..offset + num_components]
+                &mut out_data[offset..offset + num_components],
             );
         }
         true
@@ -714,7 +745,7 @@ impl VertexCornersIterator {
             self.corner = INVALID_CORNER_INDEX;
             self.is_end = true;
         } else if self.corner == INVALID_CORNER_INDEX {
-             self.is_end = true;
+            self.is_end = true;
         }
     }
 }
@@ -738,20 +769,21 @@ impl PredictionSchemeGeometricNormalEncodingTransform {
             octahedron_tool_box: OctahedronToolBox::new(),
         }
     }
-    
+
     pub fn set_quantization_bits(&mut self, q: i32) {
         self.octahedron_tool_box.set_quantization_bits(q);
     }
-    
+
     pub fn quantization_bits(&self) -> i32 {
         self.octahedron_tool_box.quantization_bits()
     }
 }
 
 #[cfg(feature = "encoder")]
-impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeGeometricNormalEncodingTransform {
-    fn init(&mut self, _orig_data: &[i32], _size: usize, _num_components: usize) {
-    }
+impl PredictionSchemeEncodingTransform<i32, i32>
+    for PredictionSchemeGeometricNormalEncodingTransform
+{
+    fn init(&mut self, _orig_data: &[i32], _size: usize, _num_components: usize) {}
 
     fn compute_correction(
         &self,
@@ -761,14 +793,14 @@ impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeGeometricNo
     ) {
         // original_vals are in octahedral coords (s, t)
         // predicted_vals are in octahedral coords (s, t)
-        
+
         // Correction is (original - predicted) mod max
         // We compute simple difference here, and let the encoder handle ModMax logic if needed.
         // But wait, the encoder logic in C++ does:
         // this->transform().ComputeCorrection(in_data + data_offset, pos_pred_normal_oct.data(), pos_correction.data());
         // And then ModMax.
         // So ComputeCorrection should just be subtraction.
-        
+
         out_corr_vals[0] = original_vals[0] - predicted_vals[0];
         out_corr_vals[1] = original_vals[1] - predicted_vals[1];
     }
@@ -803,13 +835,18 @@ impl<'a> PredictionSchemeGeometricNormalEncoder<'a> {
             flip_normal_bit_encoder: RAnsBitEncoder::new(),
         }
     }
-    
+
     pub fn init(&mut self, mesh_data: &MeshPredictionSchemeData<'a>) -> bool {
         self.mesh_data = Some(mesh_data.clone());
         true
     }
-    
-    fn compute_predicted_value(&self, corner_id: CornerIndex, prediction: &mut [i32; 3], map: &[u32]) {
+
+    fn compute_predicted_value(
+        &self,
+        corner_id: CornerIndex,
+        prediction: &mut [i32; 3],
+        map: &[u32],
+    ) {
         // Duplicate logic from decoder for now.
         // Ideally we should share this.
         if corner_id == INVALID_CORNER_INDEX {
@@ -821,17 +858,17 @@ impl<'a> PredictionSchemeGeometricNormalEncoder<'a> {
 
         let mesh_data = self.mesh_data.as_ref().unwrap();
         let corner_table = mesh_data.corner_table().unwrap();
-        
+
         let mut cit = VertexCornersIterator::new(corner_table, corner_id);
-        
+
         let pos_cent = self.get_position_for_corner_with_map(corner_id, map);
-        
+
         let mut normal = [0i64; 3];
-        
+
         while !cit.end() {
             let c_next;
             let c_prev;
-            
+
             if self.prediction_mode == NormalPredictionMode::OneTriangle {
                 c_next = corner_table.next(corner_id);
                 c_prev = corner_table.previous(corner_id);
@@ -839,29 +876,37 @@ impl<'a> PredictionSchemeGeometricNormalEncoder<'a> {
                 c_next = corner_table.next(cit.corner());
                 c_prev = corner_table.previous(cit.corner());
             }
-            
+
             let pos_next = self.get_position_for_corner_with_map(c_next, map);
             let pos_prev = self.get_position_for_corner_with_map(c_prev, map);
-            
-            let delta_next = [pos_next[0] - pos_cent[0], pos_next[1] - pos_cent[1], pos_next[2] - pos_cent[2]];
-            let delta_prev = [pos_prev[0] - pos_cent[0], pos_prev[1] - pos_cent[1], pos_prev[2] - pos_cent[2]];
-            
+
+            let delta_next = [
+                pos_next[0] - pos_cent[0],
+                pos_next[1] - pos_cent[1],
+                pos_next[2] - pos_cent[2],
+            ];
+            let delta_prev = [
+                pos_prev[0] - pos_cent[0],
+                pos_prev[1] - pos_cent[1],
+                pos_prev[2] - pos_cent[2],
+            ];
+
             let cross = cross_product(&delta_next, &delta_prev);
-            
+
             normal[0] += cross[0];
             normal[1] += cross[1];
             normal[2] += cross[2];
-            
+
             cit.next(corner_table);
-            
+
             if self.prediction_mode == NormalPredictionMode::OneTriangle {
                 break;
             }
         }
-        
+
         let upper_bound = 1 << 29;
         let abs_sum = normal[0].abs() + normal[1].abs() + normal[2].abs();
-        
+
         if abs_sum > upper_bound {
             let quotient = abs_sum / upper_bound;
             if quotient > 0 {
@@ -870,7 +915,7 @@ impl<'a> PredictionSchemeGeometricNormalEncoder<'a> {
                 normal[2] /= quotient;
             }
         }
-        
+
         prediction[0] = normal[0] as i32;
         prediction[1] = normal[1] as i32;
         prediction[2] = normal[2] as i32;
@@ -880,14 +925,14 @@ impl<'a> PredictionSchemeGeometricNormalEncoder<'a> {
         let mesh_data = self.mesh_data.as_ref().unwrap();
         let corner_table = mesh_data.corner_table().unwrap();
         let vertex_to_data_map = mesh_data.vertex_to_data_map().unwrap();
-        
+
         let vert_id = corner_table.vertex(ci);
         let data_id = vertex_to_data_map[vert_id.0 as usize];
-        
+
         let point_id = map[data_id as usize];
         let pos_att = self.pos_attribute.unwrap();
         let pos_val_id = pos_att.mapped_index(PointIndex(point_id));
-        
+
         let mut pos = [0i64; 3];
         read_vector3_as_i64(pos_att, pos_val_id.0 as usize, &mut pos);
         pos
@@ -943,7 +988,7 @@ impl<'a> PredictionSchemeEncoder<'a, i32, i32> for PredictionSchemeGeometricNorm
         if !self.is_initialized() {
             return false;
         }
-        
+
         let map = match entry_to_point_id_map {
             Some(m) => m,
             None => return false,
@@ -958,7 +1003,7 @@ impl<'a> PredictionSchemeEncoder<'a, i32, i32> for PredictionSchemeGeometricNorm
 
         let mesh_data = self.mesh_data.as_ref().unwrap();
         let data_to_corner_map = mesh_data.data_to_corner_map().unwrap();
-        
+
         let mut pred_normal_3d = [0i32; 3];
         let mut pos_pred_normal_oct = [0i32; 2];
         let mut neg_pred_normal_oct = [0i32; 2];
@@ -967,43 +1012,77 @@ impl<'a> PredictionSchemeEncoder<'a, i32, i32> for PredictionSchemeGeometricNorm
 
         for i in 0..size {
             let corner_id = CornerIndex(data_to_corner_map[i]);
-            
+
             self.compute_predicted_value(corner_id, &mut pred_normal_3d, map);
-            
-            self.transform.octahedron_tool_box.canonicalize_integer_vector(&mut pred_normal_3d);
-            
+
+            self.transform
+                .octahedron_tool_box
+                .canonicalize_integer_vector(&mut pred_normal_3d);
+
             // Compute octahedral coordinates for both possible directions
-            let (s_pos, t_pos) = self.transform.octahedron_tool_box.integer_vector_to_quantized_octahedral_coords(&pred_normal_3d);
+            let (s_pos, t_pos) = self
+                .transform
+                .octahedron_tool_box
+                .integer_vector_to_quantized_octahedral_coords(&pred_normal_3d);
             pos_pred_normal_oct[0] = s_pos;
             pos_pred_normal_oct[1] = t_pos;
-            
+
             let neg_normal_3d = [-pred_normal_3d[0], -pred_normal_3d[1], -pred_normal_3d[2]];
-            let (s_neg, t_neg) = self.transform.octahedron_tool_box.integer_vector_to_quantized_octahedral_coords(&neg_normal_3d);
+            let (s_neg, t_neg) = self
+                .transform
+                .octahedron_tool_box
+                .integer_vector_to_quantized_octahedral_coords(&neg_normal_3d);
             neg_pred_normal_oct[0] = s_neg;
             neg_pred_normal_oct[1] = t_neg;
-            
+
             let offset = i * num_components;
             let in_val = &in_data[offset..offset + num_components];
-            
-            self.transform.compute_correction(in_val, &pos_pred_normal_oct, &mut pos_correction);
-            self.transform.compute_correction(in_val, &neg_pred_normal_oct, &mut neg_correction);
-            
-            pos_correction[0] = self.transform.octahedron_tool_box.mod_max_positive(pos_correction[0]);
-            pos_correction[1] = self.transform.octahedron_tool_box.mod_max_positive(pos_correction[1]);
-            neg_correction[0] = self.transform.octahedron_tool_box.mod_max_positive(neg_correction[0]);
-            neg_correction[1] = self.transform.octahedron_tool_box.mod_max_positive(neg_correction[1]);
-            
+
+            self.transform
+                .compute_correction(in_val, &pos_pred_normal_oct, &mut pos_correction);
+            self.transform
+                .compute_correction(in_val, &neg_pred_normal_oct, &mut neg_correction);
+
+            pos_correction[0] = self
+                .transform
+                .octahedron_tool_box
+                .mod_max_positive(pos_correction[0]);
+            pos_correction[1] = self
+                .transform
+                .octahedron_tool_box
+                .mod_max_positive(pos_correction[1]);
+            neg_correction[0] = self
+                .transform
+                .octahedron_tool_box
+                .mod_max_positive(neg_correction[0]);
+            neg_correction[1] = self
+                .transform
+                .octahedron_tool_box
+                .mod_max_positive(neg_correction[1]);
+
             let pos_abs_sum = pos_correction[0].abs() + pos_correction[1].abs();
             let neg_abs_sum = neg_correction[0].abs() + neg_correction[1].abs();
-            
+
             if pos_abs_sum < neg_abs_sum {
                 self.flip_normal_bit_encoder.encode_bit(false);
-                out_corr[offset] = self.transform.octahedron_tool_box.make_positive(pos_correction[0]);
-                out_corr[offset + 1] = self.transform.octahedron_tool_box.make_positive(pos_correction[1]);
+                out_corr[offset] = self
+                    .transform
+                    .octahedron_tool_box
+                    .make_positive(pos_correction[0]);
+                out_corr[offset + 1] = self
+                    .transform
+                    .octahedron_tool_box
+                    .make_positive(pos_correction[1]);
             } else {
                 self.flip_normal_bit_encoder.encode_bit(true);
-                out_corr[offset] = self.transform.octahedron_tool_box.make_positive(neg_correction[0]);
-                out_corr[offset + 1] = self.transform.octahedron_tool_box.make_positive(neg_correction[1]);
+                out_corr[offset] = self
+                    .transform
+                    .octahedron_tool_box
+                    .make_positive(neg_correction[0]);
+                out_corr[offset + 1] = self
+                    .transform
+                    .octahedron_tool_box
+                    .make_positive(neg_correction[1]);
             }
         }
         true
@@ -1013,7 +1092,7 @@ impl<'a> PredictionSchemeEncoder<'a, i32, i32> for PredictionSchemeGeometricNorm
         if !self.transform.encode_transform_data(buffer) {
             return false;
         }
-        
+
         let mut temp_buffer = EncoderBuffer::new();
         self.flip_normal_bit_encoder.end_encoding(&mut temp_buffer);
         buffer.extend_from_slice(temp_buffer.data());
@@ -1037,18 +1116,59 @@ fn read_vector3_as_i64(att: &PointAttribute, index: usize, out: &mut [i64; 3]) {
 
 fn read_component_as_i64(att: &PointAttribute, index: usize, component: usize) -> i64 {
     let buffer = att.buffer();
-    let byte_offset = index * att.byte_stride() as usize + component * att.data_type().byte_length();
-    
-    let read_i8 = |offset| -> i8 { let mut b = [0u8; 1]; buffer.read(offset, &mut b); i8::from_le_bytes(b) };
-    let read_u8 = |offset| -> u8 { let mut b = [0u8; 1]; buffer.read(offset, &mut b); u8::from_le_bytes(b) };
-    let read_i16 = |offset| -> i16 { let mut b = [0u8; 2]; buffer.read(offset, &mut b); i16::from_le_bytes(b) };
-    let read_u16 = |offset| -> u16 { let mut b = [0u8; 2]; buffer.read(offset, &mut b); u16::from_le_bytes(b) };
-    let read_i32 = |offset| -> i32 { let mut b = [0u8; 4]; buffer.read(offset, &mut b); i32::from_le_bytes(b) };
-    let read_u32 = |offset| -> u32 { let mut b = [0u8; 4]; buffer.read(offset, &mut b); u32::from_le_bytes(b) };
-    let read_i64 = |offset| -> i64 { let mut b = [0u8; 8]; buffer.read(offset, &mut b); i64::from_le_bytes(b) };
-    let read_u64 = |offset| -> u64 { let mut b = [0u8; 8]; buffer.read(offset, &mut b); u64::from_le_bytes(b) };
-    let read_f32 = |offset| -> f32 { let mut b = [0u8; 4]; buffer.read(offset, &mut b); f32::from_le_bytes(b) };
-    let read_f64 = |offset| -> f64 { let mut b = [0u8; 8]; buffer.read(offset, &mut b); f64::from_le_bytes(b) };
+    let byte_offset =
+        index * att.byte_stride() as usize + component * att.data_type().byte_length();
+
+    let read_i8 = |offset| -> i8 {
+        let mut b = [0u8; 1];
+        buffer.read(offset, &mut b);
+        i8::from_le_bytes(b)
+    };
+    let read_u8 = |offset| -> u8 {
+        let mut b = [0u8; 1];
+        buffer.read(offset, &mut b);
+        u8::from_le_bytes(b)
+    };
+    let read_i16 = |offset| -> i16 {
+        let mut b = [0u8; 2];
+        buffer.read(offset, &mut b);
+        i16::from_le_bytes(b)
+    };
+    let read_u16 = |offset| -> u16 {
+        let mut b = [0u8; 2];
+        buffer.read(offset, &mut b);
+        u16::from_le_bytes(b)
+    };
+    let read_i32 = |offset| -> i32 {
+        let mut b = [0u8; 4];
+        buffer.read(offset, &mut b);
+        i32::from_le_bytes(b)
+    };
+    let read_u32 = |offset| -> u32 {
+        let mut b = [0u8; 4];
+        buffer.read(offset, &mut b);
+        u32::from_le_bytes(b)
+    };
+    let read_i64 = |offset| -> i64 {
+        let mut b = [0u8; 8];
+        buffer.read(offset, &mut b);
+        i64::from_le_bytes(b)
+    };
+    let read_u64 = |offset| -> u64 {
+        let mut b = [0u8; 8];
+        buffer.read(offset, &mut b);
+        u64::from_le_bytes(b)
+    };
+    let read_f32 = |offset| -> f32 {
+        let mut b = [0u8; 4];
+        buffer.read(offset, &mut b);
+        f32::from_le_bytes(b)
+    };
+    let read_f64 = |offset| -> f64 {
+        let mut b = [0u8; 8];
+        buffer.read(offset, &mut b);
+        f64::from_le_bytes(b)
+    };
 
     match att.data_type() {
         DataType::Int8 => read_i8(byte_offset) as i64,

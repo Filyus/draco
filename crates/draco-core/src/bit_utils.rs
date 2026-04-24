@@ -1,4 +1,3 @@
-
 pub struct BitEncoder<'a> {
     buffer: &'a mut [u8],
     bit_offset: usize,
@@ -6,7 +5,10 @@ pub struct BitEncoder<'a> {
 
 impl<'a> BitEncoder<'a> {
     pub fn new(buffer: &'a mut [u8]) -> Self {
-        Self { buffer, bit_offset: 0 }
+        Self {
+            buffer,
+            bit_offset: 0,
+        }
     }
 
     pub fn put_bits(&mut self, data: u32, nbits: u32) {
@@ -40,7 +42,10 @@ pub struct BitDecoder<'a> {
 
 impl<'a> BitDecoder<'a> {
     pub fn new(buffer: &'a [u8]) -> Self {
-        Self { buffer, bit_offset: 0 }
+        Self {
+            buffer,
+            bit_offset: 0,
+        }
     }
 
     pub fn get_bits(&mut self, nbits: u32) -> Option<u32> {

@@ -46,9 +46,10 @@ impl AnsCoder {
             self.buf.push(((state >> 16) & 0xFF) as u8);
             self.buf.push(((0x03 << 6) + ((state >> 24) & 0x3F)) as u8);
         } else {
-            return Err(crate::status::DracoError::DracoError(
-                format!("State is too large to be serialized: {}", state)
-            ));
+            return Err(crate::status::DracoError::DracoError(format!(
+                "State is too large to be serialized: {}",
+                state
+            )));
         }
         Ok(self.buf.len())
     }
@@ -57,13 +58,13 @@ impl AnsCoder {
     pub fn rabs_desc_write(&mut self, val: bool, p0: u8) {
         let p = ANS_P8_PRECISION - p0 as u32;
         let l_s = if val { p } else { p0 as u32 };
-        
+
         if self.state >= ANS_L_BASE / ANS_P8_PRECISION * ANS_IO_BASE * l_s {
             // ANS_IO_BASE is 256.
             self.buf.push((self.state & 0xFF) as u8);
             self.state >>= 8;
         }
-        
+
         let quot = self.state / l_s;
         let rem = self.state - quot * l_s;
         self.state = quot * ANS_P8_PRECISION + rem + if val { 0 } else { p };
@@ -77,14 +78,14 @@ impl AnsCoder {
             self.buf.push((self.state & 0xFF) as u8);
             self.state >>= 8;
         }
-        
+
         let mask = (1 << bit_length) - 1;
         let quot = self.state >> bit_length;
         let rem = self.state & mask;
-        
+
         self.state = (quot << (bit_length + 8)) + rem + val;
     }
-    
+
     pub fn data(&self) -> &[u8] {
         &self.buf
     }
@@ -144,7 +145,9 @@ impl<'a> AnsDecoder<'a> {
             self.buf_offset -= 2;
             let state = ((val as u32 & 0x3F) << 16) | ((val0 as u32) << 8) | val1 as u32;
             self.state = state + self.l_base;
-        } else /* 0xC0 */ {
+        } else
+        /* 0xC0 */
+        {
             if self.buf_offset < 3 {
                 return false;
             }
@@ -152,7 +155,10 @@ impl<'a> AnsDecoder<'a> {
             let val1 = self.buf[self.buf_offset - 2];
             let val2 = self.buf[self.buf_offset - 3];
             self.buf_offset -= 3;
-            let state = ((val as u32 & 0x3F) << 24) | ((val0 as u32) << 16) | ((val1 as u32) << 8) | val2 as u32;
+            let state = ((val as u32 & 0x3F) << 24)
+                | ((val0 as u32) << 16)
+                | ((val1 as u32) << 8)
+                | val2 as u32;
             self.state = state + self.l_base;
         }
         true

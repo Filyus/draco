@@ -26,7 +26,12 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
         }
     }
 
-    pub fn create(&mut self, frequencies: &[u64], num_symbols: usize, buffer: &mut EncoderBuffer) -> bool {
+    pub fn create(
+        &mut self,
+        frequencies: &[u64],
+        num_symbols: usize,
+        buffer: &mut EncoderBuffer,
+    ) -> bool {
         // Compute the total of the input frequencies.
         let mut total_freq: u64 = 0;
         let mut max_valid_symbol = 0;
@@ -36,14 +41,21 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
                 max_valid_symbol = i;
             }
         }
-        
+
         let num_symbols = max_valid_symbol + 1;
         self.num_symbols = num_symbols;
-        self.probability_table.resize(num_symbols, RAnsSymbol::default());
-        
+        self.probability_table
+            .resize(num_symbols, RAnsSymbol::default());
+
         if std::env::var("DRACO_DEBUG_CMP").is_ok() {
-            eprintln!("RUST RANS create: num_symbols={} total_freq={}", num_symbols, total_freq);
-            eprintln!("RUST RANS frequencies: {:?}", &frequencies[..num_symbols.min(frequencies.len())]);
+            eprintln!(
+                "RUST RANS create: num_symbols={} total_freq={}",
+                num_symbols, total_freq
+            );
+            eprintln!(
+                "RUST RANS frequencies: {:?}",
+                &frequencies[..num_symbols.min(frequencies.len())]
+            );
         }
 
         if total_freq == 0 {
@@ -64,10 +76,20 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
             self.probability_table[i].prob = rans_prob;
             total_rans_prob += rans_prob;
         }
-        
+
         if std::env::var("DRACO_DEBUG_CMP").is_ok() {
-            eprintln!("RUST RANS initial probs (before norm): {:?}", self.probability_table.iter().map(|s| s.prob).collect::<Vec<_>>());
-            eprintln!("RUST RANS total_rans_prob: {} vs precision: {}", total_rans_prob, Self::RANS_PRECISION);
+            eprintln!(
+                "RUST RANS initial probs (before norm): {:?}",
+                self.probability_table
+                    .iter()
+                    .map(|s| s.prob)
+                    .collect::<Vec<_>>()
+            );
+            eprintln!(
+                "RUST RANS total_rans_prob: {} vs precision: {}",
+                total_rans_prob,
+                Self::RANS_PRECISION
+            );
         }
 
         if total_rans_prob != Self::RANS_PRECISION {
@@ -75,9 +97,11 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
             // Use stable sort to match C++ std::stable_sort behavior
             // Rust Vec::sort_by is documented to be stable
             sorted_probabilities.sort_by(|&a, &b| {
-                self.probability_table[a].prob.cmp(&self.probability_table[b].prob)
+                self.probability_table[a]
+                    .prob
+                    .cmp(&self.probability_table[b].prob)
             });
-            
+
             if std::env::var("DRACO_DEBUG_CMP").is_ok() {
                 eprintln!("RUST RANS sorted_probabilities: {:?}", sorted_probabilities);
                 eprintln!("RUST RANS total_rans_prob before fix: {}", total_rans_prob);
@@ -91,7 +115,7 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
                 while error > 0 {
                     let act_total_prob_d = total_rans_prob as f64;
                     let act_rel_error_d = rans_precision_d / act_total_prob_d;
-                    
+
                     for j in (1..num_symbols).rev() {
                         let symbol_id = sorted_probabilities[j];
                         if self.probability_table[symbol_id].prob <= 1 {
@@ -100,8 +124,10 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
                             }
                             break;
                         }
-                        
-                        let new_prob = (act_rel_error_d * self.probability_table[symbol_id].prob as f64).floor() as i32;
+
+                        let new_prob = (act_rel_error_d
+                            * self.probability_table[symbol_id].prob as f64)
+                            .floor() as i32;
                         let mut fix = self.probability_table[symbol_id].prob as i32 - new_prob;
                         if fix == 0 {
                             fix = 1;
@@ -112,7 +138,7 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
                         if fix > error {
                             fix = error;
                         }
-                        
+
                         self.probability_table[symbol_id].prob -= fix as u32;
                         total_rans_prob -= fix as u32;
                         error -= fix;
@@ -129,12 +155,23 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
             self.probability_table[i].cum_prob = total_prob;
             total_prob += self.probability_table[i].prob;
         }
-        
-        if std::env::var("DRACO_DEBUG_CMP").is_ok() {
-            eprintln!("RUST RANS probability_table (probs): {:?}", self.probability_table.iter().map(|s| s.prob).collect::<Vec<_>>());
-            eprintln!("RUST RANS probability_table (cums): {:?}", self.probability_table.iter().map(|s| s.cum_prob).collect::<Vec<_>>());
-        }
 
+        if std::env::var("DRACO_DEBUG_CMP").is_ok() {
+            eprintln!(
+                "RUST RANS probability_table (probs): {:?}",
+                self.probability_table
+                    .iter()
+                    .map(|s| s.prob)
+                    .collect::<Vec<_>>()
+            );
+            eprintln!(
+                "RUST RANS probability_table (cums): {:?}",
+                self.probability_table
+                    .iter()
+                    .map(|s| s.cum_prob)
+                    .collect::<Vec<_>>()
+            );
+        }
 
         if total_prob != Self::RANS_PRECISION {
             return false;
@@ -145,13 +182,14 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
 
     fn encode_table(&self, buffer: &mut EncoderBuffer) -> bool {
         // C++ v1.x writes num_symbols as u32; v2.0+ uses varint.
-        let bitstream_version = ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
+        let bitstream_version =
+            ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
         if bitstream_version < 0x0200 {
             buffer.encode_u32(self.num_symbols as u32);
         } else {
             buffer.encode_varint(self.num_symbols as u64);
         }
-        
+
         let mut i = 0;
         while i < self.num_symbols {
             let prob = self.probability_table[i].prob;
@@ -165,7 +203,7 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
                     }
                 }
             }
-            
+
             if prob == 0 {
                 let mut offset = 0;
                 while offset < (1 << 6) - 1 {
@@ -201,13 +239,16 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
     }
 
     pub fn end_encoding(&mut self, buffer: &mut EncoderBuffer) {
-        let _len = self.ans.write_end()
+        let _len = self
+            .ans
+            .write_end()
             .expect("ANS state should always be valid for symbol encoding");
         let data = self.ans.data();
         let bytes_written = data.len() as u64;
-        
+
         // C++ v1.x writes the byte count as a fixed u64; v2.0+ uses varint.
-        let bitstream_version = ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
+        let bitstream_version =
+            ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
         if bitstream_version < 0x0200 {
             buffer.encode_u64(bytes_written);
         } else {

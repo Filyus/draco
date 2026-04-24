@@ -67,9 +67,9 @@ impl PredictionSchemeNormalOctahedronCanonicalizedTransformBase {
         // Actually, let's just use rotate_point in the caller.
         // But for compatibility with existing code structure, I'll implement it.
         match rotation_count {
-            1 => [-p[1], p[0]], // Rotate by 3 (270 deg)
+            1 => [-p[1], p[0]],  // Rotate by 3 (270 deg)
             2 => [-p[0], -p[1]], // Rotate by 2 (180 deg)
-            3 => [p[1], -p[0]], // Rotate by 1 (90 deg)
+            3 => [p[1], -p[0]],  // Rotate by 1 (90 deg)
             _ => *p,
         }
     }

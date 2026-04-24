@@ -22,7 +22,8 @@ impl Mesh {
 
     pub fn set_face(&mut self, face_id: FaceIndex, face: Face) {
         if face_id.0 as usize >= self.faces.len() {
-            self.faces.resize(face_id.0 as usize + 1, [PointIndex(0); 3]);
+            self.faces
+                .resize(face_id.0 as usize + 1, [PointIndex(0); 3]);
         }
         self.faces[face_id.0 as usize] = face;
     }
@@ -55,7 +56,7 @@ impl Mesh {
     }
 
     /// Deduplicate point IDs to match C++ Draco behavior.
-    /// 
+    ///
     /// This function remaps point indices such that:
     /// 1. Points are assigned new IDs in the order they're first encountered in faces
     /// 2. Face indices are updated to use the new point IDs
@@ -110,7 +111,7 @@ impl Mesh {
             let att = self.attribute(att_idx);
             let stride = att.byte_stride() as usize;
             let old_buffer = att.buffer().data().to_vec();
-            
+
             // Create new buffer with reordered data
             let mut new_buffer = vec![0u8; num_unique * stride];
             for new_idx in 0..num_unique {
@@ -120,7 +121,7 @@ impl Mesh {
                         .copy_from_slice(&old_buffer[old_idx * stride..old_idx * stride + stride]);
                 }
             }
-            
+
             // Update attribute buffer - resize and write the new data
             let att_mut = self.attribute_mut(att_idx);
             att_mut.buffer_mut().resize(new_buffer.len());

@@ -1,12 +1,12 @@
-use draco_core::mesh::Mesh;
-use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
-use draco_core::draco_types::DataType;
-use draco_core::mesh_decoder::MeshDecoder;
-use draco_core::mesh_encoder::MeshEncoder;
 use draco_core::decoder_buffer::DecoderBuffer;
+use draco_core::draco_types::DataType;
 use draco_core::encoder_buffer::EncoderBuffer;
 use draco_core::encoder_options::EncoderOptions;
+use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
 use draco_core::geometry_indices::{FaceIndex, PointIndex};
+use draco_core::mesh::Mesh;
+use draco_core::mesh_decoder::MeshDecoder;
+use draco_core::mesh_encoder::MeshEncoder;
 
 fn make_unit_quad_mesh() -> (Mesh, [f32; 12]) {
     let mut mesh = Mesh::new();
@@ -47,14 +47,8 @@ fn make_unit_quad_mesh() -> (Mesh, [f32; 12]) {
     mesh.add_attribute(pos_att);
 
     mesh.set_num_faces(2);
-    mesh.set_face(
-        FaceIndex(0),
-        [PointIndex(0), PointIndex(1), PointIndex(2)],
-    );
-    mesh.set_face(
-        FaceIndex(1),
-        [PointIndex(0), PointIndex(2), PointIndex(3)],
-    );
+    mesh.set_face(FaceIndex(0), [PointIndex(0), PointIndex(1), PointIndex(2)]);
+    mesh.set_face(FaceIndex(1), [PointIndex(0), PointIndex(2), PointIndex(3)]);
 
     (mesh, positions)
 }
@@ -91,7 +85,10 @@ fn assert_quad_mesh(decoded_mesh: &Mesh, positions: &[f32; 12]) {
     assert_eq!(f1[2], PointIndex(3));
 
     let decoded_att = decoded_mesh.attribute(0);
-    assert_eq!(decoded_att.attribute_type(), GeometryAttributeType::Position);
+    assert_eq!(
+        decoded_att.attribute_type(),
+        GeometryAttributeType::Position
+    );
 
     let decoded_buffer = decoded_att.buffer();
     for i in 0..4 {
@@ -140,7 +137,10 @@ fn assert_quad_mesh_edgebreaker(decoded_mesh: &Mesh, positions: &[f32; 12]) {
 
     // Attribute values: match positions as an unordered set.
     let decoded_att = decoded_mesh.attribute(0);
-    assert_eq!(decoded_att.attribute_type(), GeometryAttributeType::Position);
+    assert_eq!(
+        decoded_att.attribute_type(),
+        GeometryAttributeType::Position
+    );
 
     let decoded_buffer = decoded_att.buffer();
     let mut decoded_positions: Vec<[f32; 3]> = Vec::with_capacity(4);
@@ -166,7 +166,10 @@ fn assert_quad_mesh_edgebreaker(decoded_mesh: &Mesh, positions: &[f32; 12]) {
             if used[idx] {
                 continue;
             }
-            if (got[0] - exp[0]).abs() < eps && (got[1] - exp[1]).abs() < eps && (got[2] - exp[2]).abs() < eps {
+            if (got[0] - exp[0]).abs() < eps
+                && (got[1] - exp[1]).abs() < eps
+                && (got[2] - exp[2]).abs() < eps
+            {
                 used[idx] = true;
                 found = true;
                 break;

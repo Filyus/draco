@@ -10,7 +10,7 @@ fn main() -> io::Result<()> {
     let mesh = create_test_mesh();
 
     println!("=== Generic Function (Compile-time Polymorphism) ===\n");
-    
+
     // Using generic function - resolved at compile time
     write_format(ObjWriter::new(), &mesh, "generic.obj", "OBJ")?;
     write_format(PlyWriter::new(), &mesh, "generic.ply", "PLY")?;
@@ -18,7 +18,7 @@ fn main() -> io::Result<()> {
     write_format(GltfWriter::new(), &mesh, "generic.glb", "GLB")?;
 
     println!("\n=== Runtime Format Selection ===\n");
-    
+
     // Choose format at runtime based on user input
     let format = "obj"; // Could come from args, config, etc.
     write_dynamic_format(&mesh, format)?;
@@ -78,7 +78,12 @@ fn write_dynamic_format(mesh: &draco_core::mesh::Mesh, format: &str) -> io::Resu
             w.write("dynamic.glb")?;
             println!("✓ Wrote GLB dynamically");
         }
-        _ => return Err(io::Error::new(io::ErrorKind::InvalidInput, "Unknown format")),
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Unknown format",
+            ))
+        }
     }
     Ok(())
 }
@@ -92,9 +97,15 @@ fn create_test_mesh() -> draco_core::mesh::Mesh {
     let mut mesh = Mesh::new();
     let mut pos_att = PointAttribute::new();
 
-    pos_att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, 4);
+    pos_att.init(
+        GeometryAttributeType::Position,
+        3,
+        DataType::Float32,
+        false,
+        4,
+    );
     let buffer = pos_att.buffer_mut();
-    
+
     // Create a quad
     let positions: [[f32; 3]; 4] = [
         [0.0, 0.0, 0.0],
@@ -102,7 +113,7 @@ fn create_test_mesh() -> draco_core::mesh::Mesh {
         [1.0, 1.0, 0.0],
         [0.0, 1.0, 0.0],
     ];
-    
+
     for (i, pos) in positions.iter().enumerate() {
         let bytes: Vec<u8> = pos.iter().flat_map(|v| v.to_le_bytes()).collect();
         buffer.write(i * 12, &bytes);

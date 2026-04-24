@@ -2,8 +2,8 @@
 //!
 //! Provides OBJ file parsing functionality for web applications.
 
-use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
 
 /// Mesh data structure for JavaScript interop.
 #[derive(Serialize, Deserialize)]
@@ -133,7 +133,13 @@ fn parse_obj_internal(content: &str) -> ParseResult {
                     let vi: usize = indices[0].parse::<usize>().unwrap_or(1) - 1;
                     let ti: Option<usize> = indices
                         .get(1)
-                        .and_then(|s| if s.is_empty() { None } else { s.parse::<usize>().ok() })
+                        .and_then(|s| {
+                            if s.is_empty() {
+                                None
+                            } else {
+                                s.parse::<usize>().ok()
+                            }
+                        })
                         .map(|i| i - 1);
                     let ni: Option<usize> = indices
                         .get(2)

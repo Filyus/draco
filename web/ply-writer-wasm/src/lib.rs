@@ -2,13 +2,13 @@
 //!
 //! Provides PLY file generation functionality for web applications.
 
-use wasm_bindgen::prelude::*;
-use serde::{Deserialize, Serialize};
 use draco_core::draco_types::DataType;
 use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
 use draco_core::geometry_indices::{FaceIndex, PointIndex};
 use draco_core::mesh::Mesh;
 use draco_io::{PlyFormat, PlyWriter, Writer};
+use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
 
 /// Input mesh data from JavaScript.
 #[derive(Serialize, Deserialize, Clone)]
@@ -166,7 +166,13 @@ fn mesh_input_to_core_mesh(input: &MeshInput, options: &ExportOptions) -> Result
     mesh.set_num_points(vertex_count);
 
     let mut pos_att = PointAttribute::new();
-    pos_att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, vertex_count);
+    pos_att.init(
+        GeometryAttributeType::Position,
+        3,
+        DataType::Float32,
+        false,
+        vertex_count,
+    );
     for (i, chunk) in input.positions.chunks_exact(3).enumerate() {
         let bytes: Vec<u8> = chunk.iter().flat_map(|value| value.to_le_bytes()).collect();
         pos_att.buffer_mut().write(i * 12, &bytes);
@@ -177,9 +183,16 @@ fn mesh_input_to_core_mesh(input: &MeshInput, options: &ExportOptions) -> Result
         if let Some(normals) = &input.normals {
             if normals.len() >= vertex_count * 3 {
                 let mut normal_att = PointAttribute::new();
-                normal_att.init(GeometryAttributeType::Normal, 3, DataType::Float32, false, vertex_count);
+                normal_att.init(
+                    GeometryAttributeType::Normal,
+                    3,
+                    DataType::Float32,
+                    false,
+                    vertex_count,
+                );
                 for (i, chunk) in normals.chunks_exact(3).take(vertex_count).enumerate() {
-                    let bytes: Vec<u8> = chunk.iter().flat_map(|value| value.to_le_bytes()).collect();
+                    let bytes: Vec<u8> =
+                        chunk.iter().flat_map(|value| value.to_le_bytes()).collect();
                     normal_att.buffer_mut().write(i * 12, &bytes);
                 }
                 mesh.add_attribute(normal_att);
@@ -191,7 +204,13 @@ fn mesh_input_to_core_mesh(input: &MeshInput, options: &ExportOptions) -> Result
         if let Some(colors) = &input.colors {
             if colors.len() >= vertex_count * 4 {
                 let mut color_att = PointAttribute::new();
-                color_att.init(GeometryAttributeType::Color, 4, DataType::Uint8, true, vertex_count);
+                color_att.init(
+                    GeometryAttributeType::Color,
+                    4,
+                    DataType::Uint8,
+                    true,
+                    vertex_count,
+                );
                 color_att.buffer_mut().write(0, &colors[..vertex_count * 4]);
                 mesh.add_attribute(color_att);
             }
@@ -202,7 +221,11 @@ fn mesh_input_to_core_mesh(input: &MeshInput, options: &ExportOptions) -> Result
     for (i, chunk) in input.indices.chunks_exact(3).enumerate() {
         mesh.set_face(
             FaceIndex(i as u32),
-            [PointIndex(chunk[0]), PointIndex(chunk[1]), PointIndex(chunk[2])],
+            [
+                PointIndex(chunk[0]),
+                PointIndex(chunk[1]),
+                PointIndex(chunk[2]),
+            ],
         );
     }
     Ok(mesh)

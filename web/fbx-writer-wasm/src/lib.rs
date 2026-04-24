@@ -3,9 +3,9 @@
 //! Provides FBX binary file generation functionality for web applications.
 //! Outputs FBX 7.5 format (64-bit headers).
 
-use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::io::{Cursor, Write, Seek, SeekFrom};
+use std::io::{Cursor, Seek, SeekFrom, Write};
+use wasm_bindgen::prelude::*;
 
 /// Input mesh data from JavaScript.
 #[derive(Serialize, Deserialize, Clone)]
@@ -104,7 +104,7 @@ fn create_fbx_internal(meshes: &[MeshInput], options: &ExportOptions) -> ExportR
 
     // Two padding bytes
     let _ = cursor.write_all(&[0x1A, 0x00]);
-    
+
     // Version
     let _ = cursor.write_all(&version.to_le_bytes());
 
@@ -164,7 +164,11 @@ fn create_fbx_internal(meshes: &[MeshInput], options: &ExportOptions) -> ExportR
 
         // Connect geometry to model
         let mut conn_buf2: Vec<u8> = Vec::new();
-        write_connection(&mut Cursor::new(&mut conn_buf2), geometry_ids[i], model_ids[i]);
+        write_connection(
+            &mut Cursor::new(&mut conn_buf2),
+            geometry_ids[i],
+            model_ids[i],
+        );
         connections_children.push(conn_buf2);
     }
     write_node_with_children(&mut cursor, "Connections", &[], &connections_children);
@@ -185,7 +189,12 @@ fn create_fbx_internal(meshes: &[MeshInput], options: &ExportOptions) -> ExportR
     }
 }
 
-fn write_node<W: Write + Seek>(writer: &mut W, name: &str, properties: &[FbxProp], _children: &[Vec<u8>]) {
+fn write_node<W: Write + Seek>(
+    writer: &mut W,
+    name: &str,
+    properties: &[FbxProp],
+    _children: &[Vec<u8>],
+) {
     write_node_with_children(writer, name, properties, &[]);
 }
 
@@ -286,17 +295,32 @@ fn write_header_extension<W: Write + Seek>(writer: &mut W, version: u32) {
 
     // FBXHeaderVersion
     let mut buf = Vec::new();
-    write_node(&mut Cursor::new(&mut buf), "FBXHeaderVersion", &[FbxProp::I64(1003)], &[]);
+    write_node(
+        &mut Cursor::new(&mut buf),
+        "FBXHeaderVersion",
+        &[FbxProp::I64(1003)],
+        &[],
+    );
     children.push(buf);
 
     // FBXVersion
     let mut buf = Vec::new();
-    write_node(&mut Cursor::new(&mut buf), "FBXVersion", &[FbxProp::I64(version as i64)], &[]);
+    write_node(
+        &mut Cursor::new(&mut buf),
+        "FBXVersion",
+        &[FbxProp::I64(version as i64)],
+        &[],
+    );
     children.push(buf);
 
     // Creator
     let mut buf = Vec::new();
-    write_node(&mut Cursor::new(&mut buf), "Creator", &[FbxProp::String("draco-io WASM".to_string())], &[]);
+    write_node(
+        &mut Cursor::new(&mut buf),
+        "Creator",
+        &[FbxProp::String("draco-io WASM".to_string())],
+        &[],
+    );
     children.push(buf);
 
     write_node_with_children(writer, "FBXHeaderExtension", &[], &children);
@@ -314,11 +338,16 @@ fn write_documents<W: Write + Seek>(writer: &mut W) {
     children.push(buf);
 
     let mut buf = Vec::new();
-    write_node(&mut Cursor::new(&mut buf), "Document", &[
-        FbxProp::I64(1),
-        FbxProp::String("Scene".to_string()),
-        FbxProp::String("Scene".to_string()),
-    ], &[]);
+    write_node(
+        &mut Cursor::new(&mut buf),
+        "Document",
+        &[
+            FbxProp::I64(1),
+            FbxProp::String("Scene".to_string()),
+            FbxProp::String("Scene".to_string()),
+        ],
+        &[],
+    );
     children.push(buf);
 
     write_node_with_children(writer, "Documents", &[], &children);
@@ -329,22 +358,42 @@ fn write_definitions<W: Write + Seek>(writer: &mut W, mesh_count: usize) {
 
     // Version
     let mut buf = Vec::new();
-    write_node(&mut Cursor::new(&mut buf), "Version", &[FbxProp::I64(100)], &[]);
+    write_node(
+        &mut Cursor::new(&mut buf),
+        "Version",
+        &[FbxProp::I64(100)],
+        &[],
+    );
     children.push(buf);
 
     // Count
     let mut buf = Vec::new();
-    write_node(&mut Cursor::new(&mut buf), "Count", &[FbxProp::I64((mesh_count * 2) as i64)], &[]);
+    write_node(
+        &mut Cursor::new(&mut buf),
+        "Count",
+        &[FbxProp::I64((mesh_count * 2) as i64)],
+        &[],
+    );
     children.push(buf);
 
     // Geometry definition
     let mut buf = Vec::new();
-    write_node(&mut Cursor::new(&mut buf), "ObjectType", &[FbxProp::String("Geometry".to_string())], &[]);
+    write_node(
+        &mut Cursor::new(&mut buf),
+        "ObjectType",
+        &[FbxProp::String("Geometry".to_string())],
+        &[],
+    );
     children.push(buf);
 
     // Model definition
     let mut buf = Vec::new();
-    write_node(&mut Cursor::new(&mut buf), "ObjectType", &[FbxProp::String("Model".to_string())], &[]);
+    write_node(
+        &mut Cursor::new(&mut buf),
+        "ObjectType",
+        &[FbxProp::String("Model".to_string())],
+        &[],
+    );
     children.push(buf);
 
     write_node_with_children(writer, "Definitions", &[], &children);
@@ -359,7 +408,12 @@ fn write_geometry<W: Write + Seek>(writer: &mut W, mesh: &MeshInput, id: i64) {
     // Vertices
     let vertices: Vec<f64> = mesh.positions.iter().map(|&v| v as f64).collect();
     let mut buf = Vec::new();
-    write_node(&mut Cursor::new(&mut buf), "Vertices", &[FbxProp::F64Array(vertices)], &[]);
+    write_node(
+        &mut Cursor::new(&mut buf),
+        "Vertices",
+        &[FbxProp::F64Array(vertices)],
+        &[],
+    );
     children.push(buf);
 
     // PolygonVertexIndex (convert triangles to FBX format with negative end markers)
@@ -372,26 +426,46 @@ fn write_geometry<W: Write + Seek>(writer: &mut W, mesh: &MeshInput, id: i64) {
         }
     }
     let mut buf = Vec::new();
-    write_node(&mut Cursor::new(&mut buf), "PolygonVertexIndex", &[FbxProp::I32Array(polygon_indices)], &[]);
+    write_node(
+        &mut Cursor::new(&mut buf),
+        "PolygonVertexIndex",
+        &[FbxProp::I32Array(polygon_indices)],
+        &[],
+    );
     children.push(buf);
 
     // Normals (if present)
     if let Some(ref normals) = mesh.normals {
         if !normals.is_empty() {
             let norm_doubles: Vec<f64> = normals.iter().map(|&v| v as f64).collect();
-            
+
             let mut layer_children: Vec<Vec<u8>> = Vec::new();
-            
+
             let mut buf = Vec::new();
-            write_node(&mut Cursor::new(&mut buf), "Version", &[FbxProp::I64(101)], &[]);
+            write_node(
+                &mut Cursor::new(&mut buf),
+                "Version",
+                &[FbxProp::I64(101)],
+                &[],
+            );
             layer_children.push(buf);
-            
+
             let mut buf = Vec::new();
-            write_node(&mut Cursor::new(&mut buf), "Normals", &[FbxProp::F64Array(norm_doubles)], &[]);
+            write_node(
+                &mut Cursor::new(&mut buf),
+                "Normals",
+                &[FbxProp::F64Array(norm_doubles)],
+                &[],
+            );
             layer_children.push(buf);
-            
+
             let mut buf = Vec::new();
-            write_node_with_children(&mut Cursor::new(&mut buf), "LayerElementNormal", &[FbxProp::I64(0)], &layer_children);
+            write_node_with_children(
+                &mut Cursor::new(&mut buf),
+                "LayerElementNormal",
+                &[FbxProp::I64(0)],
+                &layer_children,
+            );
             children.push(buf);
         }
     }
@@ -440,8 +514,8 @@ fn write_connection<W: Write + Seek>(writer: &mut W, child_id: i64, parent_id: i
 fn write_footer<W: Write>(writer: &mut W, version: u32) {
     // Footer padding and signature
     let footer_id = [
-        0xF8, 0x5A, 0x8C, 0x6A, 0xDE, 0xF5, 0xD9, 0x7E,
-        0xEC, 0xE9, 0x0C, 0xE3, 0x75, 0x8F, 0x29, 0x0B,
+        0xF8, 0x5A, 0x8C, 0x6A, 0xDE, 0xF5, 0xD9, 0x7E, 0xEC, 0xE9, 0x0C, 0xE3, 0x75, 0x8F, 0x29,
+        0x0B,
     ];
 
     let _ = writer.write_all(&[0u8; 4]); // padding
@@ -468,7 +542,7 @@ mod tests {
         let result = create_fbx_internal(&[mesh], &ExportOptions::default());
         assert!(result.success);
         assert!(result.binary_data.is_some());
-        
+
         let data = result.binary_data.unwrap();
         assert!(data.len() > 27);
         assert_eq!(&data[0..21], FBX_MAGIC);

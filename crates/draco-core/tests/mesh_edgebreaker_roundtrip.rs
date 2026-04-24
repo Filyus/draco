@@ -1,10 +1,10 @@
-use draco_core::mesh::Mesh;
-use draco_core::mesh_encoder::MeshEncoder;
-use draco_core::mesh_decoder::MeshDecoder;
-use draco_core::encoder_buffer::EncoderBuffer;
 use draco_core::decoder_buffer::DecoderBuffer;
+use draco_core::encoder_buffer::EncoderBuffer;
 use draco_core::encoder_options::EncoderOptions;
-use draco_core::geometry_indices::{PointIndex, FaceIndex};
+use draco_core::geometry_indices::{FaceIndex, PointIndex};
+use draco_core::mesh::Mesh;
+use draco_core::mesh_decoder::MeshDecoder;
+use draco_core::mesh_encoder::MeshEncoder;
 
 #[test]
 fn test_edgebreaker_single_triangle_roundtrip() {
@@ -19,12 +19,16 @@ fn test_edgebreaker_single_triangle_roundtrip() {
     let mut encoder = MeshEncoder::new();
     encoder.set_mesh(mesh);
     let mut buffer = EncoderBuffer::new();
-    encoder.encode(&options, &mut buffer).expect("Encode failed");
+    encoder
+        .encode(&options, &mut buffer)
+        .expect("Encode failed");
 
     let mut decoder = MeshDecoder::new();
     let mut decoded_mesh = Mesh::new();
     let mut decoder_buffer = DecoderBuffer::new(buffer.data());
-    decoder.decode(&mut decoder_buffer, &mut decoded_mesh).expect("Decode failed");
+    decoder
+        .decode(&mut decoder_buffer, &mut decoded_mesh)
+        .expect("Decode failed");
 
     assert_eq!(decoded_mesh.num_faces(), 1);
     assert_eq!(decoded_mesh.num_points(), 3);
@@ -52,16 +56,20 @@ fn test_edgebreaker_quad_roundtrip() {
     let mut encoder = MeshEncoder::new();
     encoder.set_mesh(mesh);
     let mut buffer = EncoderBuffer::new();
-    encoder.encode(&options, &mut buffer).expect("Encode failed");
+    encoder
+        .encode(&options, &mut buffer)
+        .expect("Encode failed");
 
     let mut decoder = MeshDecoder::new();
     let mut decoded_mesh = Mesh::new();
     let mut decoder_buffer = DecoderBuffer::new(buffer.data());
-    decoder.decode(&mut decoder_buffer, &mut decoded_mesh).expect("Decode failed");
+    decoder
+        .decode(&mut decoder_buffer, &mut decoded_mesh)
+        .expect("Decode failed");
 
     assert_eq!(decoded_mesh.num_faces(), 2);
     assert_eq!(decoded_mesh.num_points(), 4);
-    
+
     // Verify faces exist and share vertices correctly
     // We don't check exact indices because of permutation, but we check topology.
     let mut all_faces = Vec::new();
@@ -72,7 +80,7 @@ fn test_edgebreaker_quad_roundtrip() {
         all_faces.push(f_vec);
     }
     all_faces.sort();
-    
+
     // The two triangles should share 2 vertices.
     let f0 = &all_faces[0];
     let f1 = &all_faces[1];

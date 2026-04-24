@@ -1,14 +1,14 @@
 use crate::attribute_transform::{AttributeTransform, AttributeTransformType};
 use crate::attribute_transform_data::AttributeTransformData;
+#[cfg(feature = "decoder")]
+use crate::decoder_buffer::DecoderBuffer;
 use crate::draco_types::DataType;
+#[cfg(feature = "encoder")]
+use crate::encoder_buffer::EncoderBuffer;
 use crate::geometry_attribute::PointAttribute;
 use crate::geometry_indices::PointIndex;
 use crate::normal_compression_utils::OctahedronToolBox;
 use crate::status::{DracoError, Status};
-#[cfg(feature = "decoder")]
-use crate::decoder_buffer::DecoderBuffer;
-#[cfg(feature = "encoder")]
-use crate::encoder_buffer::EncoderBuffer;
 
 pub struct AttributeOctahedronTransform {
     quantization_bits: i32,
@@ -44,7 +44,9 @@ impl AttributeOctahedronTransform {
 
         let mut converter = OctahedronToolBox::new();
         if !converter.set_quantization_bits(self.quantization_bits) {
-            return Err(DracoError::InvalidParameter("Invalid quantization bits".to_string()));
+            return Err(DracoError::InvalidParameter(
+                "Invalid quantization bits".to_string(),
+            ));
         }
 
         let mut att_val = [0.0f32; 3];
@@ -79,7 +81,7 @@ impl AttributeOctahedronTransform {
                 portable_data.extend_from_slice(&t.to_le_bytes());
             }
         }
-        
+
         target_attribute.buffer_mut().resize(portable_data.len());
         target_attribute.buffer_mut().write(0, &portable_data);
 
@@ -116,7 +118,13 @@ impl AttributeTransform for AttributeOctahedronTransform {
         point_ids: &[PointIndex],
         target_attribute: &mut PointAttribute,
     ) -> bool {
-        self.generate_portable_attribute(attribute, point_ids, target_attribute.size(), target_attribute).is_ok()
+        self.generate_portable_attribute(
+            attribute,
+            point_ids,
+            target_attribute.size(),
+            target_attribute,
+        )
+        .is_ok()
     }
 
     fn inverse_transform_attribute(
@@ -139,25 +147,25 @@ impl AttributeTransform for AttributeOctahedronTransform {
 
         let source_buffer = attribute.buffer();
         let target_buffer = target_attribute.buffer_mut();
-        
+
         // Ensure target buffer has enough space
         let target_byte_size = num_points * 3 * 4; // 3 floats * 4 bytes
         target_buffer.resize(target_byte_size);
 
         let source_data = source_buffer.data();
         // Source data is int32 (s, t) pairs.
-        
+
         for i in 0..num_points {
             let offset = i * 2 * 4; // 2 int32s
             if offset + 8 > source_data.len() {
                 return false;
             }
-            
-            let s = i32::from_le_bytes(source_data[offset..offset+4].try_into().unwrap());
-            let t = i32::from_le_bytes(source_data[offset+4..offset+8].try_into().unwrap());
-            
+
+            let s = i32::from_le_bytes(source_data[offset..offset + 4].try_into().unwrap());
+            let t = i32::from_le_bytes(source_data[offset + 4..offset + 8].try_into().unwrap());
+
             let att_val = converter.quantized_octahedral_coords_to_unit_vector(s, t);
-            
+
             let target_offset = i * 3 * 4;
             // Write floats using bytemuck
             let bytes = &mut target_buffer.data_mut()[target_offset..target_offset + 12];
@@ -192,7 +200,7 @@ impl AttributeTransform for AttributeOctahedronTransform {
             false
         }
     }
-    
+
     fn get_transformed_data_type(&self, _attribute: &PointAttribute) -> DataType {
         DataType::Uint32
     }

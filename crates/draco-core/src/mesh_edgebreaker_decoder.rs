@@ -1,11 +1,13 @@
-use crate::mesh::Mesh;
-use crate::decoder_buffer::DecoderBuffer;
-use crate::status::{Status, DracoError, error_status};
-use crate::geometry_indices::{PointIndex, FaceIndex, CornerIndex, VertexIndex};
-use crate::mesh_edgebreaker_shared::{EdgebreakerSymbol, TopologySplitEventData, EdgeFaceName};
-use crate::rans_bit_decoder::RAnsBitDecoder;
-use crate::edgebreaker_connectivity_decoder::{EdgebreakerConnectivityDecoder, EdgebreakerTraversalDecoder};
 use crate::corner_table::CornerTable;
+use crate::decoder_buffer::DecoderBuffer;
+use crate::edgebreaker_connectivity_decoder::{
+    EdgebreakerConnectivityDecoder, EdgebreakerTraversalDecoder,
+};
+use crate::geometry_indices::{CornerIndex, FaceIndex, PointIndex, VertexIndex};
+use crate::mesh::Mesh;
+use crate::mesh_edgebreaker_shared::{EdgeFaceName, EdgebreakerSymbol, TopologySplitEventData};
+use crate::rans_bit_decoder::RAnsBitDecoder;
+use crate::status::{error_status, DracoError, Status};
 
 pub struct MeshEdgebreakerDecoder {
     data_to_corner_map: Option<Vec<u32>>,
@@ -68,56 +70,89 @@ impl MeshEdgebreakerDecoder {
         self.traversal_decoder_type
     }
 
-    pub fn decode_connectivity(&mut self, in_buffer: &mut DecoderBuffer, out_mesh: &mut Mesh) -> Status {
+    pub fn decode_connectivity(
+        &mut self,
+        in_buffer: &mut DecoderBuffer,
+        out_mesh: &mut Mesh,
+    ) -> Status {
         self.data_to_corner_map = None;
 
         let version_major = in_buffer.version_major();
         let version_minor = in_buffer.version_minor();
         let bitstream_version = ((version_major as u16) << 8) | (version_minor as u16);
-        
+
         // Traversal decoder type is always present (C++ reads unconditionally in InitializeDecoder).
-        self.traversal_decoder_type = in_buffer.decode_u8().map_err(|_| DracoError::DracoError("Failed to read traversal decoder type".to_string()))?;
+        self.traversal_decoder_type = in_buffer.decode_u8().map_err(|_| {
+            DracoError::DracoError("Failed to read traversal decoder type".to_string())
+        })?;
         // Type 0 = Standard, Type 1 = Predictive, Type 2 = Valence
         if self.traversal_decoder_type > 2 {
-            return Err(DracoError::DracoError(format!("Unsupported Edgebreaker traversal decoder type: {}", self.traversal_decoder_type)));
+            return Err(DracoError::DracoError(format!(
+                "Unsupported Edgebreaker traversal decoder type: {}",
+                self.traversal_decoder_type
+            )));
         }
 
         let mut _num_new_vertices = 0;
         if bitstream_version < 0x0202 {
             if bitstream_version < 0x0200 {
-                _num_new_vertices = in_buffer.decode_u32().map_err(|_| DracoError::DracoError("Failed to read num_new_vertices".to_string()))?;
+                _num_new_vertices = in_buffer.decode_u32().map_err(|_| {
+                    DracoError::DracoError("Failed to read num_new_vertices".to_string())
+                })?;
             } else {
-                _num_new_vertices = in_buffer.decode_varint().map_err(|_| DracoError::DracoError("Failed to read num_new_vertices".to_string()))? as u32;
+                _num_new_vertices = in_buffer.decode_varint().map_err(|_| {
+                    DracoError::DracoError("Failed to read num_new_vertices".to_string())
+                })? as u32;
             }
         }
 
         let num_encoded_vertices = if bitstream_version < 0x0200 {
-            in_buffer.decode_u32().map_err(|_| DracoError::DracoError("Failed to read num_encoded_vertices".to_string()))?
+            in_buffer.decode_u32().map_err(|_| {
+                DracoError::DracoError("Failed to read num_encoded_vertices".to_string())
+            })?
         } else {
-            in_buffer.decode_varint().map_err(|_| DracoError::DracoError("Failed to read num_encoded_vertices".to_string()))? as u32
+            in_buffer.decode_varint().map_err(|_| {
+                DracoError::DracoError("Failed to read num_encoded_vertices".to_string())
+            })? as u32
         };
 
         let num_faces = if bitstream_version < 0x0200 {
-            in_buffer.decode_u32().map_err(|_| DracoError::DracoError("Failed to read num_faces".to_string()))?
+            in_buffer
+                .decode_u32()
+                .map_err(|_| DracoError::DracoError("Failed to read num_faces".to_string()))?
         } else {
-            in_buffer.decode_varint().map_err(|_| DracoError::DracoError("Failed to read num_faces".to_string()))? as u32
+            in_buffer
+                .decode_varint()
+                .map_err(|_| DracoError::DracoError("Failed to read num_faces".to_string()))?
+                as u32
         };
 
-        let num_attribute_data = in_buffer.decode_u8().map_err(|_| DracoError::DracoError("Failed to read attribute data count".to_string()))?;
+        let num_attribute_data = in_buffer.decode_u8().map_err(|_| {
+            DracoError::DracoError("Failed to read attribute data count".to_string())
+        })?;
 
         out_mesh.set_num_faces(num_faces as usize);
         out_mesh.set_num_points(num_encoded_vertices as usize);
 
-        let num_symbols = if bitstream_version < 0x0200 {
-            in_buffer.decode_u32().map_err(|_| DracoError::DracoError("Failed to read symbol count".to_string()))? as usize
-        } else {
-            in_buffer.decode_varint().map_err(|_| DracoError::DracoError("Failed to read symbol count".to_string()))? as usize
-        };
+        let num_symbols =
+            if bitstream_version < 0x0200 {
+                in_buffer.decode_u32().map_err(|_| {
+                    DracoError::DracoError("Failed to read symbol count".to_string())
+                })? as usize
+            } else {
+                in_buffer.decode_varint().map_err(|_| {
+                    DracoError::DracoError("Failed to read symbol count".to_string())
+                })? as usize
+            };
 
         let num_split_symbols = if bitstream_version < 0x0200 {
-            in_buffer.decode_u32().map_err(|_| DracoError::DracoError("Failed to read split symbol count".to_string()))? as usize
+            in_buffer.decode_u32().map_err(|_| {
+                DracoError::DracoError("Failed to read split symbol count".to_string())
+            })? as usize
         } else {
-            in_buffer.decode_varint().map_err(|_| DracoError::DracoError("Failed to read split symbol count".to_string()))? as usize
+            in_buffer.decode_varint().map_err(|_| {
+                DracoError::DracoError("Failed to read split symbol count".to_string())
+            })? as usize
         };
 
         // Read hole/topology split events.
@@ -126,18 +161,18 @@ impl MeshEdgebreakerDecoder {
         // is explicitly encoded.
         let (topology_split_data, topology_split_decoded_bytes) = if bitstream_version < 0x0202 {
             let encoded_connectivity_size = if bitstream_version < 0x0200 {
-                in_buffer
-                    .decode_u32()
-                    .map_err(|_| DracoError::DracoError("Failed to read encoded_connectivity_size".to_string()))?
-                    as usize
+                in_buffer.decode_u32().map_err(|_| {
+                    DracoError::DracoError("Failed to read encoded_connectivity_size".to_string())
+                })? as usize
             } else {
-                in_buffer
-                    .decode_varint()
-                    .map_err(|_| DracoError::DracoError("Failed to read encoded_connectivity_size".to_string()))?
-                    as usize
+                in_buffer.decode_varint().map_err(|_| {
+                    DracoError::DracoError("Failed to read encoded_connectivity_size".to_string())
+                })? as usize
             };
 
-            if encoded_connectivity_size == 0 || encoded_connectivity_size > in_buffer.remaining_size() {
+            if encoded_connectivity_size == 0
+                || encoded_connectivity_size > in_buffer.remaining_size()
+            {
                 return Err(DracoError::DracoError(
                     "Invalid encoded_connectivity_size".to_string(),
                 ));
@@ -179,7 +214,6 @@ impl MeshEdgebreakerDecoder {
             Self::decode_symbol_stream(in_buffer, num_symbols)?
         };
 
-
         // Reconstruct topology.
         // Draco allows up to (num_encoded_vertices + num_split_symbols) vertices during
         // connectivity decoding because split symbols can introduce temporary vertices
@@ -219,30 +253,30 @@ impl MeshEdgebreakerDecoder {
     ) -> Result<(Vec<TopologySplitEventData>, usize), DracoError> {
         // Matches MeshEdgebreakerDecoderImpl::DecodeHoleAndTopologySplitEvents.
         let num_topology_splits = if bitstream_version < 0x0200 {
-            in_buffer
-                .decode_u32()
-                .map_err(|_| DracoError::DracoError("Failed to read num_topology_splits".to_string()))?
+            in_buffer.decode_u32().map_err(|_| {
+                DracoError::DracoError("Failed to read num_topology_splits".to_string())
+            })?
         } else {
-            in_buffer
-                .decode_varint()
-                .map_err(|_| DracoError::DracoError("Failed to read num_topology_splits".to_string()))?
-                as u32
+            in_buffer.decode_varint().map_err(|_| {
+                DracoError::DracoError("Failed to read num_topology_splits".to_string())
+            })? as u32
         };
 
-        let mut events: Vec<TopologySplitEventData> = Vec::with_capacity(num_topology_splits as usize);
+        let mut events: Vec<TopologySplitEventData> =
+            Vec::with_capacity(num_topology_splits as usize);
         if num_topology_splits > 0 {
             if bitstream_version < 0x0102 {
                 // Legacy (<1.2): absolute IDs + explicit edge byte.
                 for _ in 0..num_topology_splits {
-                    let split_symbol_id = in_buffer
-                        .decode_u32()
-                        .map_err(|_| DracoError::DracoError("Failed to read split_symbol_id".to_string()))?;
-                    let source_symbol_id = in_buffer
-                        .decode_u32()
-                        .map_err(|_| DracoError::DracoError("Failed to read source_symbol_id".to_string()))?;
-                    let edge_data = in_buffer
-                        .decode_u8()
-                        .map_err(|_| DracoError::DracoError("Failed to read source_edge byte".to_string()))?;
+                    let split_symbol_id = in_buffer.decode_u32().map_err(|_| {
+                        DracoError::DracoError("Failed to read split_symbol_id".to_string())
+                    })?;
+                    let source_symbol_id = in_buffer.decode_u32().map_err(|_| {
+                        DracoError::DracoError("Failed to read source_symbol_id".to_string())
+                    })?;
+                    let edge_data = in_buffer.decode_u8().map_err(|_| {
+                        DracoError::DracoError("Failed to read source_edge byte".to_string())
+                    })?;
                     events.push(TopologySplitEventData {
                         split_symbol_id,
                         source_symbol_id,
@@ -257,16 +291,14 @@ impl MeshEdgebreakerDecoder {
                 // Delta + varint IDs.
                 let mut last_source_symbol_id: i32 = 0;
                 for _ in 0..num_topology_splits {
-                    let delta = in_buffer
-                        .decode_varint()
-                        .map_err(|_| DracoError::DracoError("Failed to read source symbol delta".to_string()))?
-                        as i32;
+                    let delta = in_buffer.decode_varint().map_err(|_| {
+                        DracoError::DracoError("Failed to read source symbol delta".to_string())
+                    })? as i32;
                     let source_symbol_id = last_source_symbol_id + delta;
 
-                    let split_delta = in_buffer
-                        .decode_varint()
-                        .map_err(|_| DracoError::DracoError("Failed to read split symbol delta".to_string()))?
-                        as i32;
+                    let split_delta = in_buffer.decode_varint().map_err(|_| {
+                        DracoError::DracoError("Failed to read split symbol delta".to_string())
+                    })? as i32;
                     if split_delta > source_symbol_id {
                         return Err(DracoError::DracoError(
                             "Invalid split symbol delta".to_string(),
@@ -285,14 +317,22 @@ impl MeshEdgebreakerDecoder {
 
                 // Split edges are bit-coded; for <2.2 streams the decoder reads 2 bits.
                 if !events.is_empty() {
-                    in_buffer
-                        .start_bit_decoding(false)
-                        .map_err(|_| DracoError::DracoError("Failed to start bit decoding for split-event source_edge bits".to_string()))?;
+                    in_buffer.start_bit_decoding(false).map_err(|_| {
+                        DracoError::DracoError(
+                            "Failed to start bit decoding for split-event source_edge bits"
+                                .to_string(),
+                        )
+                    })?;
                     for event in &mut events {
                         let bits = if bitstream_version < 0x0202 { 2 } else { 1 };
-                        let edge_data = in_buffer
-                            .decode_least_significant_bits32(bits)
-                            .map_err(|_| DracoError::DracoError("Failed to read split-event source_edge bits".to_string()))?;
+                        let edge_data =
+                            in_buffer
+                                .decode_least_significant_bits32(bits)
+                                .map_err(|_| {
+                                    DracoError::DracoError(
+                                        "Failed to read split-event source_edge bits".to_string(),
+                                    )
+                                })?;
                         event.source_edge = if (edge_data & 1) == 0 {
                             crate::mesh_edgebreaker_shared::EdgeFaceName::LeftFaceEdge
                         } else {
@@ -308,17 +348,20 @@ impl MeshEdgebreakerDecoder {
         Ok((events, in_buffer.position()))
     }
 
-    fn skip_hole_events(in_buffer: &mut DecoderBuffer, bitstream_version: u16) -> Result<(), DracoError> {
+    fn skip_hole_events(
+        in_buffer: &mut DecoderBuffer,
+        bitstream_version: u16,
+    ) -> Result<(), DracoError> {
         // Hole events are present only for older streams (<2.1). The C++ decoder
         // parses them but never uses them (dead/legacy data), so we just need to
         // advance the buffer past the hole event data.
         let mut num_hole_events: u32 = 0;
         if bitstream_version < 0x0200 {
-            num_hole_events = in_buffer
-                .decode_u32()
-                .map_err(|_| DracoError::DracoError("Failed to read num_hole_events".to_string()))?;
+            num_hole_events = in_buffer.decode_u32().map_err(|_| {
+                DracoError::DracoError("Failed to read num_hole_events".to_string())
+            })?;
         } else if bitstream_version < 0x0201 {
-             num_hole_events = in_buffer
+            num_hole_events = in_buffer
                 .decode_varint()
                 .map_err(|_| DracoError::DracoError("Failed to read num_hole_events".to_string()))?
                 as u32;
@@ -328,23 +371,21 @@ impl MeshEdgebreakerDecoder {
             if bitstream_version < 0x0102 {
                 for _ in 0..num_hole_events {
                     // Legacy: raw i32 symbol id.
-                    let _sym_id: i32 = in_buffer
-                        .decode::<i32>()
-                        .map_err(|_| DracoError::DracoError("Failed to read hole event".to_string()))?;
+                    let _sym_id: i32 = in_buffer.decode::<i32>().map_err(|_| {
+                        DracoError::DracoError("Failed to read hole event".to_string())
+                    })?;
                 }
             } else {
                 // Delta + varint.
                 let mut last_symbol_id: i32 = 0;
                 for _ in 0..num_hole_events {
-                    let delta = in_buffer
-                        .decode_varint()
-                        .map_err(|_| DracoError::DracoError("Failed to read hole event delta".to_string()))?
-                        as i32;
+                    let delta = in_buffer.decode_varint().map_err(|_| {
+                        DracoError::DracoError("Failed to read hole event delta".to_string())
+                    })? as i32;
                     let _sym_id = last_symbol_id + delta;
                     last_symbol_id = _sym_id;
                 }
             }
-
         }
 
         Ok(())
@@ -368,16 +409,14 @@ impl MeshEdgebreakerDecoder {
         if num_events > 0 {
             let mut last_source_symbol_id: i32 = 0;
             for _ in 0..num_events {
-                let delta = in_buffer
-                    .decode_varint()
-                    .map_err(|_| DracoError::DracoError("Failed to read source symbol delta".to_string()))?
-                    as i32;
+                let delta = in_buffer.decode_varint().map_err(|_| {
+                    DracoError::DracoError("Failed to read source symbol delta".to_string())
+                })? as i32;
                 let source_symbol_id = last_source_symbol_id + delta;
 
-                let split_delta = in_buffer
-                    .decode_varint()
-                    .map_err(|_| DracoError::DracoError("Failed to read split symbol delta".to_string()))?
-                    as i32;
+                let split_delta = in_buffer.decode_varint().map_err(|_| {
+                    DracoError::DracoError("Failed to read split symbol delta".to_string())
+                })? as i32;
                 let split_symbol_id = source_symbol_id - split_delta;
 
                 events.push(TopologySplitEventData {
@@ -391,13 +430,15 @@ impl MeshEdgebreakerDecoder {
         }
 
         if num_events > 0 {
-            in_buffer
-                .start_bit_decoding(false)
-                .map_err(|_| DracoError::DracoError("Failed to start bit decoding for split-event source_edge bits".to_string()))?;
+            in_buffer.start_bit_decoding(false).map_err(|_| {
+                DracoError::DracoError(
+                    "Failed to start bit decoding for split-event source_edge bits".to_string(),
+                )
+            })?;
             for event in &mut events {
-                let edge_bit = in_buffer
-                    .decode_least_significant_bits32(1)
-                    .map_err(|_| DracoError::DracoError("Failed to read split-event source_edge bit".to_string()))?;
+                let edge_bit = in_buffer.decode_least_significant_bits32(1).map_err(|_| {
+                    DracoError::DracoError("Failed to read split-event source_edge bit".to_string())
+                })?;
                 event.source_edge = if edge_bit == 0 {
                     crate::mesh_edgebreaker_shared::EdgeFaceName::LeftFaceEdge
                 } else {
@@ -430,7 +471,7 @@ impl MeshEdgebreakerDecoder {
     }
 
     // Mesh reconstruction requires 8 parameters: symbols, topology split data, output mesh,
-    // size constraints, attribute count, num_symbols for valence path, and decoder buffer. Each 
+    // size constraints, attribute count, num_symbols for valence path, and decoder buffer. Each
     // parameter controls a different aspect of the complex topology reconstruction process.
     #[allow(clippy::too_many_arguments)]
     fn reconstruct_mesh<'a>(
@@ -450,7 +491,7 @@ impl MeshEdgebreakerDecoder {
         } else {
             symbols.len()
         };
-        
+
         if actual_num_symbols == 0 {
             let corner_table = crate::corner_table::CornerTable::new(0);
             self.corner_table = Some(corner_table);
@@ -458,7 +499,8 @@ impl MeshEdgebreakerDecoder {
             return Ok(0);
         }
 
-        let bitstream_version = ((in_buffer.version_major() as u16) << 8) | (in_buffer.version_minor() as u16);
+        let bitstream_version =
+            ((in_buffer.version_major() as u16) << 8) | (in_buffer.version_minor() as u16);
 
         // For v < 2.2, start face configuration bits are stored as a raw bit buffer
         // (u64 size prefix + raw bits), NOT as rANS-encoded data.
@@ -469,8 +511,9 @@ impl MeshEdgebreakerDecoder {
 
         if bitstream_version < 0x0202 {
             // Read raw bit buffer for start faces
-            in_buffer.start_bit_decoding(true)
-                .map_err(|_| DracoError::DracoError("Failed to start start-face bit decoding".to_string()))?;
+            in_buffer.start_bit_decoding(true).map_err(|_| {
+                DracoError::DracoError("Failed to start start-face bit decoding".to_string())
+            })?;
             // Pre-read a generous number of bits (one per component, max = num_symbols)
             // We read up to actual_num_symbols bits; unused ones are harmless
             let num_bits_to_read = actual_num_symbols.min(in_buffer.remaining_size() * 8);
@@ -487,10 +530,8 @@ impl MeshEdgebreakerDecoder {
             has_start_face_bits = start_face_decoder.start_decoding(in_buffer);
         }
 
-        let mut connectivity_decoder = EdgebreakerConnectivityDecoder::new(
-            mesh.num_faces() as i32,
-            max_num_vertices as i32,
-        );
+        let mut connectivity_decoder =
+            EdgebreakerConnectivityDecoder::new(mesh.num_faces() as i32, max_num_vertices as i32);
 
         // Choose traversal decoder based on the traversal_decoder_type read earlier.
         #[allow(unused_assignments)]
@@ -502,7 +543,7 @@ impl MeshEdgebreakerDecoder {
 
         // For valence mode, we need to save the seam decoders to use after connectivity
         let mut valence_seam_decoders: Vec<RAnsBitDecoder> = Vec::new();
-        
+
         let num_vertices = if self.traversal_decoder_type == 2 {
             // Valence mode
             // For valence traversal, the buffer order is:
@@ -514,11 +555,13 @@ impl MeshEdgebreakerDecoder {
             for _ in 0..num_attribute_data {
                 let mut seam_decoder = RAnsBitDecoder::new();
                 if !seam_decoder.start_decoding(in_buffer) {
-                    return Err(DracoError::DracoError("Failed to start attribute seam decoding for valence".to_string()));
+                    return Err(DracoError::DracoError(
+                        "Failed to start attribute seam decoding for valence".to_string(),
+                    ));
                 }
                 valence_seam_decoders.push(seam_decoder);
             }
-            
+
             let mut valence_decoder = crate::mesh_edgebreaker_traversal_valence_decoder::MeshEdgebreakerTraversalValenceDecoder::new(
                 start_face_decoder,
                 has_start_face_bits,
@@ -527,7 +570,9 @@ impl MeshEdgebreakerDecoder {
             );
             // Initialize contexts by reading counts/symbol arrays from the buffer
             if !valence_decoder.init_from_buffer(in_buffer, max_num_vertices) {
-                return Err(DracoError::DracoError("Failed to init valence traversal decoder".to_string()));
+                return Err(DracoError::DracoError(
+                    "Failed to init valence traversal decoder".to_string(),
+                ));
             }
 
             let nv = connectivity_decoder
@@ -560,7 +605,6 @@ impl MeshEdgebreakerDecoder {
             processed_connectivity_corners = traversal_decoder.processed_connectivity_corners;
             nv
         };
-        
 
         if has_start_face_bits_flag {
             if let Some(mut sfd) = start_face_decoder_opt {
@@ -573,17 +617,16 @@ impl MeshEdgebreakerDecoder {
         let mut processed = processed_connectivity_corners;
         processed.reverse();
         self.processed_connectivity_corners = processed;
-        
 
         // Store the corner table and truncate to the actual vertex count
         let mut ct = connectivity_decoder.corner_table;
         ct.vertex_corners.truncate(num_vertices);
         self.corner_table = Some(ct);
-        
+
         // Initialize vertex_to_corner_map
         self.vertex_to_corner_map = vec![u32::MAX; num_vertices];
         if let Some(ct) = &self.corner_table {
-             for v in 0..num_vertices {
+            for v in 0..num_vertices {
                 let corner = ct.left_most_corner(VertexIndex(v as u32));
                 if corner != crate::geometry_indices::INVALID_CORNER_INDEX {
                     self.vertex_to_corner_map[v] = corner.0;
@@ -597,7 +640,7 @@ impl MeshEdgebreakerDecoder {
         // For valence mode, we already started the seam decoders before reading context symbols
         // to properly position the buffer. Now we need to decode from them.
         self.attribute_seam_corners.clear();
-        
+
         if self.traversal_decoder_type == 2 {
             // Valence mode - use the seam decoders we already started
             for mut seam_decoder in valence_seam_decoders.into_iter() {
@@ -628,7 +671,9 @@ impl MeshEdgebreakerDecoder {
                 let mut seam_corners = Vec::new();
                 let mut seam_decoder = RAnsBitDecoder::new();
                 if !seam_decoder.start_decoding(in_buffer) {
-                    return Err(DracoError::DracoError("Failed to start seam decoding".to_string()));
+                    return Err(DracoError::DracoError(
+                        "Failed to start seam decoding".to_string(),
+                    ));
                 }
 
                 if let Some(ct) = &self.corner_table {
@@ -656,27 +701,30 @@ impl MeshEdgebreakerDecoder {
         Ok(mesh.num_faces())
     }
 
-    pub fn decode_symbol_stream(in_buffer: &mut DecoderBuffer, num_symbols: usize) -> Result<Vec<u32>, DracoError> {
+    pub fn decode_symbol_stream(
+        in_buffer: &mut DecoderBuffer,
+        num_symbols: usize,
+    ) -> Result<Vec<u32>, DracoError> {
         if num_symbols == 0 {
             return Ok(Vec::new());
         }
 
         // Traversal symbols are stored as a size-prefixed bit sequence.
-        in_buffer
-            .start_bit_decoding(true)
-            .map_err(|_| DracoError::DracoError("Failed to start traversal symbol bit decoding".to_string()))?;
-        
+        in_buffer.start_bit_decoding(true).map_err(|_| {
+            DracoError::DracoError("Failed to start traversal symbol bit decoding".to_string())
+        })?;
+
         let mut symbols = Vec::with_capacity(num_symbols);
         for _ in 0..num_symbols {
-            let first_bit = in_buffer
-                .decode_least_significant_bits32(1)
-                .map_err(|_| DracoError::DracoError("Failed to read traversal symbol".to_string()))?;
+            let first_bit = in_buffer.decode_least_significant_bits32(1).map_err(|_| {
+                DracoError::DracoError("Failed to read traversal symbol".to_string())
+            })?;
             let topology = if first_bit == 0 {
                 0u32
             } else {
-                let suffix = in_buffer
-                    .decode_least_significant_bits32(2)
-                    .map_err(|_| DracoError::DracoError("Failed to read traversal symbol suffix".to_string()))?;
+                let suffix = in_buffer.decode_least_significant_bits32(2).map_err(|_| {
+                    DracoError::DracoError("Failed to read traversal symbol suffix".to_string())
+                })?;
                 1u32 | (suffix << 1)
             };
             symbols.push(Self::topology_bit_pattern_to_symbol_id(topology)?);
@@ -691,8 +739,10 @@ impl MeshEdgebreakerDecoder {
 
     fn assign_points_to_corners(&mut self, mesh: &mut Mesh) -> Result<(), DracoError> {
         // Matches C++ MeshEdgebreakerDecoderImpl::AssignPointsToCorners
-        let corner_table = self.corner_table.as_ref().ok_or(DracoError::DracoError("Corner table not initialized".to_string()))?;
-        
+        let corner_table = self.corner_table.as_ref().ok_or(DracoError::DracoError(
+            "Corner table not initialized".to_string(),
+        ))?;
+
         let num_vertices = corner_table.num_vertices();
         let num_faces = corner_table.num_faces();
 
@@ -700,7 +750,7 @@ impl MeshEdgebreakerDecoder {
         // correspond directly to point IDs. However, they must be visited in
         // discovery order to match the attribute data stream.
         // Discovery order follows the symbol traversal: {Next, Prev, Corner} for each face.
-        
+
         let mut point_ids = vec![PointIndex(u32::MAX); num_vertices];
         let mut data_to_corner_map = Vec::with_capacity(num_vertices);
         let mut visited_vertices = vec![false; num_vertices];
@@ -709,29 +759,32 @@ impl MeshEdgebreakerDecoder {
 
         // DFS logic matching C++ DepthFirstTraverser::TraverseFromCorner exactly.
         let traverse_from_corner = |start_corner: CornerIndex,
-                                        point_ids: &mut [PointIndex],
-                                        data_to_corner_map: &mut Vec<u32>,
-                                        visited_vertices: &mut [bool],
-                                        visited_faces: &mut [bool],
-                                        next_point_id: &mut u32| {
+                                    point_ids: &mut [PointIndex],
+                                    data_to_corner_map: &mut Vec<u32>,
+                                    visited_vertices: &mut [bool],
+                                    visited_faces: &mut [bool],
+                                    next_point_id: &mut u32| {
             let start_face = corner_table.face(start_corner);
-            if start_face == crate::geometry_indices::INVALID_FACE_INDEX || visited_faces[start_face.0 as usize] {
+            if start_face == crate::geometry_indices::INVALID_FACE_INDEX
+                || visited_faces[start_face.0 as usize]
+            {
                 return;
             }
 
             let mut corner_stack = vec![start_corner];
-            
+
             // Pre-visit next and prev vertices (matching C++ exactly - NOT the tip vertex)
             let next_c = corner_table.next(start_corner);
             let prev_c = corner_table.previous(start_corner);
             let next_vert = corner_table.vertex(next_c);
             let prev_vert = corner_table.vertex(prev_c);
-            
-            if next_vert == crate::geometry_indices::INVALID_VERTEX_INDEX 
-               || prev_vert == crate::geometry_indices::INVALID_VERTEX_INDEX {
+
+            if next_vert == crate::geometry_indices::INVALID_VERTEX_INDEX
+                || prev_vert == crate::geometry_indices::INVALID_VERTEX_INDEX
+            {
                 return;
             }
-            
+
             // Visit next vertex
             if !visited_vertices[next_vert.0 as usize] {
                 visited_vertices[next_vert.0 as usize] = true;
@@ -739,7 +792,7 @@ impl MeshEdgebreakerDecoder {
                 *next_point_id += 1;
                 data_to_corner_map.push(next_c.0);
             }
-            // Visit prev vertex  
+            // Visit prev vertex
             if !visited_vertices[prev_vert.0 as usize] {
                 visited_vertices[prev_vert.0 as usize] = true;
                 point_ids[prev_vert.0 as usize] = PointIndex(*next_point_id);
@@ -751,10 +804,11 @@ impl MeshEdgebreakerDecoder {
             while let Some(corner_id) = corner_stack.pop() {
                 let mut corner_id = corner_id;
                 let mut face_id = corner_table.face(corner_id);
-                
+
                 // Check if face already visited (C++ does this at loop start)
-                if corner_id == crate::geometry_indices::INVALID_CORNER_INDEX 
-                   || visited_faces[face_id.0 as usize] {
+                if corner_id == crate::geometry_indices::INVALID_CORNER_INDEX
+                    || visited_faces[face_id.0 as usize]
+                {
                     continue;
                 }
 
@@ -765,17 +819,18 @@ impl MeshEdgebreakerDecoder {
                     if vert_id == crate::geometry_indices::INVALID_VERTEX_INDEX {
                         break;
                     }
-                    
+
                     if !visited_vertices[vert_id.0 as usize] {
                         // C++ checks IsOnBoundary: SwingLeft(LeftMostCorner(v)) == kInvalidCornerIndex
                         let lmc = corner_table.left_most_corner(vert_id);
-                        let on_boundary = lmc == crate::geometry_indices::INVALID_CORNER_INDEX 
-                            || corner_table.swing_left(lmc) == crate::geometry_indices::INVALID_CORNER_INDEX;
+                        let on_boundary = lmc == crate::geometry_indices::INVALID_CORNER_INDEX
+                            || corner_table.swing_left(lmc)
+                                == crate::geometry_indices::INVALID_CORNER_INDEX;
                         visited_vertices[vert_id.0 as usize] = true;
                         point_ids[vert_id.0 as usize] = PointIndex(*next_point_id);
                         *next_point_id += 1;
                         data_to_corner_map.push(corner_id.0);
-                        
+
                         if !on_boundary {
                             // Move to right corner and continue (C++ GetRightCorner = Opposite(Next))
                             corner_id = corner_table.right_corner(corner_id);
@@ -786,27 +841,30 @@ impl MeshEdgebreakerDecoder {
                             continue;
                         }
                     }
-                    
+
                     // Vertex already visited or on boundary - check neighbors
                     let right_corner_id = corner_table.right_corner(corner_id);
                     let left_corner_id = corner_table.left_corner(corner_id);
-                    
-                    let right_face_id = if right_corner_id == crate::geometry_indices::INVALID_CORNER_INDEX {
-                        crate::geometry_indices::INVALID_FACE_INDEX
-                    } else {
-                        corner_table.face(right_corner_id)
-                    };
-                    let left_face_id = if left_corner_id == crate::geometry_indices::INVALID_CORNER_INDEX {
-                        crate::geometry_indices::INVALID_FACE_INDEX
-                    } else {
-                        corner_table.face(left_corner_id)
-                    };
-                    
-                    let right_visited = right_face_id == crate::geometry_indices::INVALID_FACE_INDEX 
-                                       || visited_faces[right_face_id.0 as usize];
-                    let left_visited = left_face_id == crate::geometry_indices::INVALID_FACE_INDEX 
-                                      || visited_faces[left_face_id.0 as usize];
-                    
+
+                    let right_face_id =
+                        if right_corner_id == crate::geometry_indices::INVALID_CORNER_INDEX {
+                            crate::geometry_indices::INVALID_FACE_INDEX
+                        } else {
+                            corner_table.face(right_corner_id)
+                        };
+                    let left_face_id =
+                        if left_corner_id == crate::geometry_indices::INVALID_CORNER_INDEX {
+                            crate::geometry_indices::INVALID_FACE_INDEX
+                        } else {
+                            corner_table.face(left_corner_id)
+                        };
+
+                    let right_visited = right_face_id
+                        == crate::geometry_indices::INVALID_FACE_INDEX
+                        || visited_faces[right_face_id.0 as usize];
+                    let left_visited = left_face_id == crate::geometry_indices::INVALID_FACE_INDEX
+                        || visited_faces[left_face_id.0 as usize];
+
                     if right_visited {
                         if left_visited {
                             // Both visited - break from inner loop
@@ -870,7 +928,11 @@ impl MeshEdgebreakerDecoder {
                 point_ids[v] = PointIndex(next_point_id);
                 next_point_id += 1;
                 let c = corner_table.left_most_corner(VertexIndex(v as u32));
-                data_to_corner_map.push(if c != crate::geometry_indices::INVALID_CORNER_INDEX { c.0 } else { 0 });
+                data_to_corner_map.push(if c != crate::geometry_indices::INVALID_CORNER_INDEX {
+                    c.0
+                } else {
+                    0
+                });
             }
         }
 
@@ -883,17 +945,13 @@ impl MeshEdgebreakerDecoder {
             let v0 = corner_table.vertex(c0);
             let v1 = corner_table.vertex(corner_table.next(c0));
             let v2 = corner_table.vertex(corner_table.previous(c0));
-            
+
             // Use vertex indices directly as point indices (matching C++)
-            mesh.set_face(fid, [
-                PointIndex(v0.0),
-                PointIndex(v1.0),
-                PointIndex(v2.0),
-            ]);
+            mesh.set_face(fid, [PointIndex(v0.0), PointIndex(v1.0), PointIndex(v2.0)]);
         }
         mesh.set_num_points(num_vertices);
         self.data_to_corner_map = Some(data_to_corner_map);
-        
+
         Ok(())
     }
 }
@@ -989,8 +1047,7 @@ impl<'a> EdgebreakerTraversalDecoder for InternalTraversalDecoder<'a> {
         // Don't log to test_event_log as this is a different phase than encoder's DFS traversal.
     }
 
-    fn on_vertices_swapped(&mut self, _v1: VertexIndex, _v2: VertexIndex) {
-    }
+    fn on_vertices_swapped(&mut self, _v1: VertexIndex, _v2: VertexIndex) {}
 
     fn on_start_face_decoded(&mut self, corner: CornerIndex) {
         // This corresponds to decoder init-corners / start-face handling, not the

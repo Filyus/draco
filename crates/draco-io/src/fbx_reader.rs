@@ -114,7 +114,15 @@ impl crate::traits::SceneReader for FbxReader<BufReader<File>> {
             } else if n.name == "Connections" {
                 for c in &n.children {
                     // Expect properties: String("OO"), I64(child), I64(parent)
-                    if let (Some(FbxProperty::String(_kind)), Some(FbxProperty::I64(child)), Some(FbxProperty::I64(parent))) = (c.properties.first(), c.properties.get(1), c.properties.get(2)) {
+                    if let (
+                        Some(FbxProperty::String(_kind)),
+                        Some(FbxProperty::I64(child)),
+                        Some(FbxProperty::I64(parent)),
+                    ) = (
+                        c.properties.first(),
+                        c.properties.get(1),
+                        c.properties.get(2),
+                    ) {
                         connections.push((*child, *parent));
                     }
                 }
@@ -139,13 +147,16 @@ impl crate::traits::SceneReader for FbxReader<BufReader<File>> {
                 if child.name == "Properties70" {
                     for prop in &child.children {
                         // property nodes often have first property as name string
-                        if let Some(crate::fbx_reader::FbxProperty::String(name)) = prop.properties.first() {
+                        if let Some(crate::fbx_reader::FbxProperty::String(name)) =
+                            prop.properties.first()
+                        {
                             if name.contains("Lcl Translation") {
                                 // find F64Array in properties
                                 for p in &prop.properties {
                                     if let crate::fbx_reader::FbxProperty::F64Array(arr) = p {
                                         if arr.len() >= 3 {
-                                            translation = Some([arr[0] as f32, arr[1] as f32, arr[2] as f32]);
+                                            translation =
+                                                Some([arr[0] as f32, arr[1] as f32, arr[2] as f32]);
                                         }
                                     }
                                 }
@@ -154,7 +165,8 @@ impl crate::traits::SceneReader for FbxReader<BufReader<File>> {
                                 for p in &prop.properties {
                                     if let crate::fbx_reader::FbxProperty::F64Array(arr) = p {
                                         if arr.len() >= 3 {
-                                            rotation = Some([arr[0] as f32, arr[1] as f32, arr[2] as f32]);
+                                            rotation =
+                                                Some([arr[0] as f32, arr[1] as f32, arr[2] as f32]);
                                         }
                                     }
                                 }
@@ -163,7 +175,8 @@ impl crate::traits::SceneReader for FbxReader<BufReader<File>> {
                                 for p in &prop.properties {
                                     if let crate::fbx_reader::FbxProperty::F64Array(arr) = p {
                                         if arr.len() >= 3 {
-                                            scaling = Some([arr[0] as f32, arr[1] as f32, arr[2] as f32]);
+                                            scaling =
+                                                Some([arr[0] as f32, arr[1] as f32, arr[2] as f32]);
                                         }
                                     }
                                 }
@@ -214,7 +227,11 @@ impl crate::traits::SceneReader for FbxReader<BufReader<File>> {
         }
 
         // Build nodes recursively
-        fn build_model_node(id: i64, model_map: &std::collections::HashMap<i64, &FbxNode>, model_children: &std::collections::HashMap<i64, Vec<i64>>) -> crate::traits::SceneNode {
+        fn build_model_node(
+            id: i64,
+            model_map: &std::collections::HashMap<i64, &FbxNode>,
+            model_children: &std::collections::HashMap<i64, Vec<i64>>,
+        ) -> crate::traits::SceneNode {
             let node_src = model_map.get(&id).unwrap();
             let mut node = crate::traits::SceneNode::new(Some(node_src.name.clone()));
             node.transform = parse_transform(node_src);
@@ -222,7 +239,8 @@ impl crate::traits::SceneReader for FbxReader<BufReader<File>> {
             if let Some(children) = model_children.get(&id) {
                 for &cid in children {
                     if model_map.contains_key(&cid) {
-                        node.children.push(build_model_node(cid, model_map, model_children));
+                        node.children
+                            .push(build_model_node(cid, model_map, model_children));
                     }
                 }
             }
@@ -230,13 +248,18 @@ impl crate::traits::SceneReader for FbxReader<BufReader<File>> {
         }
 
         // Map geometries to models and create parts
-        let mut model_parts: std::collections::HashMap<i64, Vec<crate::traits::SceneObject>> = std::collections::HashMap::new();
+        let mut model_parts: std::collections::HashMap<i64, Vec<crate::traits::SceneObject>> =
+            std::collections::HashMap::new();
         for (geom_id, geom_node) in geometry_map.iter() {
             if let Some(mesh) = self.geometry_to_mesh(geom_node)? {
                 // find connection mapping geometry -> model
                 for (child, parent) in connections.iter() {
                     if *child == *geom_id && model_map.contains_key(parent) {
-                        let part = crate::traits::SceneObject { name: Some(geom_node.name.clone()), mesh: mesh.clone(), transform: None };
+                        let part = crate::traits::SceneObject {
+                            name: Some(geom_node.name.clone()),
+                            mesh: mesh.clone(),
+                            transform: None,
+                        };
                         model_parts.entry(*parent).or_default().push(part);
                     }
                 }
@@ -246,9 +269,15 @@ impl crate::traits::SceneReader for FbxReader<BufReader<File>> {
         // Build root nodes: any model with parent 0 (or with no parent present)
         let mut root_nodes = Vec::new();
         // find top-level model ids
-        let top_level: Vec<i64> = model_map.keys().cloned().filter(|id| {
-            !connections.iter().any(|(child, parent)| child == id && model_map.contains_key(parent))
-        }).collect();
+        let top_level: Vec<i64> = model_map
+            .keys()
+            .cloned()
+            .filter(|id| {
+                !connections
+                    .iter()
+                    .any(|(child, parent)| child == id && model_map.contains_key(parent))
+            })
+            .collect();
 
         for id in top_level {
             let mut root_node = build_model_node(id, &model_map, &model_children);
@@ -262,10 +291,16 @@ impl crate::traits::SceneReader for FbxReader<BufReader<File>> {
         // Flatten parts for Scene.parts
         let mut all_parts = Vec::new();
         for parts in model_parts.values() {
-            for p in parts { all_parts.push(p.clone()); }
+            for p in parts {
+                all_parts.push(p.clone());
+            }
         }
 
-        Ok(crate::traits::Scene { name: None, parts: all_parts, root_nodes })
+        Ok(crate::traits::Scene {
+            name: None,
+            parts: all_parts,
+            root_nodes,
+        })
     }
 }
 
@@ -318,7 +353,12 @@ impl<R: Read + Seek> FbxReader<R> {
                 buf[16], buf[17], buf[18], buf[19], buf[20], buf[21], buf[22], buf[23],
             ]);
             let name_len = buf[24];
-            (end_offset, num_properties as u32, property_list_len, name_len)
+            (
+                end_offset,
+                num_properties as u32,
+                property_list_len,
+                name_len,
+            )
         } else {
             let mut buf = [0u8; 13];
             self.reader.read_exact(&mut buf)?;
@@ -407,7 +447,9 @@ impl<R: Read + Seek> FbxReader<R> {
                 let mut data = vec![0u8; len];
                 self.reader.read_exact(&mut data)?;
                 if type_code[0] == b'S' {
-                    Ok(FbxProperty::String(String::from_utf8_lossy(&data).to_string()))
+                    Ok(FbxProperty::String(
+                        String::from_utf8_lossy(&data).to_string(),
+                    ))
                 } else {
                     Ok(FbxProperty::Raw(data))
                 }
@@ -435,7 +477,12 @@ impl<R: Read + Seek> FbxReader<R> {
     }
 
     /// Read array data (handles compression).
-    fn read_array_data(&mut self, encoding: u32, compressed_len: u32, uncompressed_size: usize) -> io::Result<Vec<u8>> {
+    fn read_array_data(
+        &mut self,
+        encoding: u32,
+        compressed_len: u32,
+        uncompressed_size: usize,
+    ) -> io::Result<Vec<u8>> {
         if encoding == 0 {
             let mut data = vec![0u8; uncompressed_size];
             self.reader.read_exact(&mut data)?;
@@ -448,8 +495,12 @@ impl<R: Read + Seek> FbxReader<R> {
             #[cfg(feature = "compression")]
             {
                 use miniz_oxide::inflate::decompress_to_vec_zlib;
-                decompress_to_vec_zlib(&compressed)
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Decompression error: {:?}", e)))
+                decompress_to_vec_zlib(&compressed).map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Decompression error: {:?}", e),
+                    )
+                })
             }
 
             #[cfg(not(feature = "compression"))]
@@ -652,7 +703,7 @@ mod tests {
         data.extend_from_slice(FBX_MAGIC);
         data.extend_from_slice(&[0x1A, 0x00]); // Unknown bytes
         data.extend_from_slice(&7300u32.to_le_bytes()); // Version 7.3
-        // Add null record to end nodes
+                                                        // Add null record to end nodes
         data.extend_from_slice(&[0u8; 13]);
 
         let cursor = Cursor::new(data);

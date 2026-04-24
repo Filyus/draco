@@ -8,7 +8,7 @@ fn main() -> io::Result<()> {
     let mesh = create_test_mesh();
 
     println!("=== Writing test files ===\n");
-    
+
     let mut obj_writer = ObjWriter::new();
     obj_writer.add_mesh(&mesh, Some("TestMesh"))?;
     obj_writer.write("test_unified.obj")?;
@@ -29,7 +29,7 @@ fn main() -> io::Result<()> {
 
     // Using PointCloudReader trait
     use draco_io::PointCloudReader;
-    
+
     let mut obj_reader = ObjReader::open("test_unified.obj")?;
     let points = obj_reader.read_points()?;
     println!("OBJ: Read {} points", points.len());
@@ -46,11 +46,11 @@ fn main() -> io::Result<()> {
 fn load_and_display<R: Reader>(path: &str, format_name: &str) -> io::Result<()> {
     let mut reader = R::open(path)?;
     let mesh = reader.read_mesh()?;
-    
+
     println!("Format: {}", format_name);
     println!("  Points: {}", mesh.num_points());
     println!("  Attributes: {}", mesh.num_attributes());
-    
+
     Ok(())
 }
 
@@ -63,16 +63,22 @@ fn create_test_mesh() -> draco_core::mesh::Mesh {
     let mut mesh = Mesh::new();
     let mut pos_att = PointAttribute::new();
 
-    pos_att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, 4);
+    pos_att.init(
+        GeometryAttributeType::Position,
+        3,
+        DataType::Float32,
+        false,
+        4,
+    );
     let buffer = pos_att.buffer_mut();
-    
+
     let positions: [[f32; 3]; 4] = [
         [0.0, 0.0, 0.0],
         [1.0, 0.0, 0.0],
         [1.0, 1.0, 0.0],
         [0.0, 1.0, 0.0],
     ];
-    
+
     for (i, pos) in positions.iter().enumerate() {
         let bytes: Vec<u8> = pos.iter().flat_map(|v| v.to_le_bytes()).collect();
         buffer.write(i * 12, &bytes);

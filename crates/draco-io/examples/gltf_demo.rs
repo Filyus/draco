@@ -6,8 +6,8 @@ use draco_core::draco_types::DataType;
 use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
 use draco_core::geometry_indices::{FaceIndex, PointIndex};
 use draco_core::mesh::Mesh;
-use draco_io::gltf_writer::GltfWriter;
 use draco_io::gltf_reader::GltfReader;
+use draco_io::gltf_writer::GltfWriter;
 
 fn create_cube_mesh() -> Mesh {
     let mut mesh = Mesh::new();
@@ -16,17 +16,23 @@ fn create_cube_mesh() -> Mesh {
     // 8 vertices of a cube
     let positions: [f32; 24] = [
         -1.0, -1.0, -1.0, // 0
-         1.0, -1.0, -1.0, // 1
-         1.0,  1.0, -1.0, // 2
-        -1.0,  1.0, -1.0, // 3
-        -1.0, -1.0,  1.0, // 4
-         1.0, -1.0,  1.0, // 5
-         1.0,  1.0,  1.0, // 6
-        -1.0,  1.0,  1.0, // 7
+        1.0, -1.0, -1.0, // 1
+        1.0, 1.0, -1.0, // 2
+        -1.0, 1.0, -1.0, // 3
+        -1.0, -1.0, 1.0, // 4
+        1.0, -1.0, 1.0, // 5
+        1.0, 1.0, 1.0, // 6
+        -1.0, 1.0, 1.0, // 7
     ];
 
-    pos_att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, 8);
-    
+    pos_att.init(
+        GeometryAttributeType::Position,
+        3,
+        DataType::Float32,
+        false,
+        8,
+    );
+
     let buffer = pos_att.buffer_mut();
     for i in 0..8 {
         let bytes = [
@@ -42,19 +48,29 @@ fn create_cube_mesh() -> Mesh {
 
     // 12 triangles (6 faces * 2 triangles each)
     let faces = [
-        [0, 1, 2], [0, 2, 3], // Front
-        [1, 5, 6], [1, 6, 2], // Right
-        [5, 4, 7], [5, 7, 6], // Back
-        [4, 0, 3], [4, 3, 7], // Left
-        [3, 2, 6], [3, 6, 7], // Top
-        [4, 5, 1], [4, 1, 0], // Bottom
+        [0, 1, 2],
+        [0, 2, 3], // Front
+        [1, 5, 6],
+        [1, 6, 2], // Right
+        [5, 4, 7],
+        [5, 7, 6], // Back
+        [4, 0, 3],
+        [4, 3, 7], // Left
+        [3, 2, 6],
+        [3, 6, 7], // Top
+        [4, 5, 1],
+        [4, 1, 0], // Bottom
     ];
 
     mesh.set_num_faces(12);
     for (i, face) in faces.iter().enumerate() {
         mesh.set_face(
             FaceIndex(i as u32),
-            [PointIndex(face[0]), PointIndex(face[1]), PointIndex(face[2])],
+            [
+                PointIndex(face[0]),
+                PointIndex(face[1]),
+                PointIndex(face[2]),
+            ],
         );
     }
 
@@ -80,7 +96,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let glb_path = out_dir.join("cube.glb");
     writer.write_glb(glb_path.to_str().unwrap())?;
     let glb_size = std::fs::metadata(&glb_path)?.len();
-    println!("  1. GLB format: {} ({} bytes) ✓", glb_path.display(), glb_size);
+    println!(
+        "  1. GLB format: {} ({} bytes) ✓",
+        glb_path.display(),
+        glb_size
+    );
 
     // 2. glTF + .bin (separate files)
     let gltf_path = out_dir.join("cube.gltf");
@@ -88,25 +108,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     writer.write_gltf(gltf_path.to_str().unwrap(), bin_path.to_str().unwrap())?;
     let json_size = std::fs::metadata(&gltf_path)?.len();
     let bin_size = std::fs::metadata(&bin_path)?.len();
-    println!("  2. glTF + .bin: {} ({} bytes) + {} ({} bytes) ✓", gltf_path.display(), json_size, bin_path.display(), bin_size);
+    println!(
+        "  2. glTF + .bin: {} ({} bytes) + {} ({} bytes) ✓",
+        gltf_path.display(),
+        json_size,
+        bin_path.display(),
+        bin_size
+    );
 
     // 3. glTF embedded (pure text, no external files)
     let embedded_path = out_dir.join("cube_embedded.gltf");
     writer.write_gltf_embedded(embedded_path.to_str().unwrap())?;
     let embedded_size = std::fs::metadata(&embedded_path)?.len();
-    println!("  3. glTF embedded: {} ({} bytes, base64-encoded) ✓", embedded_path.display(), embedded_size);
+    println!(
+        "  3. glTF embedded: {} ({} bytes, base64-encoded) ✓",
+        embedded_path.display(),
+        embedded_size
+    );
 
     // Demonstrate reading back from written file
     println!("\nReading back {}...", glb_path.display());
     let reader = GltfReader::open(glb_path.to_str().unwrap())?;
-    
+
     println!("  Has Draco extension: {}", reader.has_draco_extension());
     println!("  Number of meshes: {}", reader.num_meshes());
-    
+
     let primitives = reader.draco_primitives();
     for (i, info) in primitives.iter().enumerate() {
-        println!("  Primitive {}: '{}'", i, 
-            info.mesh_name.as_deref().unwrap_or("<unnamed>"));
+        println!(
+            "  Primitive {}: '{}'",
+            i,
+            info.mesh_name.as_deref().unwrap_or("<unnamed>")
+        );
     }
 
     // Decode the mesh
@@ -119,7 +152,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Demonstrate embedded format from file
-    println!("\nTesting embedded glTF format at {}...", embedded_path.display());
+    println!(
+        "\nTesting embedded glTF format at {}...",
+        embedded_path.display()
+    );
     let reader2 = GltfReader::open(embedded_path.to_str().unwrap())?;
     println!("  Successfully parsed {}", embedded_path.display());
     println!("  Can decode: {}", reader2.has_draco_extension());
@@ -127,7 +163,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n✓ All formats work correctly!");
     println!("\nCreated files in {}:", out_dir.display()); // directory: output
     println!("  - {} (GLB with Draco embedded)", glb_path.display());
-    println!("  - {} + {} (glTF with external binary)", gltf_path.display(), bin_path.display());
+    println!(
+        "  - {} + {} (glTF with external binary)",
+        gltf_path.display(),
+        bin_path.display()
+    );
     println!("  - {} (pure text with base64)", embedded_path.display());
 
     Ok(())

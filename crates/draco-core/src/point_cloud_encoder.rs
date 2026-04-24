@@ -1,17 +1,17 @@
-use crate::point_cloud::PointCloud;
-use crate::mesh::Mesh;
-use crate::encoder_buffer::EncoderBuffer;
-use crate::status::{Status, DracoError};
-use crate::encoder_options::EncoderOptions;
 use crate::compression_config::EncodedGeometryType;
-use crate::sequential_integer_attribute_encoder::SequentialIntegerAttributeEncoder;
-use crate::sequential_normal_attribute_encoder::SequentialNormalAttributeEncoder;
+use crate::encoder_buffer::EncoderBuffer;
+use crate::encoder_options::EncoderOptions;
+use crate::geometry_attribute::GeometryAttributeType;
 use crate::geometry_indices::PointIndex;
 use crate::kd_tree_attributes_encoder::KdTreeAttributesEncoder;
-use crate::geometry_attribute::GeometryAttributeType;
+use crate::mesh::Mesh;
+use crate::point_cloud::PointCloud;
+use crate::sequential_integer_attribute_encoder::SequentialIntegerAttributeEncoder;
+use crate::sequential_normal_attribute_encoder::SequentialNormalAttributeEncoder;
+use crate::status::{DracoError, Status};
 use crate::version::{
-    DEFAULT_POINT_CLOUD_SEQUENTIAL_VERSION, DEFAULT_POINT_CLOUD_KD_TREE_VERSION,
     has_header_flags, uses_varint_encoding, uses_varint_unique_id,
+    DEFAULT_POINT_CLOUD_KD_TREE_VERSION, DEFAULT_POINT_CLOUD_SEQUENTIAL_VERSION,
 };
 
 use crate::corner_table::CornerTable;
@@ -22,9 +22,15 @@ pub trait GeometryEncoder {
     fn corner_table(&self) -> Option<&CornerTable>;
     fn options(&self) -> &EncoderOptions;
     fn get_geometry_type(&self) -> EncodedGeometryType;
-    fn get_encoding_method(&self) -> Option<i32> { None }
-    fn get_data_to_corner_map(&self) -> Option<Vec<u32>> { None }
-    fn get_vertex_to_data_map(&self) -> Option<Vec<i32>> { None }
+    fn get_encoding_method(&self) -> Option<i32> {
+        None
+    }
+    fn get_data_to_corner_map(&self) -> Option<Vec<u32>> {
+        None
+    }
+    fn get_vertex_to_data_map(&self) -> Option<Vec<i32>> {
+        None
+    }
 }
 
 pub struct PointCloudEncoder {
@@ -78,20 +84,20 @@ impl PointCloudEncoder {
 
     pub fn encode(&mut self, options: &EncoderOptions, out_buffer: &mut EncoderBuffer) -> Status {
         self.options = options.clone();
-        
+
         if self.point_cloud.is_none() {
             return Err(DracoError::DracoError("Point cloud not set".to_string()));
         }
         let pc = self.point_cloud.as_ref().unwrap();
-        
+
         let method = self.options.get_encoding_method().unwrap_or(0);
 
         // 1. Encode Header
         self.encode_header(out_buffer, method);
-        
+
         if method == 1 {
             // KD-Tree Encoding (Draco v2.3)
-            
+
             // Encode Geometry Data (Num points)
             // Note: Draco point cloud encodes num_points as fixed u32 for both
             // sequential and KD-tree, NOT as varint (matching decoder).
@@ -109,7 +115,9 @@ impl PointCloudEncoder {
 
             // Init (Transform attributes to portable format)
             if !att_encoder.transform_attributes_to_portable_format(pc, &self.options) {
-                 return Err(DracoError::DracoError("Failed to transform attributes".to_string()));
+                return Err(DracoError::DracoError(
+                    "Failed to transform attributes".to_string(),
+                ));
             }
 
             // Note: KD-tree encoding does NOT write an encoder type identifier byte.
@@ -119,22 +127,27 @@ impl PointCloudEncoder {
 
             // Encode Attributes Encoder Data (Metadata)
             if !att_encoder.encode_attributes_encoder_data(pc, out_buffer) {
-                return Err(DracoError::DracoError("Failed to encode attribute metadata".to_string()));
+                return Err(DracoError::DracoError(
+                    "Failed to encode attribute metadata".to_string(),
+                ));
             }
 
             // Encode Attributes (Portable Data)
             if !att_encoder.encode_attributes(pc, &self.options, out_buffer) {
-                return Err(DracoError::DracoError("Failed to encode attributes".to_string()));
+                return Err(DracoError::DracoError(
+                    "Failed to encode attributes".to_string(),
+                ));
             }
 
             // Encode Attributes Transform Data
             if !att_encoder.encode_data_needed_by_portable_transforms(out_buffer) {
-                return Err(DracoError::DracoError("Failed to encode attribute transform data".to_string()));
+                return Err(DracoError::DracoError(
+                    "Failed to encode attribute transform data".to_string(),
+                ));
             }
-
         } else {
             // Sequential Encoding (Draco v1.3)
-            // 
+            //
             // C++ Structure:
             // 1. num_points (u32)
             // 2. num_attribute_encoders (u8)
@@ -144,21 +157,22 @@ impl PointCloudEncoder {
             //    - for each attribute: type, data_type, num_components, normalized, unique_id
             // 5. For each attribute: decoder_type (u8)
             // 6. For each attribute: encoded data
-            
+
             let num_points = pc.num_points();
             let num_attributes = pc.num_attributes();
-            let point_ids: Vec<PointIndex> = (0..num_points).map(|i| PointIndex(i as u32)).collect();
+            let point_ids: Vec<PointIndex> =
+                (0..num_points).map(|i| PointIndex(i as u32)).collect();
 
             // Draco bitstream < 2.0 encodes number of points as a fixed u32.
             out_buffer.encode_u32(num_points as u32);
-            
+
             // Number of attribute encoders
             // For empty point clouds (0 attributes), we write 0 encoders
             if num_attributes == 0 {
                 out_buffer.encode_u8(0);
                 return Ok(());
             }
-            
+
             // For non-empty point clouds, use 1 encoder for all attributes
             out_buffer.encode_u8(1);
 
@@ -171,7 +185,7 @@ impl PointCloudEncoder {
             } else {
                 out_buffer.encode_varint(num_attributes as u64);
             }
-            
+
             // For each attribute, encode metadata
             for i in 0..num_attributes {
                 let att = pc.attribute(i);
@@ -179,14 +193,14 @@ impl PointCloudEncoder {
                 out_buffer.encode_u8(att.data_type() as u8);
                 out_buffer.encode_u8(att.num_components());
                 out_buffer.encode_u8(if att.normalized() { 1 } else { 0 });
-                
+
                 if !uses_varint_unique_id(major, minor) {
                     out_buffer.encode_u16(att.unique_id() as u16);
                 } else {
                     out_buffer.encode_varint(att.unique_id() as u64);
                 }
             }
-            
+
             // Encode decoder types for each attribute
             // 0 = SEQUENTIAL_ATTRIBUTE_ENCODER_GENERIC
             // 1 = SEQUENTIAL_ATTRIBUTE_ENCODER_INTEGER
@@ -210,19 +224,21 @@ impl PointCloudEncoder {
             // Encoding follows C++ order:
             // 1. EncodePortableAttributes (encode_values for each attribute)
             // 2. EncodeDataNeededByPortableTransforms (transform params for each attribute)
-            
+
             // Store encoders so we can call encode_data_needed_by_portable_transform later
-            let mut integer_encoders: Vec<Option<SequentialIntegerAttributeEncoder>> = Vec::with_capacity(num_attributes as usize);
-            let mut normal_encoders: Vec<Option<SequentialNormalAttributeEncoder>> = Vec::with_capacity(num_attributes as usize);
-            
+            let mut integer_encoders: Vec<Option<SequentialIntegerAttributeEncoder>> =
+                Vec::with_capacity(num_attributes as usize);
+            let mut normal_encoders: Vec<Option<SequentialNormalAttributeEncoder>> =
+                Vec::with_capacity(num_attributes as usize);
+
             // First pass: encode all values
             for i in 0..num_attributes {
                 let att = pc.attribute(i);
-                
+
                 if att.attribute_type() == GeometryAttributeType::Normal {
                     let mut att_encoder = SequentialNormalAttributeEncoder::new();
                     if !att_encoder.init(pc, i, &self.options) {
-                         return Err(DracoError::DracoError(format!(
+                        return Err(DracoError::DracoError(format!(
                             "Failed to init normal attribute encoder {}",
                             i
                         )));
@@ -234,29 +250,37 @@ impl PointCloudEncoder {
                             i
                         )));
                     }
-                    
+
                     integer_encoders.push(None);
                     normal_encoders.push(Some(att_encoder));
                 } else {
                     let mut att_encoder = SequentialIntegerAttributeEncoder::new();
                     att_encoder.init(i);
 
-                    if !att_encoder.encode_values(pc, &point_ids, out_buffer, &self.options, self, None, false) {
+                    if !att_encoder.encode_values(
+                        pc,
+                        &point_ids,
+                        out_buffer,
+                        &self.options,
+                        self,
+                        None,
+                        false,
+                    ) {
                         return Err(DracoError::DracoError(format!(
                             "Failed to encode attribute {}",
                             i
                         )));
                     }
-                    
+
                     integer_encoders.push(Some(att_encoder));
                     normal_encoders.push(None);
                 }
             }
-            
+
             // Second pass: encode transform parameters (EncodeDataNeededByPortableTransforms)
             for i in 0..num_attributes as usize {
                 let att = pc.attribute(i as i32);
-                
+
                 if att.attribute_type() == GeometryAttributeType::Normal {
                     if let Some(ref att_encoder) = normal_encoders[i] {
                         if !att_encoder.encode_data_needed_by_portable_transform(out_buffer) {
@@ -276,13 +300,13 @@ impl PointCloudEncoder {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn encode_header(&self, buffer: &mut EncoderBuffer, method: i32) {
         buffer.encode_data(b"DRACO");
-        
+
         let (mut major, mut minor) = self.options.get_version();
         if major == 0 && minor == 0 {
             if method == 1 {
@@ -291,19 +315,19 @@ impl PointCloudEncoder {
                 (major, minor) = DEFAULT_POINT_CLOUD_SEQUENTIAL_VERSION;
             }
         }
-        
+
         buffer.encode_u8(major);
         buffer.encode_u8(minor);
         buffer.set_version(major, minor);
-        
+
         buffer.encode_u8(self.get_geometry_type() as u8);
-        buffer.encode_u8(method as u8); 
-        
+        buffer.encode_u8(method as u8);
+
         if has_header_flags(major, minor) {
             buffer.encode_u16(0); // Flags
         }
     }
-    
+
     pub fn get_geometry_type(&self) -> EncodedGeometryType {
         EncodedGeometryType::PointCloud
     }

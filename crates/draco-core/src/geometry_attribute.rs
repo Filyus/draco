@@ -44,7 +44,16 @@ impl GeometryAttribute {
     // This matches the C++ PointAttribute::Init() signature and cannot be simplified
     // without breaking API compatibility or making attribute setup less explicit.
     #[allow(clippy::too_many_arguments)]
-    pub fn init(&mut self, attribute_type: GeometryAttributeType, _buffer: Option<&DataBuffer>, num_components: u8, data_type: DataType, normalized: bool, byte_stride: i64, byte_offset: i64) {
+    pub fn init(
+        &mut self,
+        attribute_type: GeometryAttributeType,
+        _buffer: Option<&DataBuffer>,
+        num_components: u8,
+        data_type: DataType,
+        normalized: bool,
+        byte_stride: i64,
+        byte_offset: i64,
+    ) {
         self.attribute_type = attribute_type;
         self.num_components = num_components;
         self.data_type = data_type;
@@ -52,7 +61,7 @@ impl GeometryAttribute {
         self.byte_stride = byte_stride;
         self.byte_offset = byte_offset;
     }
-    
+
     pub fn attribute_type(&self) -> GeometryAttributeType {
         self.attribute_type
     }
@@ -126,10 +135,26 @@ impl PointAttribute {
         Self::default()
     }
 
-    pub fn init(&mut self, attribute_type: GeometryAttributeType, num_components: u8, data_type: DataType, normalized: bool, num_attribute_values: usize) {
+    pub fn init(
+        &mut self,
+        attribute_type: GeometryAttributeType,
+        num_components: u8,
+        data_type: DataType,
+        normalized: bool,
+        num_attribute_values: usize,
+    ) {
         let byte_stride = (num_components as usize * data_type.byte_length()) as i64;
-        self.base.init(attribute_type, None, num_components, data_type, normalized, byte_stride, 0);
-        self.buffer.resize(num_attribute_values * byte_stride as usize);
+        self.base.init(
+            attribute_type,
+            None,
+            num_components,
+            data_type,
+            normalized,
+            byte_stride,
+            0,
+        );
+        self.buffer
+            .resize(num_attribute_values * byte_stride as usize);
         self.num_unique_entries = num_attribute_values;
         self.identity_mapping = true;
     }
@@ -155,11 +180,11 @@ impl PointAttribute {
     pub fn buffer_mut(&mut self) -> &mut DataBuffer {
         &mut self.buffer
     }
-    
+
     pub fn attribute_type(&self) -> GeometryAttributeType {
         self.base.attribute_type()
     }
-    
+
     pub fn unique_id(&self) -> u32 {
         self.base.unique_id()
     }
@@ -187,14 +212,19 @@ impl PointAttribute {
 
     pub fn set_explicit_mapping(&mut self, num_points: usize) {
         self.identity_mapping = false;
-        self.indices_map.resize(num_points, INVALID_ATTRIBUTE_VALUE_INDEX);
+        self.indices_map
+            .resize(num_points, INVALID_ATTRIBUTE_VALUE_INDEX);
     }
 
-    pub fn set_point_map_entry(&mut self, point_index: PointIndex, entry_index: AttributeValueIndex) {
+    pub fn set_point_map_entry(
+        &mut self,
+        point_index: PointIndex,
+        entry_index: AttributeValueIndex,
+    ) {
         if self.identity_mapping {
-             // Switch to explicit mapping if needed, or just assert?
-             // For now, assume caller called SetExplicitMapping
-             return; 
+            // Switch to explicit mapping if needed, or just assert?
+            // For now, assume caller called SetExplicitMapping
+            return;
         }
         self.indices_map[point_index.0 as usize] = entry_index;
     }

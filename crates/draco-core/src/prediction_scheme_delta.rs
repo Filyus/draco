@@ -1,5 +1,7 @@
 use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
-use crate::prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
+use crate::prediction_scheme::{
+    PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType,
+};
 use std::marker::PhantomData;
 
 #[cfg(feature = "decoder")]
@@ -115,7 +117,10 @@ where
         }
     }
 
-    fn decode_transform_data(&mut self, _buffer: &mut crate::decoder_buffer::DecoderBuffer) -> bool {
+    fn decode_transform_data(
+        &mut self,
+        _buffer: &mut crate::decoder_buffer::DecoderBuffer,
+    ) -> bool {
         true
     }
 
@@ -174,7 +179,7 @@ where
     fn get_transform_type(&self) -> PredictionSchemeTransformType {
         self.transform.get_type()
     }
-    
+
     fn are_corrections_positive(&self) -> bool {
         self.transform.are_corrections_positive()
     }
@@ -204,8 +209,7 @@ where
             let original = &in_data[i..i + num_components];
             let predicted = &in_data[i - num_components..i];
             let corr = &mut out_corr[i..i + num_components];
-            self.transform
-                .compute_correction(original, predicted, corr);
+            self.transform.compute_correction(original, predicted, corr);
 
             if i < num_components {
                 break;
@@ -279,7 +283,7 @@ where
     fn get_transform_type(&self) -> PredictionSchemeTransformType {
         self.transform.get_type()
     }
-    
+
     fn are_corrections_positive(&self) -> bool {
         self.transform.are_corrections_positive()
     }
@@ -308,24 +312,26 @@ where
         let mut predicted = vec![DataType::default(); num_components];
         let corr = &in_corr[0..num_components];
         let out = &mut out_data[0..num_components];
-        self.transform
-            .compute_original_value(&predicted, corr, out);  // predicted is all zeros here
+        self.transform.compute_original_value(&predicted, corr, out); // predicted is all zeros here
 
         // Decode data from the front using D(i) = D(i) + D(i - 1).
         for i in (num_components..size).step_by(num_components) {
             // Copy previous values to the pre-allocated buffer
             predicted.copy_from_slice(&out_data[i - num_components..i]);
-            
+
             let corr = &in_corr[i..i + num_components];
             let out = &mut out_data[i..i + num_components];
-            
+
             self.transform.compute_original_value(&predicted, corr, out);
         }
 
         true
     }
 
-    fn decode_prediction_data(&mut self, buffer: &mut crate::decoder_buffer::DecoderBuffer) -> bool {
+    fn decode_prediction_data(
+        &mut self,
+        buffer: &mut crate::decoder_buffer::DecoderBuffer,
+    ) -> bool {
         self.transform.decode_transform_data(buffer)
     }
 }

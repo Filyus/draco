@@ -37,7 +37,7 @@ impl KdTreeAttributesEncoder {
     ) -> bool {
         // Encode number of attributes
         out_buffer.encode_varint(self.attribute_ids.len() as u64);
-        
+
         for &att_id in &self.attribute_ids {
             let att = point_cloud.attribute(att_id);
             // Encode attribute metadata
@@ -64,9 +64,7 @@ impl KdTreeAttributesEncoder {
         self.min_signed_values.clear();
 
         let num_points = point_cloud.num_points();
-        let point_ids: Vec<PointIndex> = (0..num_points)
-            .map(|i| PointIndex(i as u32))
-            .collect();
+        let point_ids: Vec<PointIndex> = (0..num_points).map(|i| PointIndex(i as u32)).collect();
 
         let mut total_components: u32 = 0;
         for &att_id in &self.attribute_ids {
@@ -79,7 +77,8 @@ impl KdTreeAttributesEncoder {
             let att = point_cloud.attribute(att_id);
             match att.data_type() {
                 DataType::Float32 => {
-                    let quantization_bits = options.get_attribute_int(att_id, "quantization_bits", -1);
+                    let quantization_bits =
+                        options.get_attribute_int(att_id, "quantization_bits", -1);
                     if quantization_bits < 1 {
                         return false;
                     }
@@ -115,7 +114,11 @@ impl KdTreeAttributesEncoder {
                         let avi = att.mapped_index(PointIndex(i as u32));
                         let base = avi.0 as usize * stride;
                         for c in 0..num_components {
-                            let v = read_as_i32(att.buffer(), base + c * component_size, att.data_type());
+                            let v = read_as_i32(
+                                att.buffer(),
+                                base + c * component_size,
+                                att.data_type(),
+                            );
                             if v < min_vals[c] {
                                 min_vals[c] = v;
                             }
@@ -157,13 +160,19 @@ impl KdTreeAttributesEncoder {
             let use_quantized;
 
             let src: &crate::geometry_attribute::PointAttribute = match att.data_type() {
-                DataType::Uint32 | DataType::Uint16 | DataType::Uint8 | DataType::Int32 | DataType::Int16 | DataType::Int8 => {
+                DataType::Uint32
+                | DataType::Uint16
+                | DataType::Uint8
+                | DataType::Int32
+                | DataType::Int16
+                | DataType::Int8 => {
                     use_quantized = false;
                     att
                 }
                 DataType::Float32 => {
                     use_quantized = true;
-                    let pa = &self.quantized_portable_attributes[num_processed_quantized_attributes];
+                    let pa =
+                        &self.quantized_portable_attributes[num_processed_quantized_attributes];
                     num_processed_quantized_attributes += 1;
                     pa
                 }
@@ -183,7 +192,11 @@ impl KdTreeAttributesEncoder {
                         let base = avi.0 as usize * stride;
                         let dst = point_vector.point_mut(p);
                         for c in 0..num_att_components {
-                            let v = read_as_u32(src.buffer(), base + c * component_size, DataType::Uint32);
+                            let v = read_as_u32(
+                                src.buffer(),
+                                base + c * component_size,
+                                DataType::Uint32,
+                            );
                             dst[num_processed_components + c] = v;
                         }
                     }
@@ -194,7 +207,11 @@ impl KdTreeAttributesEncoder {
                         let base = avi.0 as usize * stride;
                         let dst = point_vector.point_mut(p);
                         for c in 0..num_att_components {
-                            let signed = read_as_i32(src.buffer(), base + c * component_size, src.data_type());
+                            let signed = read_as_i32(
+                                src.buffer(),
+                                base + c * component_size,
+                                src.data_type(),
+                            );
                             let minv = self.min_signed_values[num_processed_signed_components + c];
                             dst[num_processed_components + c] = (signed - minv) as u32;
                         }
@@ -207,7 +224,11 @@ impl KdTreeAttributesEncoder {
                         let base = avi.0 as usize * stride;
                         let dst = point_vector.point_mut(p);
                         for c in 0..num_att_components {
-                            let v = read_as_u32(src.buffer(), base + c * component_size, src.data_type());
+                            let v = read_as_u32(
+                                src.buffer(),
+                                base + c * component_size,
+                                src.data_type(),
+                            );
                             dst[num_processed_components + c] = v;
                         }
                     }
@@ -235,11 +256,15 @@ impl KdTreeAttributesEncoder {
             }
         }
 
-        let mut encoder = DynamicIntegerPointsKdTreeEncoder::new(compression_level, self.num_components);
+        let mut encoder =
+            DynamicIntegerPointsKdTreeEncoder::new(compression_level, self.num_components);
         encoder.encode_points(&mut point_vector, num_bits, out_buffer)
     }
 
-    pub fn encode_data_needed_by_portable_transforms(&self, out_buffer: &mut EncoderBuffer) -> bool {
+    pub fn encode_data_needed_by_portable_transforms(
+        &self,
+        out_buffer: &mut EncoderBuffer,
+    ) -> bool {
         for t in &self.attribute_quantization_transforms {
             if !t.encode_parameters(out_buffer) {
                 return false;

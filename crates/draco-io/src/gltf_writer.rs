@@ -328,7 +328,10 @@ impl GltfWriter {
             let node_idx = self
                 .push_scene_node(root, &quantization)
                 .map_err(|e| match e {
-                    GltfWriteError::Io(_) | GltfWriteError::Json(_) | GltfWriteError::DracoEncode(_) | GltfWriteError::InvalidMesh(_) => e,
+                    GltfWriteError::Io(_)
+                    | GltfWriteError::Json(_)
+                    | GltfWriteError::DracoEncode(_)
+                    | GltfWriteError::InvalidMesh(_) => e,
                 })?;
             root_node_indices.push(node_idx);
         }
@@ -350,10 +353,8 @@ impl GltfWriter {
         // Input is row-major; glTF expects column-major.
         let m = &transform.matrix;
         [
-            m[0][0], m[1][0], m[2][0], m[3][0],
-            m[0][1], m[1][1], m[2][1], m[3][1],
-            m[0][2], m[1][2], m[2][2], m[3][2],
-            m[0][3], m[1][3], m[2][3], m[3][3],
+            m[0][0], m[1][0], m[2][0], m[3][0], m[0][1], m[1][1], m[2][1], m[3][1], m[0][2],
+            m[1][2], m[2][2], m[3][2], m[0][3], m[1][3], m[2][3], m[3][3],
         ]
     }
 
@@ -371,34 +372,31 @@ impl GltfWriter {
             mesh: None,
             name: node.name.clone(),
             children: Vec::new(),
-            matrix: node
-                .transform
-                .as_ref()
-                .map(Self::transform_to_gltf_matrix),
+            matrix: node.transform.as_ref().map(Self::transform_to_gltf_matrix),
         });
 
         // Attach parts.
         if node.parts.len() == 1 {
             let part = &node.parts[0];
-            let mesh_idx = self.encode_draco_mesh_internal(&part.mesh, part.name.as_deref(), quantization)?;
+            let mesh_idx =
+                self.encode_draco_mesh_internal(&part.mesh, part.name.as_deref(), quantization)?;
             self.nodes[node_idx].mesh = Some(mesh_idx);
         } else if !node.parts.is_empty() {
             for (i, part) in node.parts.iter().enumerate() {
-                let part_mesh_idx =
-                    self.encode_draco_mesh_internal(&part.mesh, part.name.as_deref(), quantization)?;
+                let part_mesh_idx = self.encode_draco_mesh_internal(
+                    &part.mesh,
+                    part.name.as_deref(),
+                    quantization,
+                )?;
                 let child_idx = self.nodes.len();
                 self.nodes.push(NodeOut {
                     mesh: Some(part_mesh_idx),
-                    name: part.name.clone().or_else(|| {
-                        node.name
-                            .as_ref()
-                            .map(|n| format!("{}_part{}", n, i))
-                    }),
+                    name: part
+                        .name
+                        .clone()
+                        .or_else(|| node.name.as_ref().map(|n| format!("{}_part{}", n, i))),
                     children: Vec::new(),
-                    matrix: part
-                        .transform
-                        .as_ref()
-                        .map(Self::transform_to_gltf_matrix),
+                    matrix: part.transform.as_ref().map(Self::transform_to_gltf_matrix),
                 });
                 self.nodes[node_idx].children.push(child_idx);
             }
@@ -605,10 +603,10 @@ impl GltfWriter {
     }
 
     /// Write as a single glTF JSON file with embedded base64 data URI.
-    /// 
+    ///
     /// This creates a pure text file with no external dependencies.
     /// The binary data is embedded directly in the JSON using base64 encoding.
-    /// 
+    ///
     /// # Example
     /// ```ignore
     /// writer.write_gltf_embedded("model.gltf")?;
@@ -669,33 +667,34 @@ impl GltfWriter {
     }
 
     fn encode_data_uri(data: &[u8]) -> String {
-        const ENCODE_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        
+        const ENCODE_TABLE: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
         let mut output = String::from("data:application/octet-stream;base64,");
-        
+
         for chunk in data.chunks(3) {
             let b1 = chunk[0];
             let b2 = chunk.get(1).copied().unwrap_or(0);
             let b3 = chunk.get(2).copied().unwrap_or(0);
-            
+
             let n = ((b1 as u32) << 16) | ((b2 as u32) << 8) | (b3 as u32);
-            
+
             output.push(ENCODE_TABLE[((n >> 18) & 0x3F) as usize] as char);
             output.push(ENCODE_TABLE[((n >> 12) & 0x3F) as usize] as char);
-            
+
             if chunk.len() > 1 {
                 output.push(ENCODE_TABLE[((n >> 6) & 0x3F) as usize] as char);
             } else {
                 output.push('=');
             }
-            
+
             if chunk.len() > 2 {
                 output.push(ENCODE_TABLE[(n & 0x3F) as usize] as char);
             } else {
                 output.push('=');
             }
         }
-        
+
         output
     }
 
@@ -855,10 +854,7 @@ mod tests {
 
         mesh.add_attribute(pos_att);
         mesh.set_num_faces(1);
-        mesh.set_face(
-            FaceIndex(0),
-            [PointIndex(0), PointIndex(1), PointIndex(2)],
-        );
+        mesh.set_face(FaceIndex(0), [PointIndex(0), PointIndex(1), PointIndex(2)]);
 
         mesh
     }
@@ -881,7 +877,19 @@ mod tests {
         let mut writer = GltfWriter::new();
 
         // Use custom quantization (still works with explicit values)
-        let idx = writer.add_draco_mesh(&mesh, Some("Triangle"), QuantizationBits { position: 10, normal: 10, color: 8, texcoord: 8, generic: 8 }).unwrap();
+        let idx = writer
+            .add_draco_mesh(
+                &mesh,
+                Some("Triangle"),
+                QuantizationBits {
+                    position: 10,
+                    normal: 10,
+                    color: 8,
+                    texcoord: 8,
+                    generic: 8,
+                },
+            )
+            .unwrap();
         assert_eq!(idx, 0);
 
         let glb = writer.to_glb().unwrap();
@@ -899,7 +907,9 @@ mod tests {
         let mesh = create_test_triangle();
         let mut writer = GltfWriter::new();
         // Use default quantization with None
-        writer.add_draco_mesh(&mesh, Some("Triangle"), None).unwrap();
+        writer
+            .add_draco_mesh(&mesh, Some("Triangle"), None)
+            .unwrap();
 
         let glb = writer.to_glb().unwrap();
 
@@ -921,7 +931,10 @@ mod tests {
         let encoded = encode_draco_mesh(&create_test_triangle(), None).unwrap();
 
         assert!(encoded.len() > 8, "encoded Draco buffer is too small");
-        assert_eq!(encoded[8], 1, "default mesh encoding method should match C++ ExpertEncoder selection");
+        assert_eq!(
+            encoded[8], 1,
+            "default mesh encoding method should match C++ ExpertEncoder selection"
+        );
     }
 
     #[cfg(feature = "decoder")]
@@ -962,7 +975,10 @@ mod tests {
         assert_eq!(out_scene.root_nodes.len(), 1);
         assert_eq!(out_scene.root_nodes[0].name, Some("Root".to_string()));
         assert_eq!(out_scene.root_nodes[0].children.len(), 1);
-        assert_eq!(out_scene.root_nodes[0].children[0].name, Some("Child".to_string()));
+        assert_eq!(
+            out_scene.root_nodes[0].children[0].name,
+            Some("Child".to_string())
+        );
         assert_eq!(out_scene.root_nodes[0].children[0].parts.len(), 1);
 
         // Verify transforms survived matrix column/row conversion.
@@ -989,11 +1005,13 @@ mod tests {
         let mesh = create_test_triangle();
         let mut writer = GltfWriter::new();
         // Use default quantization with None
-        writer.add_draco_mesh(&mesh, Some("Triangle"), None).unwrap();
+        writer
+            .add_draco_mesh(&mesh, Some("Triangle"), None)
+            .unwrap();
 
         // Generate embedded glTF JSON
         let json = writer.to_gltf_embedded().unwrap();
-        
+
         // Verify it contains data URI
         assert!(json.contains("data:application/octet-stream;base64,"));
         assert!(json.contains("KHR_draco_mesh_compression"));

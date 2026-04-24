@@ -1,21 +1,21 @@
 //! Common traits for readers and writers.
 //!
 //! These traits define consistent interfaces for all format implementations.
-//! 
+//!
 //! # Usage
-//! 
+//!
 //! Import the trait to access its methods:
-//! 
+//!
 //! ```ignore
 //! use draco_io::{Writer, ObjWriter};
-//! 
+//!
 //! let mut writer = ObjWriter::new();
 //! writer.add_mesh(&mesh, Some("Name"))?;  // Calls trait method
 //! writer.write("output.obj")?;
 //! ```
-//! 
+//!
 //! This enables generic functions:
-//! 
+//!
 //! ```ignore
 //! fn save<W: Writer>(mut w: W, mesh: &Mesh) -> io::Result<()> {
 //!     w.add_mesh(mesh, Some("Model"))?;
@@ -54,7 +54,12 @@ pub struct SceneNode {
 
 impl SceneNode {
     pub fn new(name: Option<String>) -> Self {
-        Self { name, transform: None, parts: Vec::new(), children: Vec::new() }
+        Self {
+            name,
+            transform: None,
+            parts: Vec::new(),
+            children: Vec::new(),
+        }
     }
 }
 

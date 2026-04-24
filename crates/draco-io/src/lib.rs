@@ -92,13 +92,13 @@
 //!
 //! let mut writer = GltfWriter::new();
 //! writer.add_draco_mesh(&mesh, Some("MyMesh"), None)?;  // Use default quantization
-//! 
+//!
 //! // Option 1: Binary GLB (most compact)
 //! writer.write_glb("output.glb")?;
-//! 
+//!
 //! // Option 2: Separate JSON and binary
 //! writer.write_gltf("output.gltf", "output.bin")?;
-//! 
+//!
 //! // Option 3: Pure text with embedded data (no external files)
 //! writer.write_gltf_embedded("output.gltf")?;
 //! ```
@@ -140,9 +140,12 @@ pub use gltf_writer::{GltfWriteError, GltfWriter};
 pub use obj_reader::ObjReader;
 #[cfg(feature = "encoder")]
 pub use obj_writer::ObjWriter;
+pub use ply_format::PlyFormat;
 #[cfg(feature = "decoder")]
 pub use ply_reader::PlyReader;
 #[cfg(feature = "encoder")]
 pub use ply_writer::PlyWriter;
-pub use ply_format::PlyFormat;
-pub use traits::{PointCloudReader, PointCloudWriter, Reader, Writer, Scene, SceneObject, SceneReader, SceneWriter, Transform, SceneNode};
+pub use traits::{
+    PointCloudReader, PointCloudWriter, Reader, Scene, SceneNode, SceneObject, SceneReader,
+    SceneWriter, Transform, Writer,
+};

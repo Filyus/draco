@@ -26,7 +26,9 @@ fn test_edgebreaker_tetrahedron_roundtrip() {
     let mut encoder = MeshEncoder::new();
     encoder.set_mesh(mesh);
     let mut encoder_buffer = EncoderBuffer::new();
-    encoder.encode(&options, &mut encoder_buffer).expect("Encode failed");
+    encoder
+        .encode(&options, &mut encoder_buffer)
+        .expect("Encode failed");
 
     let mut decoder = MeshDecoder::new();
     let mut decoder_buffer = DecoderBuffer::new(encoder_buffer.data());

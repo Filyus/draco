@@ -267,7 +267,13 @@ mod tests {
         let mut mesh = Mesh::new();
         let mut pos_att = PointAttribute::new();
 
-        pos_att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, 3);
+        pos_att.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Float32,
+            false,
+            3,
+        );
         let buffer = pos_att.buffer_mut();
         let positions: [[f32; 3]; 3] = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
         for (i, pos) in positions.iter().enumerate() {
@@ -308,11 +314,7 @@ mod tests {
 
     #[test]
     fn test_write_obj_positions() {
-        let points = vec![
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-        ];
+        let points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
 
         let file = NamedTempFile::new().unwrap();
         write_obj_positions(file.path(), &points).unwrap();

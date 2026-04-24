@@ -10,7 +10,6 @@ pub struct RAnsBitEncoder {
     num_local_bits: u32,
 }
 
-
 impl RAnsBitEncoder {
     pub fn new() -> Self {
         Self::default()
@@ -72,13 +71,20 @@ impl RAnsBitEncoder {
 
     pub fn end_encoding(&mut self, target_buffer: &mut EncoderBuffer) {
         if cfg!(feature = "debug_logs") {
-            println!("DEBUG: RAnsBitEncoder bit_counts: [{}, {}]", self.bit_counts[0], self.bit_counts[1]);
+            println!(
+                "DEBUG: RAnsBitEncoder bit_counts: [{}, {}]",
+                self.bit_counts[0], self.bit_counts[1]
+            );
         }
         let total = self.bit_counts[1] + self.bit_counts[0];
         let total = if total == 0 { 1 } else { total };
 
         let zero_prob_raw = ((self.bit_counts[0] as f64 / total as f64) * 256.0 + 0.5) as u32;
-        let mut zero_prob = if zero_prob_raw < 255 { zero_prob_raw as u8 } else { 255 };
+        let mut zero_prob = if zero_prob_raw < 255 {
+            zero_prob_raw as u8
+        } else {
+            255
+        };
         if zero_prob == 0 {
             zero_prob += 1;
         }
@@ -100,19 +106,20 @@ impl RAnsBitEncoder {
             }
         }
 
-        let size = ans_coder.write_end()
+        let size = ans_coder
+            .write_end()
             .expect("ANS state should always be valid for bit encoding");
-        
+
         target_buffer.encode_u8(zero_prob);
         if cfg!(feature = "debug_logs") {
             println!("DEBUG: RAnsBitEncoder zero_prob: {}", zero_prob);
         }
-        
+
         target_buffer.encode_varint(size as u64);
         if cfg!(feature = "debug_logs") {
             println!("DEBUG: RAnsBitEncoder size: {}", size);
         }
-        
+
         let data = ans_coder.data();
         if cfg!(feature = "debug_logs") {
             println!("DEBUG: RAnsBitEncoder data: {:?}", data);

@@ -7,7 +7,6 @@ pub struct DirectBitDecoder {
     num_used_bits: u32,
 }
 
-
 impl DirectBitDecoder {
     pub fn new() -> Self {
         Self::default()

@@ -1,5 +1,5 @@
-use crate::prediction_scheme::PredictionSchemeTransformType;
 use crate::normal_compression_utils::OctahedronToolBox;
+use crate::prediction_scheme::PredictionSchemeTransformType;
 
 pub struct PredictionSchemeNormalOctahedronTransformBase {
     max_quantized_value: i32,
@@ -43,7 +43,10 @@ impl PredictionSchemeNormalOctahedronTransformBase {
         }
 
         let quantization_bits = plus_one.trailing_zeros() as i32;
-        if !self.octahedron_tool_box.set_quantization_bits(quantization_bits) {
+        if !self
+            .octahedron_tool_box
+            .set_quantization_bits(quantization_bits)
+        {
             return false;
         }
 

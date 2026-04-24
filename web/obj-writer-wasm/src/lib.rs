@@ -2,8 +2,8 @@
 //!
 //! Provides OBJ file generation functionality for web applications.
 
-use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
 
 /// Input mesh data from JavaScript.
 #[derive(Serialize, Deserialize)]
@@ -133,7 +133,10 @@ fn create_obj_multi_internal(meshes: &[MeshInput], options: &ExportOptions) -> E
             let x = mesh.positions[i * 3];
             let y = mesh.positions[i * 3 + 1];
             let z = mesh.positions[i * 3 + 2];
-            output.push_str(&format!("v {:.*} {:.*} {:.*}\n", precision, x, precision, y, precision, z));
+            output.push_str(&format!(
+                "v {:.*} {:.*} {:.*}\n",
+                precision, x, precision, y, precision, z
+            ));
         }
 
         // Write normals
@@ -147,7 +150,10 @@ fn create_obj_multi_internal(meshes: &[MeshInput], options: &ExportOptions) -> E
                         let nx = normals[i * 3];
                         let ny = normals[i * 3 + 1];
                         let nz = normals[i * 3 + 2];
-                        output.push_str(&format!("vn {:.*} {:.*} {:.*}\n", precision, nx, precision, ny, precision, nz));
+                        output.push_str(&format!(
+                            "vn {:.*} {:.*} {:.*}\n",
+                            precision, nx, precision, ny, precision, nz
+                        ));
                     }
                 }
             }
@@ -184,7 +190,10 @@ fn create_obj_multi_internal(meshes: &[MeshInput], options: &ExportOptions) -> E
                 let t0 = mesh.indices[i * 3] + uv_offset + 1;
                 let t1 = mesh.indices[i * 3 + 1] + uv_offset + 1;
                 let t2 = mesh.indices[i * 3 + 2] + uv_offset + 1;
-                output.push_str(&format!("f {}/{}/{} {}/{}/{} {}/{}/{}\n", i0, t0, n0, i1, t1, n1, i2, t2, n2));
+                output.push_str(&format!(
+                    "f {}/{}/{} {}/{}/{} {}/{}/{}\n",
+                    i0, t0, n0, i1, t1, n1, i2, t2, n2
+                ));
             } else if has_normals {
                 // f v//vn
                 let n0 = mesh.indices[i * 3] + normal_offset + 1;

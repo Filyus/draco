@@ -87,11 +87,7 @@ fn decode_drc(bytes: &[u8]) -> (EncodedGeometryType, Option<Mesh>, Option<PointC
             let mut mesh = Mesh::new();
             let mut decoder = MeshDecoder::new();
             let status = decoder.decode(&mut buffer, &mut mesh);
-            assert!(
-                status.is_ok(),
-                "mesh decode failed: {:?}",
-                status.err()
-            );
+            assert!(status.is_ok(), "mesh decode failed: {:?}", status.err());
             (geometry_type, Some(mesh), None)
         }
         EncodedGeometryType::PointCloud => {
@@ -138,7 +134,11 @@ fn decode_all_testdata_top_level_drc_files() {
 
                 if let Err(DracoError::DracoError(ref msg)) = status {
                     if msg.starts_with("Unsupported Edgebreaker traversal decoder type") {
-                        println!("Skipping {} due to unsupported traversal: {}", path.display(), msg);
+                        println!(
+                            "Skipping {} due to unsupported traversal: {}",
+                            path.display(),
+                            msg
+                        );
                         continue;
                     }
                 }
@@ -152,7 +152,11 @@ fn decode_all_testdata_top_level_drc_files() {
                     status.err()
                 );
                 decoded_any = true;
-                assert!(mesh.num_points() > 0, "{} decoded with 0 points", path.display());
+                assert!(
+                    mesh.num_points() > 0,
+                    "{} decoded with 0 points",
+                    path.display()
+                );
             }
             EncodedGeometryType::PointCloud => {
                 if !supports_point_cloud_bitstream(major, minor, method) {
@@ -172,7 +176,11 @@ fn decode_all_testdata_top_level_drc_files() {
                     status.err()
                 );
                 decoded_any = true;
-                assert!(pc.num_points() > 0, "{} decoded with 0 points", path.display());
+                assert!(
+                    pc.num_points() > 0,
+                    "{} decoded with 0 points",
+                    path.display()
+                );
             }
             _ => unreachable!(),
         }

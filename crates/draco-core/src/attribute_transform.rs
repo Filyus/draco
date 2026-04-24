@@ -1,11 +1,11 @@
 use crate::attribute_transform_data::AttributeTransformData;
 #[cfg(feature = "decoder")]
 use crate::decoder_buffer::DecoderBuffer;
+use crate::draco_types::DataType;
 #[cfg(feature = "encoder")]
 use crate::encoder_buffer::EncoderBuffer;
 use crate::geometry_attribute::PointAttribute;
 use crate::geometry_indices::PointIndex;
-use crate::draco_types::DataType;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttributeTransformType {
@@ -29,9 +29,9 @@ impl TryFrom<u8> for AttributeTransformType {
 
 pub trait AttributeTransform {
     fn transform_type(&self) -> AttributeTransformType;
-    
+
     fn init_from_attribute(&mut self, attribute: &PointAttribute) -> bool;
-    
+
     fn copy_to_attribute_transform_data(&self, out_data: &mut AttributeTransformData);
 
     fn transform_attribute(

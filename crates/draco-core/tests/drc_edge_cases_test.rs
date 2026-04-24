@@ -74,13 +74,21 @@ fn encode_decode_empty_mesh() {
     let options = EncoderOptions::new();
     let mut enc = EncoderBuffer::new();
     let status = encoder.encode(&options, &mut enc);
-    assert!(status.is_ok(), "empty mesh encode failed: {:?}", status.err());
+    assert!(
+        status.is_ok(),
+        "empty mesh encode failed: {:?}",
+        status.err()
+    );
 
     let mut buffer = DecoderBuffer::new(enc.data());
     let mut decoded = Mesh::new();
     let mut decoder = MeshDecoder::new();
     let status = decoder.decode(&mut buffer, &mut decoded);
-    assert!(status.is_ok(), "empty mesh decode failed: {:?}", status.err());
+    assert!(
+        status.is_ok(),
+        "empty mesh decode failed: {:?}",
+        status.err()
+    );
 
     assert_eq!(decoded.num_faces(), 0);
     assert_eq!(decoded.num_points(), 0);
@@ -97,13 +105,21 @@ fn encode_decode_empty_point_cloud() {
     let options = EncoderOptions::new();
     let mut enc = EncoderBuffer::new();
     let status = encoder.encode(&options, &mut enc);
-    assert!(status.is_ok(), "empty point cloud encode failed: {:?}", status.err());
+    assert!(
+        status.is_ok(),
+        "empty point cloud encode failed: {:?}",
+        status.err()
+    );
 
     let mut buffer = DecoderBuffer::new(enc.data());
     let mut decoded = PointCloud::new();
     let mut decoder = PointCloudDecoder::new();
     let status = decoder.decode(&mut buffer, &mut decoded);
-    assert!(status.is_ok(), "empty point cloud decode failed: {:?}", status.err());
+    assert!(
+        status.is_ok(),
+        "empty point cloud decode failed: {:?}",
+        status.err()
+    );
 
     assert_eq!(decoded.num_points(), 0);
     assert_eq!(decoded.num_attributes(), 0);

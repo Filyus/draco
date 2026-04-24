@@ -3,7 +3,12 @@
 // - useless_format: format!("{}", x) used for consistency even where .to_string() would work
 // - useless_vec: vec![...] used for clarity even where slices suffice
 // - len_zero: .len() == 0 comparisons are clearer in test assertions than .is_empty()
-#![allow(clippy::io_other_error, clippy::useless_format, clippy::useless_vec, clippy::len_zero)]
+#![allow(
+    clippy::io_other_error,
+    clippy::useless_format,
+    clippy::useless_vec,
+    clippy::len_zero
+)]
 
 use std::env;
 use std::io;
@@ -33,7 +38,13 @@ fn run_blender_script(blender: &str, args: &[&str]) -> io::Result<String> {
         if args[i] == "--export" && i + 1 < args.len() {
             let export_arg = args[i + 1];
             // Build python expression that sets sys.argv and runs the script.
-            let script_path = format!("{}", std::env::current_dir()?.join("tools").join("blender_roundtrip.py").display());
+            let script_path = format!(
+                "{}",
+                std::env::current_dir()?
+                    .join("tools")
+                    .join("blender_roundtrip.py")
+                    .display()
+            );
             let expr = format!(
                 "import sys,runpy; sys.argv=['','--export','{}']; runpy.run_path(r'{}', run_name='__main__')",
                 export_arg.replace("'", "\\'"),
@@ -47,7 +58,13 @@ fn run_blender_script(blender: &str, args: &[&str]) -> io::Result<String> {
         }
         if args[i] == "--inspect" && i + 1 < args.len() {
             let inspect_arg = args[i + 1];
-            let script_path = format!("{}", std::env::current_dir()?.join("tools").join("blender_roundtrip.py").display());
+            let script_path = format!(
+                "{}",
+                std::env::current_dir()?
+                    .join("tools")
+                    .join("blender_roundtrip.py")
+                    .display()
+            );
             let expr = format!(
                 "import sys,runpy; sys.argv=['','--inspect','{}']; runpy.run_path(r'{}', run_name='__main__')",
                 inspect_arg.replace("'", "\\'"),
@@ -85,7 +102,11 @@ fn roundtrip_with_blender() -> io::Result<()> {
     // Use persistent input/output folders in the crate root by default
     // unless USE_TEMP_DIR is set to "1", in which case use a temp dir that auto-cleans.
     let use_temp = std::env::var("USE_TEMP_DIR").unwrap_or_default() == "1";
-    let base_temp = if use_temp { Some(tempfile::tempdir()?) } else { None };
+    let base_temp = if use_temp {
+        Some(tempfile::tempdir()?)
+    } else {
+        None
+    };
     let base_path = if let Some(ref td) = base_temp {
         td.path().to_path_buf()
     } else {
@@ -117,12 +138,25 @@ fn roundtrip_with_blender() -> io::Result<()> {
     // `blender_report.json` into either the input or output folder when
     // possible; prefer reading that file for determinism. If not present,
     // fall back to extracting JSON from stdout/stderr.
-    let stdout = run_blender_script(&blender, &["--background", "--python", script.to_str().unwrap(), "--", "--export", input_dir.to_str().unwrap()])?;
+    let stdout = run_blender_script(
+        &blender,
+        &[
+            "--background",
+            "--python",
+            script.to_str().unwrap(),
+            "--",
+            "--export",
+            input_dir.to_str().unwrap(),
+        ],
+    )?;
     println!("Blender export output: {}", stdout);
 
     // Attempt to read report file from common locations.
     let mut export_report_str: Option<String> = None;
-    let candidates = [input_dir.join("blender_report.json"), output_dir.join("blender_report.json")];
+    let candidates = [
+        input_dir.join("blender_report.json"),
+        output_dir.join("blender_report.json"),
+    ];
     for c in &candidates {
         if c.exists() {
             export_report_str = Some(std::fs::read_to_string(c)?);
@@ -137,21 +171,39 @@ fn roundtrip_with_blender() -> io::Result<()> {
         if let (Some(start), Some(end)) = (stdout.find('{'), stdout.rfind('}')) {
             if start < end {
                 let candidate = &stdout[start..=end];
-                serde_json::from_str(candidate).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?
+                serde_json::from_str(candidate)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?
             } else {
-                return Err(io::Error::new(io::ErrorKind::Other, format!("No JSON found in Blender output:\n{}", stdout)));
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("No JSON found in Blender output:\n{}", stdout),
+                ));
             }
         } else {
-            return Err(io::Error::new(io::ErrorKind::Other, format!("No JSON found in Blender output:\n{}", stdout)));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("No JSON found in Blender output:\n{}", stdout),
+            ));
         }
     };
-    let original_meshes = export_report["meshes"].as_array().cloned().unwrap_or_default();
+    let original_meshes = export_report["meshes"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
 
     // Ensure exporter produced a complex mesh (we expect the Ngon object to exist;
     // exporters often triangulate ngons, so check for a mesh with many verts instead).
-    let meshes_arr = export_report["meshes"].as_array().cloned().unwrap_or_default();
-    let has_complex = meshes_arr.iter().any(|m| m["name"].as_str().unwrap_or("").contains("Ngon") || m["verts"].as_i64().unwrap_or(0) >= 12);
-    assert!(has_complex, "Export did not produce a complex mesh (e.g., Ngon_12)");
+    let meshes_arr = export_report["meshes"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let has_complex = meshes_arr.iter().any(|m| {
+        m["name"].as_str().unwrap_or("").contains("Ngon") || m["verts"].as_i64().unwrap_or(0) >= 12
+    });
+    assert!(
+        has_complex,
+        "Export did not produce a complex mesh (e.g., Ngon_12)"
+    );
 
     // Paths to files (from input folder)
     let obj = input_dir.join("scene.obj");
@@ -177,21 +229,39 @@ fn roundtrip_with_blender() -> io::Result<()> {
                 eprintln!("Note: FBX array compression not enabled, skipping FBX portion of roundtrip test");
                 None
             } else {
-                return Err(io::Error::new(io::ErrorKind::Other, format!("Failed to read FBX: {}", e)));
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed to read FBX: {}", e),
+                ));
             }
         }
     };
 
     // Attempt to open/read the GLB. GLB/Draco decode failures should fail the test
     // since this is a critical path we want to validate.
-    let mut greader = <GltfReader as Reader>::open(&glb)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to open GLB '{}': {}", glb.display(), e)))?;
-    let g_mesh = greader.read_mesh()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to read GLB '{}': {}", glb.display(), e)))?;
-    
+    let mut greader = <GltfReader as Reader>::open(&glb).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to open GLB '{}': {}", glb.display(), e),
+        )
+    })?;
+    let g_mesh = greader.read_mesh().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to read GLB '{}': {}", glb.display(), e),
+        )
+    })?;
+
     // Validate that we successfully decoded Draco from the GLB
-    eprintln!("GLB read: {} vertices, {} faces", g_mesh.num_points(), g_mesh.num_faces());
-    assert!(g_mesh.num_faces() > 0, "Failed to decode Draco mesh from GLB - got 0 faces");
+    eprintln!(
+        "GLB read: {} vertices, {} faces",
+        g_mesh.num_points(),
+        g_mesh.num_faces()
+    );
+    assert!(
+        g_mesh.num_faces() > 0,
+        "Failed to decode Draco mesh from GLB - got 0 faces"
+    );
 
     // Now write them back out to output folder
     let obj_out = output_dir.join("scene_roundtrip.obj");
@@ -234,17 +304,30 @@ fn roundtrip_with_blender() -> io::Result<()> {
         texcoord: 12,
         generic: 8,
     };
-    gltf_w.add_draco_mesh(&g_mesh, Some("Roundtrip"), quant).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-    gltf_w.write_glb(&glb_out).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    gltf_w
+        .add_draco_mesh(&g_mesh, Some("Roundtrip"), quant)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    gltf_w
+        .write_glb(&glb_out)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
     // Inspect outputs with Blender importer and compare mesh counts
     // Helper to prefer a file-written report next to the inspected file,
     // falling back to extracting JSON from Blender combined output.
     fn read_inspect_report_for(path: &std::path::Path, combined: &str) -> io::Result<String> {
-        let cand1 = path.with_file_name(format!("{}.report.json", path.file_name().unwrap().to_string_lossy()));
+        let cand1 = path.with_file_name(format!(
+            "{}.report.json",
+            path.file_name().unwrap().to_string_lossy()
+        ));
         let cand2 = path.with_extension("report.json");
-        if cand1.exists() { return std::fs::read_to_string(cand1).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string())); }
-        if cand2.exists() { return std::fs::read_to_string(cand2).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string())); }
+        if cand1.exists() {
+            return std::fs::read_to_string(cand1)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()));
+        }
+        if cand2.exists() {
+            return std::fs::read_to_string(cand2)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()));
+        }
         if let (Some(start), Some(end)) = (combined.find('{'), combined.rfind('}')) {
             if start < end {
                 let candidate = &combined[start..=end];
@@ -253,24 +336,71 @@ fn roundtrip_with_blender() -> io::Result<()> {
                 }
             }
         }
-        Err(io::Error::new(io::ErrorKind::Other, format!("No JSON report found for inspected file {}. Output:\n{}", path.display(), combined)))
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!(
+                "No JSON report found for inspected file {}. Output:\n{}",
+                path.display(),
+                combined
+            ),
+        ))
     }
 
-    let out_obj_combined = run_blender_script(&blender, &["--background", "--python", script.to_str().unwrap(), "--", "--inspect", obj_out.to_str().unwrap()])?;
+    let out_obj_combined = run_blender_script(
+        &blender,
+        &[
+            "--background",
+            "--python",
+            script.to_str().unwrap(),
+            "--",
+            "--inspect",
+            obj_out.to_str().unwrap(),
+        ],
+    )?;
     let report_obj = read_inspect_report_for(&obj_out, &out_obj_combined)?;
 
-    let out_ply_combined = run_blender_script(&blender, &["--background", "--python", script.to_str().unwrap(), "--", "--inspect", ply_out.to_str().unwrap()])?;
+    let out_ply_combined = run_blender_script(
+        &blender,
+        &[
+            "--background",
+            "--python",
+            script.to_str().unwrap(),
+            "--",
+            "--inspect",
+            ply_out.to_str().unwrap(),
+        ],
+    )?;
     let report_ply = read_inspect_report_for(&ply_out, &out_ply_combined)?;
 
     // FBX inspect only if we wrote it
     let report_fbx = if f_mesh_opt.is_some() {
-        let out_fbx_combined = run_blender_script(&blender, &["--background", "--python", script.to_str().unwrap(), "--", "--inspect", fbx_out.to_str().unwrap()])?;
+        let out_fbx_combined = run_blender_script(
+            &blender,
+            &[
+                "--background",
+                "--python",
+                script.to_str().unwrap(),
+                "--",
+                "--inspect",
+                fbx_out.to_str().unwrap(),
+            ],
+        )?;
         read_inspect_report_for(&fbx_out, &out_fbx_combined)?
     } else {
         serde_json::to_string(&serde_json::json!({"mesh_count":0,"total_faces":0,"meshes":[]}))?
     };
 
-    let out_glb_combined = run_blender_script(&blender, &["--background", "--python", script.to_str().unwrap(), "--", "--inspect", glb_out.to_str().unwrap()])?;
+    let out_glb_combined = run_blender_script(
+        &blender,
+        &[
+            "--background",
+            "--python",
+            script.to_str().unwrap(),
+            "--",
+            "--inspect",
+            glb_out.to_str().unwrap(),
+        ],
+    )?;
     let report_glb = read_inspect_report_for(&glb_out, &out_glb_combined)?;
 
     let r_obj: serde_json::Value = serde_json::from_str(&report_obj).unwrap();
@@ -290,13 +420,22 @@ fn roundtrip_with_blender() -> io::Result<()> {
     // Require that the OBJ importer preserved at least one complex mesh (Ngon or similar vertex count)
     // Note: OBJ importer may not be available in some Blender installs (io_scene_obj add-on)
     if r_obj.get("error").is_some() {
-        eprintln!("Skipping OBJ complex-mesh assertion due to importer error: {}", r_obj["error"]);
+        eprintln!(
+            "Skipping OBJ complex-mesh assertion due to importer error: {}",
+            r_obj["error"]
+        );
     } else {
         let r_obj_meshes = r_obj["meshes"].as_array().cloned().unwrap_or_default();
         let obj_has_mesh = r_obj_meshes.len() > 0;
         if obj_has_mesh {
-            let obj_has_complex = r_obj_meshes.iter().any(|m| m["name"].as_str().unwrap_or("").contains("Ngon") || m["verts"].as_i64().unwrap_or(0) >= 12);
-            assert!(obj_has_complex, "OBJ roundtrip did not preserve complex mesh (Ngon or high vertex count)");
+            let obj_has_complex = r_obj_meshes.iter().any(|m| {
+                m["name"].as_str().unwrap_or("").contains("Ngon")
+                    || m["verts"].as_i64().unwrap_or(0) >= 12
+            });
+            assert!(
+                obj_has_complex,
+                "OBJ roundtrip did not preserve complex mesh (Ngon or high vertex count)"
+            );
         } else {
             eprintln!("WARNING: OBJ report has no meshes - Blender OBJ importer may have failed");
         }
@@ -305,16 +444,27 @@ fn roundtrip_with_blender() -> io::Result<()> {
     // Basic sanity checks: each should have at least one mesh and some faces
     // Note: GLB Blender roundtrip may fail if Blender's Draco decoder can't read our output.
     // This is a known limitation - track separately.
-    let format_reports = [("OBJ", &r_obj), ("PLY", &r_ply), ("FBX", &r_fbx), ("GLB", &r_glb)];
+    let format_reports = [
+        ("OBJ", &r_obj),
+        ("PLY", &r_ply),
+        ("FBX", &r_fbx),
+        ("GLB", &r_glb),
+    ];
     for (fmt, j) in format_reports.iter() {
         if j.get("error").is_some() {
-            eprintln!("Skipping {} basic sanity checks due to importer error: {}", fmt, j["error"]);
+            eprintln!(
+                "Skipping {} basic sanity checks due to importer error: {}",
+                fmt, j["error"]
+            );
             continue;
         }
         let mesh_count = j["mesh_count"].as_i64().unwrap_or(0);
         let faces = j["total_faces"].as_i64().unwrap_or(0);
         if mesh_count < 1 {
-            eprintln!("Skipping {} basic sanity check: no meshes present in report", fmt);
+            eprintln!(
+                "Skipping {} basic sanity check: no meshes present in report",
+                fmt
+            );
             continue;
         }
         // GLB roundtrip with Blender may fail due to Draco encoder compatibility.
@@ -322,10 +472,17 @@ fn roundtrip_with_blender() -> io::Result<()> {
         if faces < 10 {
             if *fmt == "GLB" {
                 eprintln!("WARNING: {} roundtrip produced only {} faces - Blender Draco decode may have failed", fmt, faces);
-                eprintln!("This is a known limitation. Our internal decode worked (verified above).");
+                eprintln!(
+                    "This is a known limitation. Our internal decode worked (verified above)."
+                );
                 continue;
             }
-            assert!(faces >= 10, "{} roundtrip: Expected many faces, got {}", fmt, faces);
+            assert!(
+                faces >= 10,
+                "{} roundtrip: Expected many faces, got {}",
+                fmt,
+                faces
+            );
         }
     }
 
@@ -340,27 +497,41 @@ fn roundtrip_with_blender() -> io::Result<()> {
         for rpt in roundtrip_reports.iter() {
             let meshes = rpt["meshes"].as_array().cloned().unwrap_or_default();
             // Try find by name first
-            let same = meshes.iter().find(|m| m["name"].as_str().unwrap_or("") == orig_name);
+            let same = meshes
+                .iter()
+                .find(|m| m["name"].as_str().unwrap_or("") == orig_name);
             let candidate = if let Some(m) = same {
                 Some(m.clone())
             } else {
                 // fallback: find a mesh with similar face count
-                meshes.iter().find(|m| {
-                    let f = m["faces"].as_i64().unwrap_or(0);
-                    let diff = (f - orig_faces).abs() as f64;
-                    let tol = (orig_faces as f64 * 0.05).max(5.0);
-                    diff <= tol
-                }).cloned()
+                meshes
+                    .iter()
+                    .find(|m| {
+                        let f = m["faces"].as_i64().unwrap_or(0);
+                        let diff = (f - orig_faces).abs() as f64;
+                        let tol = (orig_faces as f64 * 0.05).max(5.0);
+                        diff <= tol
+                    })
+                    .cloned()
             };
 
             if let Some(c) = candidate {
                 let found_faces = c["faces"].as_i64().unwrap_or(0);
                 let diff = (found_faces - orig_faces).abs() as f64;
                 let tol = (orig_faces as f64 * 0.05).max(5.0);
-                assert!(diff <= tol, "Mesh '{}' face count changed too much (orig={}, found={})", orig_name, orig_faces, found_faces);
+                assert!(
+                    diff <= tol,
+                    "Mesh '{}' face count changed too much (orig={}, found={})",
+                    orig_name,
+                    orig_faces,
+                    found_faces
+                );
             } else {
                 // no candidate - warn (but not fail) to allow exporter differences
-                eprintln!("Warning: could not find matching mesh for '{}' in report {:?}", orig_name, rpt);
+                eprintln!(
+                    "Warning: could not find matching mesh for '{}' in report {:?}",
+                    orig_name, rpt
+                );
             }
         }
     }
@@ -385,7 +556,8 @@ fn roundtrip_with_blender() -> io::Result<()> {
     }
 
     // GLB/Draco SceneReader validation - must succeed
-    let mut gltf_scene_reader = <GltfReader as draco_io::Reader>::open(&glb).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    let mut gltf_scene_reader = <GltfReader as draco_io::Reader>::open(&glb)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
     let scene = draco_io::SceneReader::read_scene(&mut gltf_scene_reader)?;
     assert!(!scene.parts.is_empty(), "GLB scene has no parts");
     assert!(!scene.root_nodes.is_empty(), "GLB scene has no root nodes");

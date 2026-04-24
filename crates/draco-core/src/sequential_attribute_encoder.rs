@@ -1,5 +1,5 @@
-use crate::geometry_attribute::PointAttribute;
 use crate::encoder_buffer::EncoderBuffer;
+use crate::geometry_attribute::PointAttribute;
 use crate::geometry_indices::PointIndex;
 use crate::point_cloud::PointCloud;
 
@@ -31,10 +31,7 @@ impl SequentialAttributeEncoder {
         true
     }
 
-    pub fn transform_attribute_to_portable_format(
-        &mut self,
-        _point_ids: &[PointIndex],
-    ) -> bool {
+    pub fn transform_attribute_to_portable_format(&mut self, _point_ids: &[PointIndex]) -> bool {
         true
     }
 

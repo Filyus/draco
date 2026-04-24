@@ -1,25 +1,31 @@
-use crate::sequential_attribute_encoder::SequentialAttributeEncoder;
-use crate::prediction_scheme::{PredictionSchemeEncoder, PredictionSchemeMethod, PredictionSchemeTransformType};
-use crate::encoder_buffer::EncoderBuffer;
-use crate::geometry_indices::PointIndex;
-use crate::point_cloud_encoder::GeometryEncoder;
-use crate::point_cloud::PointCloud;
-use crate::prediction_scheme_delta::PredictionSchemeDeltaEncoder;
-use crate::prediction_scheme_parallelogram::PredictionSchemeParallelogramEncoder;
-use crate::prediction_scheme_constrained_multi_parallelogram::PredictionSchemeConstrainedMultiParallelogramEncoder;
-use crate::prediction_scheme_wrap::PredictionSchemeWrapEncodingTransform;
-use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
-use crate::symbol_encoding::{encode_symbols, SymbolEncodingOptions};
-use crate::draco_types::DataType;
-use crate::data_buffer::DataBuffer;
-use crate::encoder_options::EncoderOptions;
-use crate::prediction_scheme_tex_coords_portable::{PredictionSchemeTexCoordsPortableEncoder, PredictionSchemeTexCoordsPortableEncodingTransform};
-use crate::prediction_scheme_geometric_normal::{PredictionSchemeGeometricNormalEncoder, PredictionSchemeGeometricNormalEncodingTransform};
-use crate::prediction_scheme_selection::select_prediction_method;
-use crate::geometry_attribute::GeometryAttributeType;
-use crate::prediction_scheme::PredictionScheme;
 use crate::attribute_quantization_transform::AttributeQuantizationTransform;
 use crate::attribute_transform::AttributeTransform;
+use crate::data_buffer::DataBuffer;
+use crate::draco_types::DataType;
+use crate::encoder_buffer::EncoderBuffer;
+use crate::encoder_options::EncoderOptions;
+use crate::geometry_attribute::GeometryAttributeType;
+use crate::geometry_indices::PointIndex;
+use crate::mesh_prediction_scheme_data::MeshPredictionSchemeData;
+use crate::point_cloud::PointCloud;
+use crate::point_cloud_encoder::GeometryEncoder;
+use crate::prediction_scheme::PredictionScheme;
+use crate::prediction_scheme::{
+    PredictionSchemeEncoder, PredictionSchemeMethod, PredictionSchemeTransformType,
+};
+use crate::prediction_scheme_constrained_multi_parallelogram::PredictionSchemeConstrainedMultiParallelogramEncoder;
+use crate::prediction_scheme_delta::PredictionSchemeDeltaEncoder;
+use crate::prediction_scheme_geometric_normal::{
+    PredictionSchemeGeometricNormalEncoder, PredictionSchemeGeometricNormalEncodingTransform,
+};
+use crate::prediction_scheme_parallelogram::PredictionSchemeParallelogramEncoder;
+use crate::prediction_scheme_selection::select_prediction_method;
+use crate::prediction_scheme_tex_coords_portable::{
+    PredictionSchemeTexCoordsPortableEncoder, PredictionSchemeTexCoordsPortableEncodingTransform,
+};
+use crate::prediction_scheme_wrap::PredictionSchemeWrapEncodingTransform;
+use crate::sequential_attribute_encoder::SequentialAttributeEncoder;
+use crate::symbol_encoding::{encode_symbols, SymbolEncodingOptions};
 
 pub struct SequentialIntegerAttributeEncoder {
     pub base: SequentialAttributeEncoder,
@@ -43,7 +49,10 @@ impl SequentialIntegerAttributeEncoder {
         }
     }
 
-    pub fn set_prediction_scheme(&mut self, scheme: Box<dyn PredictionSchemeEncoder<'static, i32, i32>>) {
+    pub fn set_prediction_scheme(
+        &mut self,
+        scheme: Box<dyn PredictionSchemeEncoder<'static, i32, i32>>,
+    ) {
         self.prediction_scheme = Some(scheme);
     }
 
@@ -84,7 +93,6 @@ impl SequentialIntegerAttributeEncoder {
 
         let attribute = point_cloud.attribute(att_id);
 
-
         let mut local_portable_attribute = crate::geometry_attribute::PointAttribute::default();
         let mut is_portable_attribute = false;
 
@@ -119,7 +127,11 @@ impl SequentialIntegerAttributeEncoder {
                 if !q_transform.compute_parameters(attribute, quantization_bits) {
                     return false;
                 }
-                if !q_transform.transform_attribute(attribute, point_ids, &mut local_portable_attribute) {
+                if !q_transform.transform_attribute(
+                    attribute,
+                    point_ids,
+                    &mut local_portable_attribute,
+                ) {
                     return false;
                 }
                 // Store transform for later encoding
@@ -136,10 +148,13 @@ impl SequentialIntegerAttributeEncoder {
         let num_points = point_ids.len();
         let num_values = num_points * num_components;
         if cfg!(feature = "debug_logs") {
-            println!("DEBUG: encode_values: num_points={} num_components={} num_values={}", num_points, num_components, num_values);
+            println!(
+                "DEBUG: encode_values: num_points={} num_components={} num_values={}",
+                num_points, num_components, num_values
+            );
             println!("DEBUG: is_portable_attribute={}", is_portable_attribute);
         }
-        
+
         let mut values = Vec::with_capacity(num_values);
         let byte_stride = current_attribute.byte_stride() as usize;
         let data_type = current_attribute.data_type();
@@ -155,15 +170,12 @@ impl SequentialIntegerAttributeEncoder {
 
             for c in 0..num_components {
                 let component_offset = entry_offset + c * component_size;
-                let val = read_value_as_i32(
-                    current_attribute.buffer(),
-                    component_offset,
-                    data_type,
-                );
+                let val =
+                    read_value_as_i32(current_attribute.buffer(), component_offset, data_type);
                 values.push(val);
             }
         }
-        
+
         // Debug: print encoded values
         if num_components == 3 && cfg!(feature = "debug_logs") {
             println!("DEBUG encoder values (first 25 x/y/z):");
@@ -171,8 +183,10 @@ impl SequentialIntegerAttributeEncoder {
                 let x = values[i * 3];
                 let y = values[i * 3 + 1];
                 let z = values[i * 3 + 2];
-                println!("  data_id={} -> point_ids[{}]={:?}: quantized({}, {}, {})", 
-                    i, i, point_ids[i], x, y, z);
+                println!(
+                    "  data_id={} -> point_ids[{}]={:?}: quantized({}, {}, {})",
+                    i, i, point_ids[i], x, y, z
+                );
             }
         }
 
@@ -203,23 +217,23 @@ impl SequentialIntegerAttributeEncoder {
         let mut predictor_constrained_multi_parallelogram = None;
         let mut predictor_tex_coords_portable = None;
         let mut predictor_geometric_normal = None;
-        
+
         // Maps need to live long enough
         let mut vertex_to_data_map = Vec::new();
         let mut data_to_corner_map = Vec::new();
-        
+
         if let Some(ref mut scheme) = self.prediction_scheme {
-             selected_method = scheme.get_prediction_method();
-             selected_transform_type = scheme.get_transform_type();
-             if !scheme.compute_correction_values(
-                 &values,
-                 &mut corrections,
-                 num_values,
-                 num_components,
-                 None,
-             ) {
-                 return false;
-             }
+            selected_method = scheme.get_prediction_method();
+            selected_transform_type = scheme.get_transform_type();
+            if !scheme.compute_correction_values(
+                &values,
+                &mut corrections,
+                num_values,
+                num_components,
+                None,
+            ) {
+                return false;
+            }
         } else {
             match selected_method {
                 PredictionSchemeMethod::Difference => {
@@ -244,12 +258,12 @@ impl SequentialIntegerAttributeEncoder {
                             // For Edgebreaker, vertex_to_data_map is indexed by corner table VertexIndex.
                             // For Sequential, it's indexed by mesh PointIndex (which equals VertexIndex).
                             let is_edgebreaker = encoder.get_encoding_method() == Some(1);
-                            
+
                             // vertex_to_data_map must be indexed by corner table VertexIndex
                             let map_size = corner_table.num_vertices();
                             vertex_to_data_map.resize(map_size, -1);
                             data_to_corner_map.resize(num_points, 0);
-                            
+
                             if is_edgebreaker {
                                 // For Edgebreaker, get both maps from the encoder.
                                 // These maps were computed during connectivity encoding and
@@ -267,10 +281,13 @@ impl SequentialIntegerAttributeEncoder {
                                 // Sequential encoding: PointIndex == VertexIndex (1:1 mapping)
                                 for (i, &point_id) in point_ids.iter().enumerate() {
                                     if (point_id.0 as usize) < vertex_to_data_map.len()
-                                        && vertex_to_data_map[point_id.0 as usize] == -1 {
-                                            vertex_to_data_map[point_id.0 as usize] = i as i32;
-                                        }
-                                    let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
+                                        && vertex_to_data_map[point_id.0 as usize] == -1
+                                    {
+                                        vertex_to_data_map[point_id.0 as usize] = i as i32;
+                                    }
+                                    let ci = corner_table.left_most_corner(
+                                        crate::geometry_indices::VertexIndex(point_id.0),
+                                    );
                                     data_to_corner_map[i] = ci.0;
                                 }
                             }
@@ -280,11 +297,8 @@ impl SequentialIntegerAttributeEncoder {
 
                             if cfg!(feature = "debug_logs") {
                                 let head = vertex_to_data_map.iter().take(16).collect::<Vec<_>>();
-                                let tail = vertex_to_data_map
-                                    .iter()
-                                    .rev()
-                                    .take(16)
-                                    .collect::<Vec<_>>();
+                                let tail =
+                                    vertex_to_data_map.iter().rev().take(16).collect::<Vec<_>>();
                                 eprintln!(
                                     "Parallelogram encoder: vertex_to_data_map size={}, head={:?}, tail(reversed)={:?}",
                                     vertex_to_data_map.len(),
@@ -298,9 +312,13 @@ impl SequentialIntegerAttributeEncoder {
                             }
 
                             let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
-                            let mut predictor = PredictionSchemeParallelogramEncoder::new(current_attribute, transform, mesh_data);
+                            let mut predictor = PredictionSchemeParallelogramEncoder::new(
+                                current_attribute,
+                                transform,
+                                mesh_data,
+                            );
                             selected_transform_type = predictor.get_transform_type();
-                            
+
                             if !predictor.compute_correction_values(
                                 &values,
                                 &mut corrections,
@@ -342,10 +360,10 @@ impl SequentialIntegerAttributeEncoder {
                             num_values,
                             num_components,
                             None,
-                            ) {
-                                return false;
-                            }
-                            predictor_delta = Some(predictor);
+                        ) {
+                            return false;
+                        }
+                        predictor_delta = Some(predictor);
                     }
                 }
                 PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram => {
@@ -353,11 +371,11 @@ impl SequentialIntegerAttributeEncoder {
                         if let Some(corner_table) = encoder.corner_table() {
                             // Generate maps - vertex_to_data_map indexed by corner table VertexIndex
                             let is_edgebreaker = encoder.get_encoding_method() == Some(1);
-                            
+
                             let map_size = corner_table.num_vertices();
                             vertex_to_data_map.resize(map_size, -1);
                             data_to_corner_map.resize(num_points, 0);
-                            
+
                             if is_edgebreaker {
                                 // For Edgebreaker, get both maps from the encoder.
                                 if let Some(map) = encoder.get_data_to_corner_map() {
@@ -371,21 +389,27 @@ impl SequentialIntegerAttributeEncoder {
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {
                                     if (point_id.0 as usize) < vertex_to_data_map.len()
-                                        && vertex_to_data_map[point_id.0 as usize] == -1 {
-                                            vertex_to_data_map[point_id.0 as usize] = i as i32;
-                                        }
-                                    let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
+                                        && vertex_to_data_map[point_id.0 as usize] == -1
+                                    {
+                                        vertex_to_data_map[point_id.0 as usize] = i as i32;
+                                    }
+                                    let ci = corner_table.left_most_corner(
+                                        crate::geometry_indices::VertexIndex(point_id.0),
+                                    );
                                     data_to_corner_map[i] = ci.0;
                                 }
                             }
-                            
+
                             let mut mesh_data = MeshPredictionSchemeData::new();
                             mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
-                            
+
                             let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
-                            let mut predictor = PredictionSchemeConstrainedMultiParallelogramEncoder::new(transform, mesh_data);
+                            let mut predictor =
+                                PredictionSchemeConstrainedMultiParallelogramEncoder::new(
+                                    transform, mesh_data,
+                                );
                             selected_transform_type = predictor.get_transform_type();
-                            
+
                             if !predictor.compute_correction_values(
                                 &values,
                                 &mut corrections,
@@ -425,22 +449,22 @@ impl SequentialIntegerAttributeEncoder {
                             num_values,
                             num_components,
                             None,
-                            ) {
-                                return false;
-                            }
-                            predictor_delta = Some(predictor);
+                        ) {
+                            return false;
+                        }
+                        predictor_delta = Some(predictor);
                     }
                 }
                 PredictionSchemeMethod::MeshPredictionTexCoordsPortable => {
                     if let Some(_mesh) = encoder.mesh() {
                         if let Some(corner_table) = encoder.corner_table() {
                             let is_edgebreaker = encoder.get_encoding_method() == Some(1);
-                            
+
                             // vertex_to_data_map indexed by corner table VertexIndex
                             let map_size = corner_table.num_vertices();
                             vertex_to_data_map.resize(map_size, -1);
                             data_to_corner_map.resize(num_points, 0);
-                            
+
                             if is_edgebreaker {
                                 // For Edgebreaker, get both maps from the encoder.
                                 if let Some(map) = encoder.get_data_to_corner_map() {
@@ -454,22 +478,30 @@ impl SequentialIntegerAttributeEncoder {
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {
                                     if (point_id.0 as usize) < vertex_to_data_map.len()
-                                        && vertex_to_data_map[point_id.0 as usize] == -1 {
-                                            vertex_to_data_map[point_id.0 as usize] = i as i32;
-                                        }
-                                    let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
+                                        && vertex_to_data_map[point_id.0 as usize] == -1
+                                    {
+                                        vertex_to_data_map[point_id.0 as usize] = i as i32;
+                                    }
+                                    let ci = corner_table.left_most_corner(
+                                        crate::geometry_indices::VertexIndex(point_id.0),
+                                    );
                                     data_to_corner_map[i] = ci.0;
                                 }
                             }
-                            
+
                             let mut mesh_data = MeshPredictionSchemeData::new();
                             mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
-                            
-                            let transform = PredictionSchemeTexCoordsPortableEncodingTransform::new();
-                            let mut predictor = PredictionSchemeTexCoordsPortableEncoder::new(transform);
+
+                            let transform =
+                                PredictionSchemeTexCoordsPortableEncodingTransform::new();
+                            let mut predictor =
+                                PredictionSchemeTexCoordsPortableEncoder::new(transform);
                             selected_transform_type = predictor.get_transform_type();
-                            
-                            let pos_att = encoder.point_cloud().unwrap().named_attribute(GeometryAttributeType::Position);
+
+                            let pos_att = encoder
+                                .point_cloud()
+                                .unwrap()
+                                .named_attribute(GeometryAttributeType::Position);
                             if let Some(pos_att) = pos_att {
                                 if !predictor.set_parent_attribute(pos_att) {
                                     return false;
@@ -477,11 +509,12 @@ impl SequentialIntegerAttributeEncoder {
                             } else {
                                 return false;
                             }
-                            
+
                             predictor.init(&mesh_data);
-                            
-                            let entry_to_point_id_map: Vec<u32> = point_ids.iter().map(|p| p.0).collect();
-                            
+
+                            let entry_to_point_id_map: Vec<u32> =
+                                point_ids.iter().map(|p| p.0).collect();
+
                             if !predictor.compute_correction_values(
                                 &values,
                                 &mut corrections,
@@ -523,22 +556,22 @@ impl SequentialIntegerAttributeEncoder {
                             num_values,
                             num_components,
                             None,
-                            ) {
-                                return false;
-                            }
-                            predictor_delta = Some(predictor);
+                        ) {
+                            return false;
+                        }
+                        predictor_delta = Some(predictor);
                     }
                 }
                 PredictionSchemeMethod::MeshPredictionGeometricNormal => {
                     if let Some(_mesh) = encoder.mesh() {
                         if let Some(corner_table) = encoder.corner_table() {
                             let is_edgebreaker = encoder.get_encoding_method() == Some(1);
-                            
+
                             // vertex_to_data_map indexed by corner table VertexIndex
                             let map_size = corner_table.num_vertices();
                             vertex_to_data_map.resize(map_size, -1);
                             data_to_corner_map.resize(num_points, 0);
-                            
+
                             if is_edgebreaker {
                                 // For Edgebreaker, get both maps from the encoder.
                                 if let Some(map) = encoder.get_data_to_corner_map() {
@@ -552,25 +585,30 @@ impl SequentialIntegerAttributeEncoder {
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {
                                     if (point_id.0 as usize) < vertex_to_data_map.len()
-                                        && vertex_to_data_map[point_id.0 as usize] == -1 {
-                                            vertex_to_data_map[point_id.0 as usize] = i as i32;
-                                        }
-                                    let ci = corner_table.left_most_corner(crate::geometry_indices::VertexIndex(point_id.0));
+                                        && vertex_to_data_map[point_id.0 as usize] == -1
+                                    {
+                                        vertex_to_data_map[point_id.0 as usize] = i as i32;
+                                    }
+                                    let ci = corner_table.left_most_corner(
+                                        crate::geometry_indices::VertexIndex(point_id.0),
+                                    );
                                     data_to_corner_map[i] = ci.0;
                                 }
                             }
-                            
+
                             let mut mesh_data = MeshPredictionSchemeData::new();
                             mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
-                            
+
                             let transform = PredictionSchemeGeometricNormalEncodingTransform::new();
-                            let mut predictor = PredictionSchemeGeometricNormalEncoder::new(transform);
+                            let mut predictor =
+                                PredictionSchemeGeometricNormalEncoder::new(transform);
                             selected_transform_type = predictor.get_transform_type();
-                            
+
                             predictor.init(&mesh_data);
-                            
-                            let entry_to_point_id_map: Vec<u32> = point_ids.iter().map(|p| p.0).collect();
-                            
+
+                            let entry_to_point_id_map: Vec<u32> =
+                                point_ids.iter().map(|p| p.0).collect();
+
                             if !predictor.compute_correction_values(
                                 &values,
                                 &mut corrections,
@@ -667,11 +705,13 @@ impl SequentialIntegerAttributeEncoder {
 
         // 4. Encode Prediction Method and Transform Type
         if std::env::var("DRACO_DEBUG_CMP_CPP").is_ok() {
-            eprintln!("RUST: Encoding prediction method {} (0x{:x}), transform type {:?}", 
-                     selected_method as i8, selected_method as u8, selected_transform_type);
+            eprintln!(
+                "RUST: Encoding prediction method {} (0x{:x}), transform type {:?}",
+                selected_method as i8, selected_method as u8, selected_transform_type
+            );
         }
         out_buffer.encode_u8(selected_method as u8);
-        
+
         if selected_method != PredictionSchemeMethod::None {
             // Encode transform type
             out_buffer.encode_u8(selected_transform_type as u8);
@@ -684,31 +724,30 @@ impl SequentialIntegerAttributeEncoder {
         } else {
             false
         };
-        
+
         let symbols: Vec<u32> = if are_corrections_positive {
             // Corrections are already unsigned - just cast
             corrections.iter().map(|&c| c as u32).collect()
         } else {
             // Apply ZigZag encoding
-            corrections.iter().map(|&c| {
-                ((c << 1) ^ (c >> 31)) as u32
-            }).collect()
+            corrections
+                .iter()
+                .map(|&c| ((c << 1) ^ (c >> 31)) as u32)
+                .collect()
         };
-        
+
         // 6. Encode symbols
         // Write compression level/type (1 = compressed with symbols)
         out_buffer.encode_u8(1);
-        
+
         let mut symbol_options = SymbolEncodingOptions::default();
         symbol_options.compression_level = 10 - options.get_encoding_speed();
-        
+
         let _start_len = out_buffer.size();
         let ok = encode_symbols(&symbols, num_components, &symbol_options, out_buffer);
         if !ok {
             return false;
         }
-
-
 
         // 7. Encode Prediction Data (after symbols)
         if selected_method != PredictionSchemeMethod::None {
@@ -716,7 +755,6 @@ impl SequentialIntegerAttributeEncoder {
                 out_buffer.encode_data(&pd);
             }
         }
-
 
         true
     }

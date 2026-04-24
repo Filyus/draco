@@ -255,7 +255,9 @@ impl PlyWriter {
         self.write_header(writer, has_normals, has_colors, has_texcoords)?;
 
         match self.format {
-            PlyFormat::Ascii => self.write_ascii_body(writer, has_normals, has_colors, has_texcoords),
+            PlyFormat::Ascii => {
+                self.write_ascii_body(writer, has_normals, has_colors, has_texcoords)
+            }
             PlyFormat::BinaryLittleEndian => {
                 self.write_binary_body(writer, has_normals, has_colors, has_texcoords, false)
             }
@@ -382,31 +384,59 @@ impl PlyWriter {
             match &self.positions {
                 PlyPositionData::Float32(values) => {
                     for component in values[i] {
-                        writer.write_all(&if big_endian { component.to_be_bytes() } else { component.to_le_bytes() })?;
+                        writer.write_all(&if big_endian {
+                            component.to_be_bytes()
+                        } else {
+                            component.to_le_bytes()
+                        })?;
                     }
                 }
                 PlyPositionData::Float64(values) => {
                     for component in values[i] {
-                        writer.write_all(&if big_endian { component.to_be_bytes() } else { component.to_le_bytes() })?;
+                        writer.write_all(&if big_endian {
+                            component.to_be_bytes()
+                        } else {
+                            component.to_le_bytes()
+                        })?;
                     }
                 }
                 PlyPositionData::Int32(values) => {
                     for component in values[i] {
-                        writer.write_all(&if big_endian { component.to_be_bytes() } else { component.to_le_bytes() })?;
+                        writer.write_all(&if big_endian {
+                            component.to_be_bytes()
+                        } else {
+                            component.to_le_bytes()
+                        })?;
                     }
                 }
                 PlyPositionData::Uint32(values) => {
                     for component in values[i] {
-                        writer.write_all(&if big_endian { component.to_be_bytes() } else { component.to_le_bytes() })?;
+                        writer.write_all(&if big_endian {
+                            component.to_be_bytes()
+                        } else {
+                            component.to_le_bytes()
+                        })?;
                     }
                 }
             }
 
             if has_normals {
                 let [nx, ny, nz] = self.normals[i];
-                writer.write_all(&if big_endian { nx.to_be_bytes() } else { nx.to_le_bytes() })?;
-                writer.write_all(&if big_endian { ny.to_be_bytes() } else { ny.to_le_bytes() })?;
-                writer.write_all(&if big_endian { nz.to_be_bytes() } else { nz.to_le_bytes() })?;
+                writer.write_all(&if big_endian {
+                    nx.to_be_bytes()
+                } else {
+                    nx.to_le_bytes()
+                })?;
+                writer.write_all(&if big_endian {
+                    ny.to_be_bytes()
+                } else {
+                    ny.to_le_bytes()
+                })?;
+                writer.write_all(&if big_endian {
+                    nz.to_be_bytes()
+                } else {
+                    nz.to_le_bytes()
+                })?;
             }
 
             if has_colors {
@@ -423,14 +453,26 @@ impl PlyWriter {
                         "PLY binary writer only supports face indices up to i32::MAX",
                     )
                 })?;
-                writer.write_all(&if big_endian { index.to_be_bytes() } else { index.to_le_bytes() })?;
+                writer.write_all(&if big_endian {
+                    index.to_be_bytes()
+                } else {
+                    index.to_le_bytes()
+                })?;
             }
             if has_texcoords {
                 writer.write_all(&[6u8])?;
                 for index in face {
                     let [u, v] = self.texcoords[*index as usize];
-                    writer.write_all(&if big_endian { u.to_be_bytes() } else { u.to_le_bytes() })?;
-                    writer.write_all(&if big_endian { v.to_be_bytes() } else { v.to_le_bytes() })?;
+                    writer.write_all(&if big_endian {
+                        u.to_be_bytes()
+                    } else {
+                        u.to_le_bytes()
+                    })?;
+                    writer.write_all(&if big_endian {
+                        v.to_be_bytes()
+                    } else {
+                        v.to_le_bytes()
+                    })?;
                 }
             }
         }
@@ -627,7 +669,13 @@ mod tests {
         let mut mesh = Mesh::new();
         let mut pos_att = PointAttribute::new();
 
-        pos_att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, 3);
+        pos_att.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Float32,
+            false,
+            3,
+        );
         let buffer = pos_att.buffer_mut();
         let positions: [[f32; 3]; 3] = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
         for (i, pos) in positions.iter().enumerate() {
@@ -682,11 +730,7 @@ mod tests {
 
     #[test]
     fn test_write_ply_positions() {
-        let points = vec![
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-        ];
+        let points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
 
         let file = NamedTempFile::new().unwrap();
         write_ply_positions(file.path(), &points).unwrap();
@@ -772,11 +816,7 @@ mod tests {
     #[cfg(feature = "decoder")]
     #[test]
     fn test_write_binary_little_endian_positions_roundtrip() {
-        let points = vec![
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-        ];
+        let points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
 
         let file = NamedTempFile::new().unwrap();
         let mut writer = PlyWriter::new().with_binary_little_endian();
@@ -852,9 +892,19 @@ mod tests {
     fn test_write_preserves_int32_positions() {
         let mut mesh = Mesh::new();
         let mut pos_att = PointAttribute::new();
-        pos_att.init(GeometryAttributeType::Position, 3, DataType::Int32, false, 2);
-        pos_att.buffer_mut().write(0, &[1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]);
-        pos_att.buffer_mut().write(12, &[4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0]);
+        pos_att.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Int32,
+            false,
+            2,
+        );
+        pos_att
+            .buffer_mut()
+            .write(0, &[1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]);
+        pos_att
+            .buffer_mut()
+            .write(12, &[4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0]);
         mesh.add_attribute(pos_att);
 
         let mut writer = PlyWriter::new();
@@ -913,7 +963,11 @@ fn read_u32x3(att: &PointAttribute, point_idx: usize) -> [u32; 3] {
     ]
 }
 
-fn append_positions_from_attribute(positions: &mut PlyPositionData, att: &PointAttribute, num_points: usize) {
+fn append_positions_from_attribute(
+    positions: &mut PlyPositionData,
+    att: &PointAttribute,
+    num_points: usize,
+) {
     if att.num_components() != 3 {
         return;
     }
@@ -942,7 +996,9 @@ fn append_positions_from_attribute(positions: &mut PlyPositionData, att: &PointA
                 }
             }
         }
-        DataType::Float64 if positions.len() == 0 || matches!(positions, PlyPositionData::Float64(_)) => {
+        DataType::Float64
+            if positions.len() == 0 || matches!(positions, PlyPositionData::Float64(_)) =>
+        {
             let values: Vec<[f64; 3]> = (0..num_points).map(|i| read_f64x3(att, i)).collect();
             match positions {
                 PlyPositionData::Float32(existing) if existing.is_empty() => {
@@ -952,7 +1008,9 @@ fn append_positions_from_attribute(positions: &mut PlyPositionData, att: &PointA
                 _ => unreachable!(),
             }
         }
-        DataType::Int32 if positions.len() == 0 || matches!(positions, PlyPositionData::Int32(_)) => {
+        DataType::Int32
+            if positions.len() == 0 || matches!(positions, PlyPositionData::Int32(_)) =>
+        {
             let values: Vec<[i32; 3]> = (0..num_points).map(|i| read_i32x3(att, i)).collect();
             match positions {
                 PlyPositionData::Float32(existing) if existing.is_empty() => {
@@ -962,7 +1020,9 @@ fn append_positions_from_attribute(positions: &mut PlyPositionData, att: &PointA
                 _ => unreachable!(),
             }
         }
-        DataType::Uint32 if positions.len() == 0 || matches!(positions, PlyPositionData::Uint32(_)) => {
+        DataType::Uint32
+            if positions.len() == 0 || matches!(positions, PlyPositionData::Uint32(_)) =>
+        {
             let values: Vec<[u32; 3]> = (0..num_points).map(|i| read_u32x3(att, i)).collect();
             match positions {
                 PlyPositionData::Float32(existing) if existing.is_empty() => {
@@ -997,7 +1057,8 @@ fn read_numeric3_as_f32(att: &PointAttribute, point_idx: usize) -> [f32; 3] {
         }
         _ => {
             let mut bytes = [0u8; 12];
-            att.buffer().read(point_idx * att.byte_stride() as usize, &mut bytes);
+            att.buffer()
+                .read(point_idx * att.byte_stride() as usize, &mut bytes);
             [
                 f32::from_le_bytes(bytes[0..4].try_into().unwrap()),
                 f32::from_le_bytes(bytes[4..8].try_into().unwrap()),

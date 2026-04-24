@@ -4,15 +4,15 @@ use crate::rans_symbol_coding::RAnsSymbol;
 
 /// RAnsSymbolDecoder with runtime precision to avoid monomorphization bloat.
 /// Instead of const generics, we store the precision bits at runtime.
-/// Performance is preserved by storing `rans_precision_bits` and using bit 
+/// Performance is preserved by storing `rans_precision_bits` and using bit
 /// operations (shift/mask) instead of division/modulo.
 pub struct RAnsSymbolDecoder<'a> {
     pub ans: AnsDecoder<'a>,
     probability_table: Vec<RAnsSymbol>,
     lut: Vec<u32>,
     num_symbols: usize,
-    rans_precision_bits: u32,  // Store bits for shift operations
-    rans_precision_mask: u32,  // (1 << bits) - 1 for fast modulo
+    rans_precision_bits: u32, // Store bits for shift operations
+    rans_precision_mask: u32, // (1 << bits) - 1 for fast modulo
     rans_precision: u32,
     l_rans_base: u32,
 }
@@ -42,7 +42,8 @@ impl<'a> RAnsSymbolDecoder<'a> {
 
     fn decode_table(&mut self, buffer: &mut DecoderBuffer) -> bool {
         let _start_pos = buffer.position();
-        let bitstream_version = ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
+        let bitstream_version =
+            ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
         let num_symbols = if bitstream_version < 0x0200 {
             match buffer.decode_u32() {
                 Ok(v) => v as usize,
@@ -59,19 +60,20 @@ impl<'a> RAnsSymbolDecoder<'a> {
             return true;
         }
 
-        self.probability_table.resize(num_symbols, RAnsSymbol::default());
+        self.probability_table
+            .resize(num_symbols, RAnsSymbol::default());
 
         // NOTE: C++ only early-returns for num_symbols == 0.
         // For num_symbols == 1, it still reads the probability table byte.
         // We must do the same to stay in sync with the buffer!
-        
+
         let mut i = 0;
         while i < num_symbols {
             let b = match buffer.decode_u8() {
                 Ok(v) => v,
                 Err(_) => return false,
             };
-            
+
             let mode = b & 3;
             if mode == 3 {
                 // Zero frequency offset
@@ -97,7 +99,7 @@ impl<'a> RAnsSymbolDecoder<'a> {
             }
             i += 1;
         }
-        
+
         // Compute cumulative probabilities and LUT
         self.lut.resize(self.rans_precision as usize, 0);
         let mut cum_prob: u32 = 0;
@@ -115,7 +117,7 @@ impl<'a> RAnsSymbolDecoder<'a> {
             }
             cum_prob = end_idx;
         }
-        
+
         if cum_prob != self.rans_precision {
             return false;
         }
@@ -126,7 +128,8 @@ impl<'a> RAnsSymbolDecoder<'a> {
         // Draco advances the buffer past the encoded rANS data regardless of the
         // number of symbols (the encoded size prefix is always present).
         // C++: v < 2.0 uses fixed u64, v >= 2.0 uses varint u64.
-        let bitstream_version = ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
+        let bitstream_version =
+            ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
         let bytes_to_read = if bitstream_version < 0x0200 {
             match buffer.decode::<u64>() {
                 Ok(v) => v as usize,
@@ -147,13 +150,13 @@ impl<'a> RAnsSymbolDecoder<'a> {
         if data.len() < bytes_to_read {
             return false;
         }
-        
+
         let rans_data = &data[..bytes_to_read];
         self.ans = AnsDecoder::new(rans_data);
         if !self.ans.read_init(self.l_rans_base) {
             return false;
         }
-        
+
         buffer.advance(bytes_to_read);
         true
     }
@@ -167,8 +170,8 @@ impl<'a> RAnsSymbolDecoder<'a> {
         // bit operations for division/modulo by rans_precision (power of two).
         // Using shift/mask is equivalent to div/mod but much faster.
         self.ans.read_normalize();
-        let quo = self.ans.state >> self.rans_precision_bits;  // Fast division
-        let rem = self.ans.state & self.rans_precision_mask;   // Fast modulo
+        let quo = self.ans.state >> self.rans_precision_bits; // Fast division
+        let rem = self.ans.state & self.rans_precision_mask; // Fast modulo
         let symbol_id = self.lut[rem as usize];
         let sym = &self.probability_table[symbol_id as usize];
         self.ans.state = quo * sym.prob + rem - sym.cum_prob;

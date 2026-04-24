@@ -62,7 +62,7 @@ impl OctahedronToolBox {
         // C++ code determines signs without modifying the values
         let sign_s: i32;
         let sign_t: i32;
-        
+
         if *s >= 0 && *t >= 0 {
             sign_s = 1;
             sign_t = 1;
@@ -79,13 +79,13 @@ impl OctahedronToolBox {
         // unchanged for non-overflowing cases.
         let corner_point_s = (sign_s * self.center_value) as u32;
         let corner_point_t = (sign_t * self.center_value) as u32;
-        
+
         let mut us = *s as u32;
         let mut ut = *t as u32;
-        
+
         us = us.wrapping_add(us).wrapping_sub(corner_point_s);
         ut = ut.wrapping_add(ut).wrapping_sub(corner_point_t);
-        
+
         if sign_s * sign_t >= 0 {
             let temp = us;
             us = (-(ut as i32)) as u32;
@@ -93,10 +93,10 @@ impl OctahedronToolBox {
         } else {
             std::mem::swap(&mut us, &mut ut);
         }
-        
+
         us = us.wrapping_add(corner_point_s);
         ut = ut.wrapping_add(corner_point_t);
-        
+
         *s = us as i32;
         *t = ut as i32;
         *s /= 2;
@@ -135,7 +135,8 @@ impl OctahedronToolBox {
         let mut s = s;
         let mut t = t;
         // Check if coordinates are at corners that need canonicalization
-        let is_corner = (s == 0 && (t == 0 || t == self.max_value)) || (s == self.max_value && t == 0);
+        let is_corner =
+            (s == 0 && (t == 0 || t == self.max_value)) || (s == self.max_value && t == 0);
         if is_corner {
             s = self.max_value;
             t = self.max_value;
@@ -215,7 +216,7 @@ impl OctahedronToolBox {
         let mut int_vec = [0; 3];
         int_vec[0] = (scaled_vector[0] * self.center_value as f32 + 0.5).floor() as i32;
         int_vec[1] = (scaled_vector[1] * self.center_value as f32 + 0.5).floor() as i32;
-        
+
         // Make sure the sum is exactly the center value.
         int_vec[2] = self.center_value - int_vec[0].abs() - int_vec[1].abs();
         if int_vec[2] < 0 {
@@ -240,17 +241,17 @@ impl OctahedronToolBox {
         // Scale s and t to [-1, 1] range
         let in_s_scaled = s as f32 * self.dequantization_scale - 1.0;
         let in_t_scaled = t as f32 * self.dequantization_scale - 1.0;
-        
+
         // In the octahedral encoding:
         //   s corresponds to y component
         //   t corresponds to z component
         //   x is computed from the octahedron constraint
         let mut y = in_s_scaled;
         let mut z = in_t_scaled;
-        
+
         // Compute x from the octahedron surface constraint
         let x = 1.0 - y.abs() - z.abs();
-        
+
         // For points on the left hemisphere (x < 0), we need to unwrap them
         // by mirroring along the diagonal edges of the diamond
         if x < 0.0 {
@@ -258,7 +259,7 @@ impl OctahedronToolBox {
             y += if y < 0.0 { x_offset } else { -x_offset };
             z += if z < 0.0 { x_offset } else { -x_offset };
         }
-        
+
         // Normalize the vector
         let norm_squared = x * x + y * y + z * z;
         if norm_squared < 1e-6 {

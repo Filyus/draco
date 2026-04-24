@@ -1,7 +1,7 @@
-use crate::point_cloud_decoder::PointCloudDecoder;
-use crate::geometry_attribute::PointAttribute;
 use crate::decoder_buffer::DecoderBuffer;
+use crate::geometry_attribute::PointAttribute;
 use crate::geometry_indices::PointIndex;
+use crate::point_cloud_decoder::PointCloudDecoder;
 
 pub struct SequentialAttributeDecoder {
     attribute_id: i32,
@@ -47,10 +47,7 @@ impl SequentialAttributeDecoder {
         true
     }
 
-    pub fn transform_attribute_to_original_format(
-        &mut self,
-        _point_ids: &[PointIndex],
-    ) -> bool {
+    pub fn transform_attribute_to_original_format(&mut self, _point_ids: &[PointIndex]) -> bool {
         true
     }
 }

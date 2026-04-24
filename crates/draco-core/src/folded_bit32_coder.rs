@@ -1,7 +1,7 @@
-#[cfg(feature = "encoder")]
-use crate::encoder_buffer::EncoderBuffer;
 #[cfg(feature = "decoder")]
 use crate::decoder_buffer::DecoderBuffer;
+#[cfg(feature = "encoder")]
+use crate::encoder_buffer::EncoderBuffer;
 #[cfg(feature = "decoder")]
 use crate::rans_bit_decoder::RAnsBitDecoder;
 #[cfg(feature = "encoder")]

@@ -78,12 +78,13 @@ impl EncoderBuffer {
             return;
         }
         self.bit_encoder_active = false;
-        
+
         if self.encode_bit_sequence_size {
             let encoded_bits = self.current_bit_offset;
             let encoded_bytes = encoded_bits.div_ceil(8);
-            let bitstream_version = ((self.version_major as u16) << 8) | (self.version_minor as u16);
-            
+            let bitstream_version =
+                ((self.version_major as u16) << 8) | (self.version_minor as u16);
+
             let mut var_size_buffer = Vec::new();
             if bitstream_version >= 0x0202 {
                 // Encode size as varint
@@ -103,21 +104,22 @@ impl EncoderBuffer {
                 // Encode size as fixed 8 bytes
                 var_size_buffer.extend_from_slice(&(encoded_bytes as u64).to_le_bytes());
             }
-            
+
             let size_len = var_size_buffer.len();
             let reserved_pos = self.bit_start_pos - 8;
-            
+
             // Move encoded data to its final position
             let src_pos = self.bit_start_pos;
             let dst_pos = reserved_pos + size_len;
-            
+
             if dst_pos != src_pos {
-                self.buffer.copy_within(src_pos..src_pos + encoded_bytes, dst_pos);
+                self.buffer
+                    .copy_within(src_pos..src_pos + encoded_bytes, dst_pos);
             }
-            
+
             // Write the size
             self.buffer[reserved_pos..reserved_pos + size_len].copy_from_slice(&var_size_buffer);
-            
+
             // Resize buffer to final size
             self.buffer.resize(dst_pos + encoded_bytes, 0);
         } else {
@@ -214,11 +216,11 @@ impl EncoderBuffer {
         };
         self.encode_varint(symbol as u64);
     }
-    
+
     pub fn data(&self) -> &[u8] {
         &self.buffer
     }
-    
+
     pub fn size(&self) -> usize {
         self.buffer.len()
     }

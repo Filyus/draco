@@ -50,7 +50,9 @@ fn test_cpp_grid5x5_encoder_parity() {
         .ok()
         .map(std::fs::read_to_string)
         .transpose()
-        .or_else(|_| std::fs::read_to_string("../../debug_logs/cpp_dec_grid5x5_original.txt").map(Some))
+        .or_else(|_| {
+            std::fs::read_to_string("../../debug_logs/cpp_dec_grid5x5_original.txt").map(Some)
+        })
         .or_else(|_| std::fs::read_to_string("./debug_logs/cpp_dec_grid5x5_original.txt").map(Some))
         .unwrap_or(None);
     let Some(cpp_log) = cpp_log else {
@@ -76,7 +78,11 @@ fn test_cpp_grid5x5_encoder_parity() {
         let mut pos_attr = draco_core::geometry_attribute::PointAttribute::new();
         pos_attr.init(
             draco_core::geometry_attribute::GeometryAttributeType::Position,
-            3, draco_core::draco_types::DataType::Float32, false, 0);
+            3,
+            draco_core::draco_types::DataType::Float32,
+            false,
+            0,
+        );
 
         // Reserve face storage and assign faces by mapping coordinates to point ids in the same order
         // Triangle 1: p0(x,y), p1(x+1,y), p2(x,y+1)
@@ -84,7 +90,14 @@ fn test_cpp_grid5x5_encoder_parity() {
         let mut face_idx = 0u32;
         for _ in 0..((width - 1) * (height - 1) * 2) {
             // placeholder faces, we'll set them below once we have point ids
-            mesh.set_face(draco_core::FaceIndex(face_idx), [draco_core::PointIndex(0), draco_core::PointIndex(0), draco_core::PointIndex(0)]);
+            mesh.set_face(
+                draco_core::FaceIndex(face_idx),
+                [
+                    draco_core::PointIndex(0),
+                    draco_core::PointIndex(0),
+                    draco_core::PointIndex(0),
+                ],
+            );
             face_idx += 1;
         }
 
@@ -116,10 +129,24 @@ fn test_cpp_grid5x5_encoder_parity() {
                 }
 
                 // Triangle 1: p0, p1, p2
-                mesh.set_face(draco_core::FaceIndex(face_idx), [draco_core::PointIndex(ids[0]), draco_core::PointIndex(ids[1]), draco_core::PointIndex(ids[2])]);
+                mesh.set_face(
+                    draco_core::FaceIndex(face_idx),
+                    [
+                        draco_core::PointIndex(ids[0]),
+                        draco_core::PointIndex(ids[1]),
+                        draco_core::PointIndex(ids[2]),
+                    ],
+                );
                 face_idx += 1;
                 // Triangle 2: p1, p3, p2
-                mesh.set_face(draco_core::FaceIndex(face_idx), [draco_core::PointIndex(ids[1]), draco_core::PointIndex(ids[3]), draco_core::PointIndex(ids[2])]);
+                mesh.set_face(
+                    draco_core::FaceIndex(face_idx),
+                    [
+                        draco_core::PointIndex(ids[1]),
+                        draco_core::PointIndex(ids[3]),
+                        draco_core::PointIndex(ids[2]),
+                    ],
+                );
                 face_idx += 1;
             }
         }
@@ -130,12 +157,22 @@ fn test_cpp_grid5x5_encoder_parity() {
         // Re-init pos_attr with correct size
         pos_attr.init(
             draco_core::geometry_attribute::GeometryAttributeType::Position,
-            3, draco_core::draco_types::DataType::Float32, false, num_points);
+            3,
+            draco_core::draco_types::DataType::Float32,
+            false,
+            num_points,
+        );
         for (i, p) in unique_points.iter().enumerate() {
             let offset = i * 3 * 4;
-            pos_attr.buffer_mut().update(&p[0].to_le_bytes(), Some(offset));
-            pos_attr.buffer_mut().update(&p[1].to_le_bytes(), Some(offset + 4));
-            pos_attr.buffer_mut().update(&p[2].to_le_bytes(), Some(offset + 8));
+            pos_attr
+                .buffer_mut()
+                .update(&p[0].to_le_bytes(), Some(offset));
+            pos_attr
+                .buffer_mut()
+                .update(&p[1].to_le_bytes(), Some(offset + 4));
+            pos_attr
+                .buffer_mut()
+                .update(&p[2].to_le_bytes(), Some(offset + 8));
         }
         mesh.add_attribute(pos_attr);
         mesh
@@ -167,15 +204,24 @@ fn test_cpp_grid5x5_encoder_parity() {
     let recorded_all = draco_core::test_event_log::take_events();
 
     // Filter recorded events to the canonical MAP_POINT entries
-    let recorded: Vec<String> = recorded_all.into_iter()
+    let recorded: Vec<String> = recorded_all
+        .into_iter()
         .filter(|s| s.starts_with("MAP_POINT:"))
         .collect();
 
     // Compare canonical point-level sequences (C++ logs only first 10 visits)
     let min_len = std::cmp::min(expected.len(), recorded.len());
-    println!("\nExpected (from C++ encoder, {} entries): {:?}", expected.len(), expected);
-    println!("Recorded (from Rust encoder, {} entries): {:?}", recorded.len(), &recorded[..min_len.min(40)]);
-    
+    println!(
+        "\nExpected (from C++ encoder, {} entries): {:?}",
+        expected.len(),
+        expected
+    );
+    println!(
+        "Recorded (from Rust encoder, {} entries): {:?}",
+        recorded.len(),
+        &recorded[..min_len.min(40)]
+    );
+
     for i in 0..min_len {
         if expected[i] != recorded[i] {
             panic!("Event mismatch idx {}: exp='{}' got='{}'\nExpected (first {}): {:?}\nRecorded (first {}): {:?}",
@@ -187,5 +233,8 @@ fn test_cpp_grid5x5_encoder_parity() {
         println!("Note: Event sequences differ in length: expected={} recorded={} (C++ only logs first 10)", expected.len(), recorded.len());
     }
     // If we got here without panic, first min_len entries match
-    println!("SUCCESS: First {} entries match between C++ and Rust encoder", min_len);
+    println!(
+        "SUCCESS: First {} entries match between C++ and Rust encoder",
+        min_len
+    );
 }

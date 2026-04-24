@@ -37,7 +37,7 @@ impl ObjReader {
     pub fn read_positions(&mut self) -> io::Result<Vec<[f32; 3]>> {
         read_obj_positions(&self.path)
     }
-    
+
     /// Read positions and faces from the OBJ file.
     fn read_positions_and_faces(&self) -> io::Result<(Vec<[f32; 3]>, Vec<[u32; 3]>)> {
         let file = fs::File::open(&self.path)?;
@@ -48,49 +48,49 @@ impl ObjReader {
         for line in reader.lines() {
             let line = line?;
             let trimmed = line.trim();
-            
+
             if trimmed.starts_with("vn ") || trimmed.starts_with("vt ") {
                 continue;
             }
-            
+
             if trimmed.starts_with("v ") {
                 let mut parts = trimmed.split_whitespace();
                 parts.next(); // skip 'v'
-                
+
                 let x = parts.next().and_then(|s| s.parse().ok());
                 let y = parts.next().and_then(|s| s.parse().ok());
                 let z = parts.next().and_then(|s| s.parse().ok());
-                
+
                 if let (Some(x), Some(y), Some(z)) = (x, y, z) {
                     positions.push([x, y, z]);
                 }
             } else if trimmed.starts_with("f ") {
                 let mut parts = trimmed.split_whitespace();
                 parts.next(); // skip 'f'
-                
+
                 // Parse face indices (format: v or v/vt or v/vt/vn or v//vn)
                 let parse_vertex = |s: &str| -> Option<u32> {
                     // Take only the first number (vertex index), ignore texture/normal indices
                     let idx_str = s.split('/').next()?;
                     idx_str.parse::<u32>().ok()
                 };
-                
+
                 let v0 = parts.next().and_then(parse_vertex);
                 let v1 = parts.next().and_then(parse_vertex);
                 let v2 = parts.next().and_then(parse_vertex);
-                
+
                 // OBJ uses 1-based indices, convert to 0-based
                 if let (Some(v0), Some(v1), Some(v2)) = (v0, v1, v2) {
                     faces.push([v0 - 1, v1 - 1, v2 - 1]);
                 }
             }
         }
-        
+
         Ok((positions, faces))
     }
 
     /// Read a mesh with positions and faces (if present).
-    /// 
+    ///
     /// The mesh is automatically processed to match C++ Draco OBJ loader behavior:
     /// point IDs are deduplicated in face-traversal order, which ensures binary
     /// compatibility when encoding with sequential encoding (speed 10).
@@ -101,7 +101,7 @@ impl ObjReader {
         if positions.is_empty() {
             return Ok(mesh);
         }
-        
+
         mesh.set_num_points(positions.len());
         mesh.set_num_faces(faces.len());
 
@@ -122,15 +122,18 @@ impl ObjReader {
         }
 
         mesh.add_attribute(pos_att);
-        
+
         // Set faces
         use draco_core::geometry_indices::{FaceIndex, PointIndex};
         for (i, face) in faces.iter().enumerate() {
-            mesh.set_face(FaceIndex(i as u32), [
-                PointIndex(face[0]),
-                PointIndex(face[1]),
-                PointIndex(face[2]),
-            ]);
+            mesh.set_face(
+                FaceIndex(i as u32),
+                [
+                    PointIndex(face[0]),
+                    PointIndex(face[1]),
+                    PointIndex(face[2]),
+                ],
+            );
         }
 
         // Match C++ OBJ loader behavior: deduplicate point IDs in face-traversal order.
@@ -157,13 +160,26 @@ impl crate::traits::SceneReader for ObjReader {
     fn read_scene(&mut self) -> io::Result<crate::traits::Scene> {
         let meshes = self.read_meshes()?;
         let mut parts = Vec::with_capacity(meshes.len());
-        let mut root = crate::traits::SceneNode::new(self.path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()));
+        let mut root = crate::traits::SceneNode::new(
+            self.path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string()),
+        );
         for mesh in meshes {
-            let part = crate::traits::SceneObject { name: None, mesh: mesh.clone(), transform: None };
+            let part = crate::traits::SceneObject {
+                name: None,
+                mesh: mesh.clone(),
+                transform: None,
+            };
             root.parts.push(part.clone());
             parts.push(part);
         }
-        Ok(crate::traits::Scene { name: root.name.clone(), parts, root_nodes: vec![root] })
+        Ok(crate::traits::Scene {
+            name: root.name.clone(),
+            parts,
+            root_nodes: vec![root],
+        })
     }
 }
 
@@ -187,29 +203,29 @@ pub fn read_obj_positions<P: AsRef<Path>>(path: P) -> io::Result<Vec<[f32; 3]>> 
     for line in reader.lines() {
         let line = line?;
         let trimmed = line.trim();
-        
+
         if trimmed.starts_with("vn ") || trimmed.starts_with("vt ") {
             continue;
         }
-        
+
         if !trimmed.starts_with('v') {
             continue;
         }
-        
+
         let mut parts = trimmed.split_whitespace();
         if parts.next() != Some("v") {
             continue;
         }
-        
+
         let x = parts.next().and_then(|s| s.parse().ok());
         let y = parts.next().and_then(|s| s.parse().ok());
         let z = parts.next().and_then(|s| s.parse().ok());
-        
+
         if let (Some(x), Some(y), Some(z)) = (x, y, z) {
             positions.push([x, y, z]);
         }
     }
-    
+
     Ok(positions)
 }
 
@@ -218,7 +234,7 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
-    
+
     #[test]
     fn test_read_obj_positions() {
         let mut file = NamedTempFile::new().unwrap();
@@ -229,7 +245,7 @@ mod tests {
         writeln!(file, "vt 0.5 0.5").unwrap();
         writeln!(file, "v -1.0 -2.0 -3.0").unwrap();
         file.flush().unwrap();
-        
+
         let positions = read_obj_positions(file.path()).unwrap();
         assert_eq!(positions.len(), 3);
         assert_eq!(positions[0], [1.0, 2.0, 3.0]);

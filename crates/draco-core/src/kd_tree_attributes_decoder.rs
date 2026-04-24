@@ -60,9 +60,12 @@ impl KdTreeAttributesDecoder {
             Ok(v) => v as usize,
             Err(_) => return false,
         };
-        
+
         for _ in 0..num_attributes {
-            let att_type_val = match in_buffer.decode_u8() { Ok(v) => v, Err(_) => return false };
+            let att_type_val = match in_buffer.decode_u8() {
+                Ok(v) => v,
+                Err(_) => return false,
+            };
             let att_type = match att_type_val {
                 0 => GeometryAttributeType::Position,
                 1 => GeometryAttributeType::Normal,
@@ -71,8 +74,11 @@ impl KdTreeAttributesDecoder {
                 4 => GeometryAttributeType::Generic,
                 _ => GeometryAttributeType::Invalid,
             };
-            
-            let data_type_val = match in_buffer.decode_u8() { Ok(v) => v, Err(_) => return false };
+
+            let data_type_val = match in_buffer.decode_u8() {
+                Ok(v) => v,
+                Err(_) => return false,
+            };
             let data_type = match data_type_val {
                 1 => DataType::Int8,
                 2 => DataType::Uint8,
@@ -87,15 +93,30 @@ impl KdTreeAttributesDecoder {
                 11 => DataType::Bool,
                 _ => DataType::Invalid,
             };
-            
-            let num_components = match in_buffer.decode_u8() { Ok(v) => v, Err(_) => return false };
-            let normalized = match in_buffer.decode_u8() { Ok(v) => v != 0, Err(_) => return false };
-            let unique_id = match in_buffer.decode_varint() { Ok(v) => v as u32, Err(_) => return false };
-            
+
+            let num_components = match in_buffer.decode_u8() {
+                Ok(v) => v,
+                Err(_) => return false,
+            };
+            let normalized = match in_buffer.decode_u8() {
+                Ok(v) => v != 0,
+                Err(_) => return false,
+            };
+            let unique_id = match in_buffer.decode_varint() {
+                Ok(v) => v as u32,
+                Err(_) => return false,
+            };
+
             let mut att = PointAttribute::new();
-            att.init(att_type, num_components, data_type, normalized, point_cloud.num_points());
+            att.init(
+                att_type,
+                num_components,
+                data_type,
+                normalized,
+                point_cloud.num_points(),
+            );
             att.set_unique_id(unique_id);
-            
+
             let att_id = point_cloud.add_attribute(att);
             self.attribute_ids.push(att_id);
         }
@@ -157,7 +178,8 @@ impl KdTreeAttributesDecoder {
                         num_components,
                         data_type: att.data_type(),
                     });
-                    self.min_signed_values.resize(self.min_signed_values.len() + num_components, 0);
+                    self.min_signed_values
+                        .resize(self.min_signed_values.len() + num_components, 0);
                 }
                 DataType::Float32 => {
                     float_specs.push((att_id, total_dimensionality, num_components));
@@ -167,7 +189,8 @@ impl KdTreeAttributesDecoder {
             total_dimensionality += num_components;
         }
 
-        let mut decoder = DynamicIntegerPointsKdTreeDecoder::new(compression_level, total_dimensionality as u32);
+        let mut decoder =
+            DynamicIntegerPointsKdTreeDecoder::new(compression_level, total_dimensionality as u32);
         let decoded = match decoder.decode_points(in_buffer, num_expected_points as u32) {
             Some(v) => v,
             None => return false,
@@ -183,7 +206,13 @@ impl KdTreeAttributesDecoder {
         for (att_id, offset, num_components) in float_specs {
             let att = point_cloud.attribute(att_id);
             let mut portable = PointAttribute::default();
-            portable.init(att.attribute_type(), att.num_components(), DataType::Uint32, false, num_expected_points);
+            portable.init(
+                att.attribute_type(),
+                att.num_components(),
+                DataType::Uint32,
+                false,
+                num_expected_points,
+            );
             portable.set_identity_mapping();
 
             write_u32_components_from_decoded(
@@ -200,7 +229,10 @@ impl KdTreeAttributesDecoder {
         }
 
         for spec in &self.attribute_specs {
-            if matches!(spec.data_type, DataType::Uint32 | DataType::Uint16 | DataType::Uint8) {
+            if matches!(
+                spec.data_type,
+                DataType::Uint32 | DataType::Uint16 | DataType::Uint8
+            ) {
                 let att = point_cloud.attribute_mut(spec.att_id);
                 write_u32_components_from_decoded(
                     &decoded,
@@ -314,9 +346,15 @@ impl KdTreeAttributesDecoder {
                 let avi = att.mapped_index(PointIndex(p as u32));
                 let base = avi.0 as usize * stride;
                 for c in 0..spec.num_components {
-                    let unsigned = cached.decoded[p * cached.total_dimensionality + spec.offset + c];
+                    let unsigned =
+                        cached.decoded[p * cached.total_dimensionality + spec.offset + c];
                     let signed = unsigned as i64 + self.min_signed_values[min_index + c] as i64;
-                    write_signed_component(att.buffer_mut(), base + c * component_size, spec.data_type, signed);
+                    write_signed_component(
+                        att.buffer_mut(),
+                        base + c * component_size,
+                        spec.data_type,
+                        signed,
+                    );
                 }
             }
             min_index += spec.num_components;
@@ -347,7 +385,12 @@ fn write_u32_components_from_decoded(
         let base = avi.0 as usize * stride;
         for c in 0..num_components {
             let v = decoded[p * total_dimensionality + offset + c];
-            write_unsigned_component(target_attribute.buffer_mut(), base + c * component_size, target_type, v);
+            write_unsigned_component(
+                target_attribute.buffer_mut(),
+                base + c * component_size,
+                target_type,
+                v,
+            );
         }
     }
 }

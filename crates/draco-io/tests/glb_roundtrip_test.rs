@@ -69,7 +69,10 @@ fn test_glb_decode_and_inspect() {
         // Extract a few sample faces
         for j in 0..3.min(num_faces) {
             let face = mesh.face(FaceIndex(j as u32));
-            println!("    Face[{}]: [{}, {}, {}]", j, face[0].0, face[1].0, face[2].0);
+            println!(
+                "    Face[{}]: [{}, {}, {}]",
+                j, face[0].0, face[1].0, face[2].0
+            );
         }
     }
 
@@ -98,25 +101,30 @@ fn test_glb_roundtrip_with_draco() {
 
     println!("Original meshes: {}", original_meshes.len());
     for (i, mesh) in original_meshes.iter().enumerate() {
-        println!("  Mesh {}: {} faces, {} points, {} attrs", 
-            i, mesh.num_faces(), mesh.num_points(), mesh.num_attributes());
+        println!(
+            "  Mesh {}: {} faces, {} points, {} attrs",
+            i,
+            mesh.num_faces(),
+            mesh.num_points(),
+            mesh.num_attributes()
+        );
     }
 
     // Try encoding just the first mesh to isolate the issue
     if let Some(first_mesh) = original_meshes.first() {
         println!("\nTrying to encode first mesh...");
-        
+
         // Encode with Draco
-        use draco_core::mesh_encoder::MeshEncoder;
-        use draco_core::encoder_options::EncoderOptions;
         use draco_core::encoder_buffer::EncoderBuffer;
-        
+        use draco_core::encoder_options::EncoderOptions;
+        use draco_core::mesh_encoder::MeshEncoder;
+
         let mut encoder = MeshEncoder::new();
         encoder.set_mesh(first_mesh.clone());
-        
+
         let mut options = EncoderOptions::new();
         options.set_global_int("encoding_method", 1); // Edgebreaker
-        
+
         let mut enc_buffer = EncoderBuffer::new();
         match encoder.encode(&options, &mut enc_buffer) {
             Ok(_) => println!("Encoding succeeded! {} bytes", enc_buffer.data().len()),
@@ -125,31 +133,37 @@ fn test_glb_roundtrip_with_draco() {
                 panic!("Failed to encode first mesh: {:?}", e);
             }
         }
-        
+
         // Peek at the encoded data to count split symbols
         let data = enc_buffer.data();
-        println!("First 100 bytes of encoded data: {:?}", &data[..100.min(data.len())]);
-        
+        println!(
+            "First 100 bytes of encoded data: {:?}",
+            &data[..100.min(data.len())]
+        );
+
         // Now try to decode
         println!("\nTrying to decode...");
         use draco_core::decoder_buffer::DecoderBuffer;
         use draco_core::mesh_decoder::MeshDecoder;
-        
+
         let mut decoder_buffer = DecoderBuffer::new(enc_buffer.data());
         let mut decoded_mesh = Mesh::new();
         let mut decoder = MeshDecoder::new();
-        
+
         match decoder.decode(&mut decoder_buffer, &mut decoded_mesh) {
-            Ok(_) => println!("Decoding succeeded! {} faces, {} points", 
-                decoded_mesh.num_faces(), decoded_mesh.num_points()),
+            Ok(_) => println!(
+                "Decoding succeeded! {} faces, {} points",
+                decoded_mesh.num_faces(),
+                decoded_mesh.num_points()
+            ),
             Err(e) => {
                 println!("Decoding failed: {:?}", e);
-                
+
                 // Save to a file for analysis
                 let debug_path = std::env::temp_dir().join("debug_draco.drc");
                 std::fs::write(&debug_path, enc_buffer.data()).expect("Failed to write debug file");
                 println!("Saved encoded data to {:?}", debug_path);
-                
+
                 panic!("Failed to decode: {:?}", e);
             }
         }
@@ -166,19 +180,19 @@ fn test_decode_cpp_encoded_bunny() {
         .unwrap()
         .join("testdata")
         .join("bunny_cpp_standard.drc");
-    
+
     if !drc_path.exists() {
         println!("Skipping test - bunny_cpp.drc not found at {:?}", drc_path);
         return;
     }
-    
+
     let data = std::fs::read(&drc_path).expect("Failed to read bunny_cpp.drc");
     println!("Read {} bytes from {:?}", data.len(), drc_path);
-    
+
     let mut decoder = MeshDecoder::new();
     let mut mesh = Mesh::new();
     let mut buffer = DecoderBuffer::new(&data);
-    
+
     match decoder.decode(&mut buffer, &mut mesh) {
         Ok(_) => {
             println!("Successfully decoded C++ encoded mesh:");
@@ -202,22 +216,29 @@ fn test_glb_mesh_topology() {
         .unwrap()
         .join("testdata")
         .join("IridescenceLamp.glb");
-    
+
     if !glb_path.exists() {
-        println!("Skipping test - IridescenceLamp.glb not found at {:?}", glb_path);
+        println!(
+            "Skipping test - IridescenceLamp.glb not found at {:?}",
+            glb_path
+        );
         return;
     }
-    
+
     let reader = GltfReader::open(&glb_path).expect("Failed to open GLB");
     let meshes = reader.decode_all_meshes().expect("Failed to decode meshes");
-    
+
     let mesh = &meshes[0];
-    println!("Mesh 0: {} faces, {} points", mesh.num_faces(), mesh.num_points());
-    
+    println!(
+        "Mesh 0: {} faces, {} points",
+        mesh.num_faces(),
+        mesh.num_points()
+    );
+
     // Build edge count to detect boundaries
     use std::collections::HashMap;
     let mut edge_counts: HashMap<(u32, u32), u32> = HashMap::new();
-    
+
     for fi in 0..mesh.num_faces() {
         let f = mesh.face(FaceIndex(fi as u32));
         for i in 0..3 {
@@ -227,22 +248,31 @@ fn test_glb_mesh_topology() {
             *edge_counts.entry(edge).or_insert(0) += 1;
         }
     }
-    
-    let boundary_edges: Vec<_> = edge_counts.iter().filter(|(_, &count)| count == 1).collect();
+
+    let boundary_edges: Vec<_> = edge_counts
+        .iter()
+        .filter(|(_, &count)| count == 1)
+        .collect();
     let non_manifold_edges: Vec<_> = edge_counts.iter().filter(|(_, &count)| count > 2).collect();
-    
+
     println!("Total edges: {}", edge_counts.len());
     println!("Boundary edges (used once): {}", boundary_edges.len());
-    println!("Non-manifold edges (used >2 times): {}", non_manifold_edges.len());
-    
+    println!(
+        "Non-manifold edges (used >2 times): {}",
+        non_manifold_edges.len()
+    );
+
     // Euler characteristic: V - E + F = 2 - 2g (for closed surface)
     // For surface with b boundary components: V - E + F = 2 - 2g - b
     let v = mesh.num_points();
     let e = edge_counts.len();
     let f = mesh.num_faces();
     let chi = v as i64 - e as i64 + f as i64;
-    println!("Euler characteristic (V - E + F): {} - {} + {} = {}", v, e, f, chi);
-    
+    println!(
+        "Euler characteristic (V - E + F): {} - {} + {} = {}",
+        v, e, f, chi
+    );
+
     if boundary_edges.is_empty() {
         println!("Mesh is CLOSED (no boundaries)");
     } else {
@@ -269,37 +299,56 @@ fn test_glb_roundtrip_sequential() {
 
     if let Some(first_mesh) = original_meshes.first() {
         println!("Testing with SEQUENTIAL encoding...");
-        println!("Original mesh: {} faces, {} points", first_mesh.num_faces(), first_mesh.num_points());
-        
-        use draco_core::mesh_encoder::MeshEncoder;
-        use draco_core::encoder_options::EncoderOptions;
+        println!(
+            "Original mesh: {} faces, {} points",
+            first_mesh.num_faces(),
+            first_mesh.num_points()
+        );
+
         use draco_core::encoder_buffer::EncoderBuffer;
-        
+        use draco_core::encoder_options::EncoderOptions;
+        use draco_core::mesh_encoder::MeshEncoder;
+
         let mut encoder = MeshEncoder::new();
         encoder.set_mesh(first_mesh.clone());
-        
+
         let mut options = EncoderOptions::new();
         options.set_global_int("encoding_method", 0); // Sequential
-        
+
         let mut enc_buffer = EncoderBuffer::new();
-        encoder.encode(&options, &mut enc_buffer).expect("Sequential encoding failed");
+        encoder
+            .encode(&options, &mut enc_buffer)
+            .expect("Sequential encoding failed");
         println!("Encoding succeeded! {} bytes", enc_buffer.data().len());
-        
+
         // Now decode
         use draco_core::decoder_buffer::DecoderBuffer;
         use draco_core::mesh_decoder::MeshDecoder;
-        
+
         let mut decoder_buffer = DecoderBuffer::new(enc_buffer.data());
         let mut decoded_mesh = Mesh::new();
         let mut decoder = MeshDecoder::new();
-        
-        decoder.decode(&mut decoder_buffer, &mut decoded_mesh).expect("Sequential decoding failed");
-        println!("Decoding succeeded! {} faces, {} points", 
-            decoded_mesh.num_faces(), decoded_mesh.num_points());
-        
+
+        decoder
+            .decode(&mut decoder_buffer, &mut decoded_mesh)
+            .expect("Sequential decoding failed");
+        println!(
+            "Decoding succeeded! {} faces, {} points",
+            decoded_mesh.num_faces(),
+            decoded_mesh.num_points()
+        );
+
         // Verify mesh properties
-        assert_eq!(first_mesh.num_faces(), decoded_mesh.num_faces(), "Face count mismatch");
-        assert_eq!(first_mesh.num_points(), decoded_mesh.num_points(), "Point count mismatch");
+        assert_eq!(
+            first_mesh.num_faces(),
+            decoded_mesh.num_faces(),
+            "Face count mismatch"
+        );
+        assert_eq!(
+            first_mesh.num_points(),
+            decoded_mesh.num_points(),
+            "Point count mismatch"
+        );
         println!("Sequential roundtrip PASSED!");
     }
 }

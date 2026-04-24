@@ -47,7 +47,7 @@ impl ShannonEntropyTracker {
 
             let mut old_symbol_entropy_norm = 0.0;
             let frequency = self.frequencies[symbol];
-            
+
             if frequency > 1 {
                 old_symbol_entropy_norm = (frequency as f64) * (frequency as f64).log2();
             } else if frequency == 0 {
@@ -90,42 +90,46 @@ impl ShannonEntropyTracker {
         if entropy_data.num_values < 2 {
             return 0;
         }
-        
+
         let num_values = entropy_data.num_values as f64;
         let bits = num_values * num_values.log2() - entropy_data.entropy_norm;
         bits.ceil() as i64
     }
 
     pub fn get_number_of_r_ans_table_bits_static(entropy_data: &EntropyData) -> i64 {
-            approximate_rans_frequency_table_bits(
+        approximate_rans_frequency_table_bits(
             (entropy_data.max_symbol + 1) as u32,
             entropy_data.num_unique_symbols as u32,
-            ) as i64
+        ) as i64
     }
 }
 
-pub fn compute_shannon_entropy(symbols: &[u32], max_value: usize, out_num_unique_symbols: Option<&mut i32>) -> i64 {
+pub fn compute_shannon_entropy(
+    symbols: &[u32],
+    max_value: usize,
+    out_num_unique_symbols: Option<&mut i32>,
+) -> i64 {
     let mut num_unique_symbols = 0;
     let mut symbol_frequencies = vec![0; max_value + 1];
-    
+
     for &symbol in symbols {
         symbol_frequencies[symbol as usize] += 1;
     }
-    
+
     let mut total_bits = 0.0;
     let num_symbols_d = symbols.len() as f64;
-    
+
     for &freq in &symbol_frequencies {
         if freq > 0 {
             num_unique_symbols += 1;
             total_bits += (freq as f64) * ((freq as f64) / num_symbols_d).log2();
         }
     }
-    
+
     if let Some(out) = out_num_unique_symbols {
         *out = num_unique_symbols;
     }
-    
+
     (-total_bits) as i64
 }
 
@@ -133,13 +137,13 @@ pub fn compute_binary_shannon_entropy(num_values: u32, num_true_values: u32) -> 
     if num_values == 0 {
         return 0.0;
     }
-    
+
     if num_true_values == 0 || num_values == num_true_values {
         return 0.0;
     }
-    
+
     let true_freq = (num_true_values as f64) / (num_values as f64);
     let false_freq = 1.0 - true_freq;
-    
+
     -(true_freq * true_freq.log2() + false_freq * false_freq.log2())
 }

@@ -22,16 +22,18 @@ pub struct PredictionSchemeWrapEncodingTransform<DataType> {
 
 #[cfg(feature = "encoder")]
 impl<DataType> Default for PredictionSchemeWrapEncodingTransform<DataType>
-where DataType: Copy + Ord + Default
- {
+where
+    DataType: Copy + Ord + Default,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[cfg(feature = "encoder")]
-impl<DataType> PredictionSchemeWrapEncodingTransform<DataType> 
-where DataType: Copy + Ord + Default
+impl<DataType> PredictionSchemeWrapEncodingTransform<DataType>
+where
+    DataType: Copy + Ord + Default,
 {
     pub fn new() -> Self {
         Self {
@@ -54,24 +56,30 @@ impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeWrapEncodin
 
     fn init(&mut self, orig_data: &[i32], size: usize, num_components: usize) {
         self.num_components = num_components;
-        
-        if size == 0 { return; }
+
+        if size == 0 {
+            return;
+        }
 
         let mut min_val = orig_data[0];
         let mut max_val = orig_data[0];
 
         for i in 1..size {
             let val = orig_data[i];
-            if val < min_val { min_val = val; }
-            if val > max_val { max_val = val; }
+            if val < min_val {
+                min_val = val;
+            }
+            if val > max_val {
+                max_val = val;
+            }
         }
-        
+
         self.min_value = min_val;
         self.max_value = max_val;
-        
+
         // InitCorrectionBounds
         let dif = (max_val as i64) - (min_val as i64);
-        
+
         self.max_dif = (1 + dif) as i32;
         self.max_correction = self.max_dif / 2;
         self.min_correction = -self.max_correction;
@@ -94,16 +102,16 @@ impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeWrapEncodin
             } else if pred < self.min_value {
                 pred = self.min_value;
             }
-            
+
             let mut corr_val = original_vals[i].wrapping_sub(pred);
-            
+
             // Wrap around
             if corr_val < self.min_correction {
                 corr_val = corr_val.wrapping_add(self.max_dif);
             } else if corr_val > self.max_correction {
                 corr_val = corr_val.wrapping_sub(self.max_dif);
             }
-            
+
             out_corr_vals[i] = corr_val;
         }
     }
@@ -126,16 +134,18 @@ pub struct PredictionSchemeWrapDecodingTransform<DataType> {
 
 #[cfg(feature = "decoder")]
 impl<DataType> Default for PredictionSchemeWrapDecodingTransform<DataType>
-where DataType: Copy + Default
- {
+where
+    DataType: Copy + Default,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[cfg(feature = "decoder")]
-impl<DataType> PredictionSchemeWrapDecodingTransform<DataType> 
-where DataType: Copy + Default
+impl<DataType> PredictionSchemeWrapDecodingTransform<DataType>
+where
+    DataType: Copy + Default,
 {
     pub fn new() -> Self {
         Self {
@@ -175,13 +185,13 @@ impl PredictionSchemeDecodingTransform<i32, i32> for PredictionSchemeWrapDecodin
             }
 
             let mut val = pred.wrapping_add(corr_vals[i]);
-            
+
             if val < self.min_value {
                 val = val.wrapping_add(self.max_dif);
             } else if val > self.max_value {
                 val = val.wrapping_sub(self.max_dif);
             }
-            
+
             out_original_vals[i] = val;
         }
     }
@@ -197,11 +207,10 @@ impl PredictionSchemeDecodingTransform<i32, i32> for PredictionSchemeWrapDecodin
         } else {
             return false;
         }
-        
+
         let dif = (self.max_value as i64) - (self.min_value as i64);
         self.max_dif = (1 + dif) as i32;
 
         true
     }
 }
-

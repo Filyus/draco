@@ -1,8 +1,6 @@
 // Test-only event log used to capture corner-table operations (set/map) during
 // encoder and decoder CornerTable construction for targeted tests.
 
-
-
 use std::sync::{Mutex, OnceLock};
 
 // Test event logger used by both unit and integration tests. Lightweight and

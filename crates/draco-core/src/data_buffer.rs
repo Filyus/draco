@@ -20,11 +20,11 @@ impl DataBuffer {
     pub fn update(&mut self, data: &[u8], offset: Option<usize>) {
         let offset = offset.unwrap_or(0);
         let end = offset + data.len();
-        
+
         if end > self.data.len() {
             self.data.resize(end, 0);
         }
-        
+
         self.data[offset..end].copy_from_slice(data);
         self.descriptor.buffer_update_count += 1;
     }
@@ -47,7 +47,13 @@ impl DataBuffer {
         self.data[byte_pos..byte_pos + len].copy_from_slice(in_data);
     }
 
-    pub fn copy(&mut self, dst_offset: usize, src_buf: &DataBuffer, src_offset: usize, size: usize) {
+    pub fn copy(
+        &mut self,
+        dst_offset: usize,
+        src_buf: &DataBuffer,
+        src_offset: usize,
+        size: usize,
+    ) {
         let src_slice = &src_buf.data[src_offset..src_offset + size];
         if dst_offset + size > self.data.len() {
             self.data.resize(dst_offset + size, 0);

@@ -22,16 +22,15 @@ pub mod corner_table;
 pub mod data_buffer;
 pub mod draco_types;
 pub mod dynamic_integer_points_kd_tree;
+pub mod edgebreaker_connectivity_decoder;
 pub mod folded_bit32_coder;
 pub mod geometry_attribute;
 pub mod geometry_indices;
 pub mod math_utils;
 pub mod mesh;
 pub mod mesh_edgebreaker_shared;
-pub mod edgebreaker_connectivity_decoder;
 
 // Test-only helpers (exposed so integration tests can access them)
-pub mod test_event_log;
 pub mod mesh_prediction_scheme_data;
 pub mod normal_compression_utils;
 pub mod point_cloud;
@@ -53,6 +52,7 @@ pub mod quantization_utils;
 pub mod rans_symbol_coding;
 pub mod status;
 pub mod symbol_encoding;
+pub mod test_event_log;
 pub mod version;
 
 // =============================================================================
@@ -141,7 +141,9 @@ pub use geometry_indices::{AttributeValueIndex, FaceIndex, PointIndex};
 pub use mesh::Mesh;
 pub use normal_compression_utils::OctahedronToolBox;
 pub use point_cloud::PointCloud;
-pub use prediction_scheme::{PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType};
+pub use prediction_scheme::{
+    PredictionScheme, PredictionSchemeMethod, PredictionSchemeTransformType,
+};
 pub use status::{DracoError, Status};
 
 // =============================================================================

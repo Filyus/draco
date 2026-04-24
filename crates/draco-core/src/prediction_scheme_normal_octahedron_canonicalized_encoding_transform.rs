@@ -1,5 +1,5 @@
-use crate::prediction_scheme_normal_octahedron_canonicalized_transform_base::PredictionSchemeNormalOctahedronCanonicalizedTransformBase;
 use crate::prediction_scheme::{PredictionSchemeEncodingTransform, PredictionSchemeTransformType};
+use crate::prediction_scheme_normal_octahedron_canonicalized_transform_base::PredictionSchemeNormalOctahedronCanonicalizedTransformBase;
 
 pub struct PredictionSchemeNormalOctahedronCanonicalizedEncodingTransform {
     base: PredictionSchemeNormalOctahedronCanonicalizedTransformBase,
@@ -9,13 +9,17 @@ pub struct PredictionSchemeNormalOctahedronCanonicalizedEncodingTransform {
 impl PredictionSchemeNormalOctahedronCanonicalizedEncodingTransform {
     pub fn new(max_quantized_value: i32) -> Self {
         Self {
-            base: PredictionSchemeNormalOctahedronCanonicalizedTransformBase::new(max_quantized_value),
+            base: PredictionSchemeNormalOctahedronCanonicalizedTransformBase::new(
+                max_quantized_value,
+            ),
             num_components: 0,
         }
     }
 }
 
-impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeNormalOctahedronCanonicalizedEncodingTransform {
+impl PredictionSchemeEncodingTransform<i32, i32>
+    for PredictionSchemeNormalOctahedronCanonicalizedEncodingTransform
+{
     fn init(&mut self, _orig_data: &[i32], _size: usize, num_components: usize) {
         self.num_components = num_components;
     }
@@ -28,7 +32,7 @@ impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeNormalOctah
 
     fn compute_correction(&self, orig_vals: &[i32], pred_vals: &[i32], out_corr_vals: &mut [i32]) {
         let center = self.base.base().center_value();
-        
+
         let mut orig = [orig_vals[0] - center, orig_vals[1] - center];
         let mut pred = [pred_vals[0] - center, pred_vals[1] - center];
 
@@ -57,7 +61,7 @@ impl PredictionSchemeEncodingTransform<i32, i32> for PredictionSchemeNormalOctah
     fn get_type(&self) -> PredictionSchemeTransformType {
         PredictionSchemeTransformType::NormalOctahedronCanonicalized
     }
-    
+
     fn are_corrections_positive(&self) -> bool {
         // Corrections from octahedron transforms are always in [0, max_quantized_value]
         // because make_positive() ensures they are non-negative

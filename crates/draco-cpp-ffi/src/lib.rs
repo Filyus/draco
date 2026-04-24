@@ -1,12 +1,12 @@
 //! FFI bindings to the C++ Draco library for performance comparison
-//! 
+//!
 //! This crate provides direct FFI access to the original C++ Draco encoder
 //! for accurate performance benchmarking against the Rust implementation.
 
 #[cfg(not(draco_ffi_disabled))]
 mod ffi {
     use std::os::raw::c_int;
-    
+
     /// Profiling result structure from C++
     #[repr(C)]
     pub struct DracoProfileResult {
@@ -16,7 +16,7 @@ mod ffi {
         pub total_time_us: i64,
         pub output_size: usize,
     }
-    
+
     /// Decode profiling result structure from C++
     #[repr(C)]
     pub struct DracoDecodeProfileResult {
@@ -24,7 +24,7 @@ mod ffi {
         pub num_points: u32,
         pub num_faces: u32,
     }
-    
+
     extern "C" {
         /// Benchmark encoding: runs encoding multiple times and returns average time in microseconds
         pub fn draco_benchmark_encode_mesh(
@@ -38,7 +38,7 @@ mod ffi {
             iterations: u32,
             output_size: *mut usize,
         ) -> i64;
-        
+
         /// Single-shot encoding that returns encoded bytes
         pub fn draco_encode_mesh_single(
             num_points: u32,
@@ -58,8 +58,18 @@ mod ffi {
 
         /// Mesh setup helpers
         pub fn draco_mesh_set_num_faces(handle: *mut ::std::ffi::c_void, num_faces: u32);
-        pub fn draco_mesh_set_face(handle: *mut ::std::ffi::c_void, face_idx: u32, v0: u32, v1: u32, v2: u32);
-        pub fn draco_mesh_add_position_attribute(handle: *mut ::std::ffi::c_void, num_points: u32, positions: *const f32) -> c_int;
+        pub fn draco_mesh_set_face(
+            handle: *mut ::std::ffi::c_void,
+            face_idx: u32,
+            v0: u32,
+            v1: u32,
+            v2: u32,
+        );
+        pub fn draco_mesh_add_position_attribute(
+            handle: *mut ::std::ffi::c_void,
+            num_points: u32,
+            positions: *const f32,
+        ) -> c_int;
 
         /// Encoder buffer helpers
         pub fn draco_create_encoder_buffer() -> *mut ::std::ffi::c_void;
@@ -77,12 +87,8 @@ mod ffi {
         ) -> i64;
 
         /// Get version info for verification
-        pub fn draco_get_version(
-            major: *mut c_int,
-            minor: *mut c_int,
-            revision: *mut c_int,
-        );
-        
+        pub fn draco_get_version(major: *mut c_int, minor: *mut c_int, revision: *mut c_int);
+
         /// Detailed profiling of encoding stages
         pub fn draco_profile_encode(
             num_points: u32,
@@ -95,7 +101,7 @@ mod ffi {
             iterations: u32,
             result: *mut DracoProfileResult,
         ) -> c_int;
-        
+
         /// Benchmark decoding
         pub fn draco_benchmark_decode_mesh(
             encoded_data: *const u8,
@@ -104,7 +110,7 @@ mod ffi {
             out_num_points: *mut u32,
             out_num_faces: *mut u32,
         ) -> i64;
-        
+
         /// Profile decoding with detailed timing
         pub fn draco_profile_decode(
             encoded_data: *const u8,
@@ -132,7 +138,7 @@ pub struct CppProfileResult {
 pub fn is_available() -> bool {
     #[cfg(draco_ffi_disabled)]
     return false;
-    
+
     #[cfg(not(draco_ffi_disabled))]
     return true;
 }
@@ -161,7 +167,7 @@ pub struct CppBenchmarkResult {
 }
 
 /// Benchmark the C++ encoder with given mesh data
-/// 
+///
 /// # Arguments
 /// * `positions` - Flat array of f32 positions (num_points * 3 values)
 /// * `faces` - Flat array of face indices (num_faces * 3 values)
@@ -169,7 +175,7 @@ pub struct CppBenchmarkResult {
 /// * `decoding_speed` - Decoding speed (0 = best compression, 10 = fastest)
 /// * `quantization_bits` - Quantization bits for position attribute
 /// * `iterations` - Number of iterations to average
-/// 
+///
 /// # Returns
 /// * `Some(CppBenchmarkResult)` if FFI is available and encoding succeeded
 /// * `None` if FFI is disabled or encoding failed
@@ -184,9 +190,9 @@ pub fn benchmark_cpp_encode(
 ) -> Option<CppBenchmarkResult> {
     let num_points = (positions.len() / 3) as u32;
     let num_faces = (faces.len() / 3) as u32;
-    
+
     let mut output_size: usize = 0;
-    
+
     let avg_time_us = unsafe {
         draco_benchmark_encode_mesh(
             num_points,
@@ -200,11 +206,11 @@ pub fn benchmark_cpp_encode(
             &mut output_size,
         )
     };
-    
+
     if avg_time_us < 0 {
         return None;
     }
-    
+
     Some(CppBenchmarkResult {
         avg_time_us,
         output_size,
@@ -249,11 +255,11 @@ pub fn encode_cpp_mesh(
 ) -> Option<Vec<u8>> {
     let num_points = (positions.len() / 3) as u32;
     let num_faces = (faces.len() / 3) as u32;
-    
+
     // Allocate a large enough buffer (estimate: 10 bytes per vertex + overhead)
     let buffer_size = (num_points as usize * 10 + 1024).max(65536);
     let mut buffer = vec![0u8; buffer_size];
-    
+
     let encoded_size = unsafe {
         ffi::draco_encode_mesh_single(
             num_points,
@@ -267,11 +273,11 @@ pub fn encode_cpp_mesh(
             buffer_size,
         )
     };
-    
+
     if encoded_size == 0 {
         return None;
     }
-    
+
     buffer.truncate(encoded_size);
     Some(buffer)
 }
@@ -299,7 +305,7 @@ pub fn profile_cpp_encode(
 ) -> Option<CppProfileResult> {
     let num_points = (positions.len() / 3) as u32;
     let num_faces = (faces.len() / 3) as u32;
-    
+
     let mut result = ffi::DracoProfileResult {
         mesh_setup_us: 0,
         encoder_setup_us: 0,
@@ -307,7 +313,7 @@ pub fn profile_cpp_encode(
         total_time_us: 0,
         output_size: 0,
     };
-    
+
     let status = unsafe {
         ffi::draco_profile_encode(
             num_points,
@@ -321,11 +327,11 @@ pub fn profile_cpp_encode(
             &mut result,
         )
     };
-    
+
     if status != 0 {
         return None;
     }
-    
+
     Some(CppProfileResult {
         mesh_setup_us: result.mesh_setup_us,
         encoder_setup_us: result.encoder_setup_us,
@@ -357,16 +363,13 @@ pub struct CppDecodeProfileResult {
 
 /// Profile C++ decoding
 #[cfg(not(draco_ffi_disabled))]
-pub fn profile_cpp_decode(
-    encoded_data: &[u8],
-    iterations: u32,
-) -> Option<CppDecodeProfileResult> {
+pub fn profile_cpp_decode(encoded_data: &[u8], iterations: u32) -> Option<CppDecodeProfileResult> {
     let mut result = ffi::DracoDecodeProfileResult {
         decode_time_us: 0,
         num_points: 0,
         num_faces: 0,
     };
-    
+
     let status = unsafe {
         ffi::draco_profile_decode(
             encoded_data.as_ptr(),
@@ -375,11 +378,11 @@ pub fn profile_cpp_decode(
             &mut result,
         )
     };
-    
+
     if status != 0 {
         return None;
     }
-    
+
     Some(CppDecodeProfileResult {
         decode_time_us: result.decode_time_us,
         num_points: result.num_points,
@@ -397,10 +400,7 @@ pub fn profile_cpp_decode(
 
 /// Benchmark C++ decoding via the Rust wrapper (returns avg time and output sizes)
 #[cfg(not(draco_ffi_disabled))]
-pub fn benchmark_cpp_decode(
-    encoded_data: &[u8],
-    iterations: u32,
-) -> Option<(i64, u32, u32)> {
+pub fn benchmark_cpp_decode(encoded_data: &[u8], iterations: u32) -> Option<(i64, u32, u32)> {
     let mut out_num_points = 0u32;
     let mut out_num_faces = 0u32;
     // draco_benchmark_decode_mesh returns total_time / iterations (the per-iteration average in µs)
@@ -422,10 +422,9 @@ pub fn benchmark_cpp_decode(
 }
 
 #[cfg(draco_ffi_disabled)]
-pub fn benchmark_cpp_decode(
-    _encoded_data: &[u8],
-    _iterations: u32,
-) -> Option<(i64, u32, u32)> { None }
+pub fn benchmark_cpp_decode(_encoded_data: &[u8], _iterations: u32) -> Option<(i64, u32, u32)> {
+    None
+}
 
 // --- Safe RAII wrappers for C++ handles -------------------------------------------------
 
@@ -439,7 +438,11 @@ pub struct CppMesh {
 impl CppMesh {
     pub fn new() -> Option<Self> {
         let h = unsafe { draco_create_mesh() };
-        if h.is_null() { None } else { Some(CppMesh { handle: h }) }
+        if h.is_null() {
+            None
+        } else {
+            Some(CppMesh { handle: h })
+        }
     }
 
     pub fn set_num_faces(&mut self, num_faces: u32) {
@@ -451,14 +454,22 @@ impl CppMesh {
     }
 
     pub fn add_position_attribute(&mut self, num_points: u32, positions: &[f32]) -> Option<i32> {
-        let ret = unsafe { draco_mesh_add_position_attribute(self.handle, num_points, positions.as_ptr()) };
-        if ret < 0 { None } else { Some(ret as i32) }
+        let ret = unsafe {
+            draco_mesh_add_position_attribute(self.handle, num_points, positions.as_ptr())
+        };
+        if ret < 0 {
+            None
+        } else {
+            Some(ret as i32)
+        }
     }
 }
 
 #[cfg(not(draco_ffi_disabled))]
 impl Drop for CppMesh {
-    fn drop(&mut self) { unsafe { draco_free_mesh(self.handle) } }
+    fn drop(&mut self) {
+        unsafe { draco_free_mesh(self.handle) }
+    }
 }
 
 #[cfg(draco_ffi_disabled)]
@@ -467,7 +478,9 @@ pub struct CppMesh;
 
 #[cfg(draco_ffi_disabled)]
 impl CppMesh {
-    pub fn new() -> Option<Self> { None }
+    pub fn new() -> Option<Self> {
+        None
+    }
 
     pub fn set_num_faces(&mut self, _num_faces: u32) {}
 
@@ -480,13 +493,19 @@ impl CppMesh {
 
 #[cfg(not(draco_ffi_disabled))]
 /// RAII wrapper around a C++ EncoderBuffer handle
-pub struct CppEncoderBuffer { handle: *mut ::std::ffi::c_void }
+pub struct CppEncoderBuffer {
+    handle: *mut ::std::ffi::c_void,
+}
 
 #[cfg(not(draco_ffi_disabled))]
 impl CppEncoderBuffer {
     pub fn new() -> Option<Self> {
         let h = unsafe { draco_create_encoder_buffer() };
-        if h.is_null() { None } else { Some(CppEncoderBuffer { handle: h }) }
+        if h.is_null() {
+            None
+        } else {
+            Some(CppEncoderBuffer { handle: h })
+        }
     }
 
     pub fn data(&self) -> &[u8] {
@@ -499,14 +518,20 @@ impl CppEncoderBuffer {
 }
 
 #[cfg(not(draco_ffi_disabled))]
-impl Drop for CppEncoderBuffer { fn drop(&mut self) { unsafe { draco_free_encoder_buffer(self.handle) } } }
+impl Drop for CppEncoderBuffer {
+    fn drop(&mut self) {
+        unsafe { draco_free_encoder_buffer(self.handle) }
+    }
+}
 
 #[cfg(draco_ffi_disabled)]
 pub struct CppEncoderBuffer;
 
 #[cfg(draco_ffi_disabled)]
 impl CppEncoderBuffer {
-    pub fn new() -> Option<Self> { None }
+    pub fn new() -> Option<Self> {
+        None
+    }
 
     pub fn data(&self) -> &[u8] {
         &[]
@@ -522,8 +547,18 @@ pub fn encode_with_handles(
     quantization_bits: i32,
 ) -> Option<Vec<u8>> {
     let buffer = CppEncoderBuffer::new()?;
-    let status = unsafe { draco_encode_mesh(mesh.handle, buffer.handle, encoding_speed, decoding_speed, quantization_bits) };
-    if status < 0 { return None; }
+    let status = unsafe {
+        draco_encode_mesh(
+            mesh.handle,
+            buffer.handle,
+            encoding_speed,
+            decoding_speed,
+            quantization_bits,
+        )
+    };
+    if status < 0 {
+        return None;
+    }
     Some(buffer.data().to_vec())
 }
 
@@ -533,14 +568,16 @@ pub fn encode_with_handles(
     _encoding_speed: i32,
     _decoding_speed: i32,
     _quantization_bits: i32,
-) -> Option<Vec<u8>> { None }
+) -> Option<Vec<u8>> {
+    None
+}
 
 // --------------------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_ffi_available() {
         if is_available() {

@@ -7,7 +7,6 @@ pub struct RAnsBitDecoder<'a> {
     prob_zero: u8,
 }
 
-
 impl<'a> RAnsBitDecoder<'a> {
     pub fn new() -> Self {
         Self::default()
@@ -15,7 +14,7 @@ impl<'a> RAnsBitDecoder<'a> {
 
     pub fn start_decoding(&mut self, source_buffer: &mut DecoderBuffer<'a>) -> bool {
         self.clear();
-        
+
         // Read zero_prob
         if let Ok(prob) = source_buffer.decode::<u8>() {
             if cfg!(feature = "debug_logs") {
@@ -28,7 +27,8 @@ impl<'a> RAnsBitDecoder<'a> {
 
         // Read size_in_bytes.
         // C++: v < 2.2 uses fixed u32, v >= 2.2 uses varint.
-        let bitstream_version = ((source_buffer.version_major() as u16) << 8) | (source_buffer.version_minor() as u16);
+        let bitstream_version =
+            ((source_buffer.version_major() as u16) << 8) | (source_buffer.version_minor() as u16);
         let size: u32 = if bitstream_version < 0x0202 {
             match source_buffer.decode::<u32>() {
                 Ok(v) => v,
@@ -54,7 +54,7 @@ impl<'a> RAnsBitDecoder<'a> {
                 return true;
             }
         }
-        
+
         false
     }
 

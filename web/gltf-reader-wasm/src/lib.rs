@@ -5,9 +5,9 @@
 //!
 //! Uses nanoserde for minimal WASM binary size (no serde_json monomorphization).
 
-use wasm_bindgen::prelude::*;
 use nanoserde::{DeJson, SerJson};
 use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
 
 /// Mesh data structure for JavaScript interop.
 #[derive(SerJson, Clone, Default)]
@@ -319,7 +319,10 @@ fn parse_gltf_json(json_content: &str, bin_buffer: Option<&[u8]>) -> ParseResult
         }
     };
 
-    let uses_draco = root.extensions_used.iter().any(|e| e == "KHR_draco_mesh_compression");
+    let uses_draco = root
+        .extensions_used
+        .iter()
+        .any(|e| e == "KHR_draco_mesh_compression");
     let mut warnings: Vec<String> = Vec::new();
     let mut meshes: Vec<MeshData> = Vec::new();
 
@@ -348,7 +351,8 @@ fn parse_gltf_json(json_content: &str, bin_buffer: Option<&[u8]>) -> ParseResult
                                         continue;
                                     }
                                     Err(e) => {
-                                        warnings.push(format!("Failed to decode Draco mesh: {}", e));
+                                        warnings
+                                            .push(format!("Failed to decode Draco mesh: {}", e));
                                     }
                                 }
                             }
@@ -361,12 +365,14 @@ fn parse_gltf_json(json_content: &str, bin_buffer: Option<&[u8]>) -> ParseResult
             if let Some(bin) = bin_buffer {
                 // Positions
                 if let Some(&pos_idx) = primitive.attributes.get("POSITION") {
-                    mesh.positions = read_accessor_vec3(&root.accessors, &root.buffer_views, bin, pos_idx);
+                    mesh.positions =
+                        read_accessor_vec3(&root.accessors, &root.buffer_views, bin, pos_idx);
                 }
 
                 // Normals
                 if let Some(&norm_idx) = primitive.attributes.get("NORMAL") {
-                    mesh.normals = read_accessor_vec3(&root.accessors, &root.buffer_views, bin, norm_idx);
+                    mesh.normals =
+                        read_accessor_vec3(&root.accessors, &root.buffer_views, bin, norm_idx);
                 }
 
                 // UVs
@@ -376,7 +382,12 @@ fn parse_gltf_json(json_content: &str, bin_buffer: Option<&[u8]>) -> ParseResult
 
                 // Indices
                 if let Some(indices_idx) = primitive.indices {
-                    mesh.indices = read_accessor_indices(&root.accessors, &root.buffer_views, bin, indices_idx);
+                    mesh.indices = read_accessor_indices(
+                        &root.accessors,
+                        &root.buffer_views,
+                        bin,
+                        indices_idx,
+                    );
                 }
             }
 
@@ -447,9 +458,24 @@ fn read_accessor_vec3(
     for i in 0..accessor.count {
         let offset = byte_offset + i * 12; // 3 * 4 bytes for float32
         if offset + 12 <= buffer.len() {
-            let x = f32::from_le_bytes([buffer[offset], buffer[offset + 1], buffer[offset + 2], buffer[offset + 3]]);
-            let y = f32::from_le_bytes([buffer[offset + 4], buffer[offset + 5], buffer[offset + 6], buffer[offset + 7]]);
-            let z = f32::from_le_bytes([buffer[offset + 8], buffer[offset + 9], buffer[offset + 10], buffer[offset + 11]]);
+            let x = f32::from_le_bytes([
+                buffer[offset],
+                buffer[offset + 1],
+                buffer[offset + 2],
+                buffer[offset + 3],
+            ]);
+            let y = f32::from_le_bytes([
+                buffer[offset + 4],
+                buffer[offset + 5],
+                buffer[offset + 6],
+                buffer[offset + 7],
+            ]);
+            let z = f32::from_le_bytes([
+                buffer[offset + 8],
+                buffer[offset + 9],
+                buffer[offset + 10],
+                buffer[offset + 11],
+            ]);
             result.push(x);
             result.push(y);
             result.push(z);
@@ -486,8 +512,18 @@ fn read_accessor_vec2(
     for i in 0..accessor.count {
         let offset = byte_offset + i * 8; // 2 * 4 bytes for float32
         if offset + 8 <= buffer.len() {
-            let u = f32::from_le_bytes([buffer[offset], buffer[offset + 1], buffer[offset + 2], buffer[offset + 3]]);
-            let v = f32::from_le_bytes([buffer[offset + 4], buffer[offset + 5], buffer[offset + 6], buffer[offset + 7]]);
+            let u = f32::from_le_bytes([
+                buffer[offset],
+                buffer[offset + 1],
+                buffer[offset + 2],
+                buffer[offset + 3],
+            ]);
+            let v = f32::from_le_bytes([
+                buffer[offset + 4],
+                buffer[offset + 5],
+                buffer[offset + 6],
+                buffer[offset + 7],
+            ]);
             result.push(u);
             result.push(v);
         }
@@ -534,7 +570,12 @@ fn read_accessor_indices(
             let idx = match accessor.component_type {
                 5121 => buffer[offset] as u32,
                 5123 => u16::from_le_bytes([buffer[offset], buffer[offset + 1]]) as u32,
-                5125 => u32::from_le_bytes([buffer[offset], buffer[offset + 1], buffer[offset + 2], buffer[offset + 3]]),
+                5125 => u32::from_le_bytes([
+                    buffer[offset],
+                    buffer[offset + 1],
+                    buffer[offset + 2],
+                    buffer[offset + 3],
+                ]),
                 _ => 0,
             };
             result.push(idx);
@@ -546,15 +587,17 @@ fn read_accessor_indices(
 
 fn decode_draco_mesh(data: &[u8]) -> Result<MeshData, String> {
     use draco_core::decoder_buffer::DecoderBuffer;
-    use draco_core::mesh_decoder::MeshDecoder;
     use draco_core::geometry_attribute::GeometryAttributeType;
+    use draco_core::geometry_indices::{FaceIndex, PointIndex};
     use draco_core::mesh::Mesh;
-    use draco_core::geometry_indices::{PointIndex, FaceIndex};
+    use draco_core::mesh_decoder::MeshDecoder;
 
     let mut decoder_buffer = DecoderBuffer::new(data);
     let mut mesh = Mesh::new();
     let mut decoder = MeshDecoder::new();
-    decoder.decode(&mut decoder_buffer, &mut mesh).map_err(|e| format!("{:?}", e))?;
+    decoder
+        .decode(&mut decoder_buffer, &mut mesh)
+        .map_err(|e| format!("{:?}", e))?;
 
     let mut result = MeshData::default();
 
@@ -571,9 +614,15 @@ fn decode_draco_mesh(data: &[u8]) -> Result<MeshData, String> {
                 let byte_offset = val_index.0 as usize * byte_stride;
                 let mut bytes = [0u8; 12];
                 pos_attr.buffer().read(byte_offset, &mut bytes);
-                result.positions.push(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]));
-                result.positions.push(f32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]));
-                result.positions.push(f32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]));
+                result
+                    .positions
+                    .push(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]));
+                result
+                    .positions
+                    .push(f32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]));
+                result.positions.push(f32::from_le_bytes([
+                    bytes[8], bytes[9], bytes[10], bytes[11],
+                ]));
             }
         }
     }
@@ -591,9 +640,15 @@ fn decode_draco_mesh(data: &[u8]) -> Result<MeshData, String> {
                 let byte_offset = val_index.0 as usize * byte_stride;
                 let mut bytes = [0u8; 12];
                 norm_attr.buffer().read(byte_offset, &mut bytes);
-                result.normals.push(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]));
-                result.normals.push(f32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]));
-                result.normals.push(f32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]));
+                result
+                    .normals
+                    .push(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]));
+                result
+                    .normals
+                    .push(f32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]));
+                result.normals.push(f32::from_le_bytes([
+                    bytes[8], bytes[9], bytes[10], bytes[11],
+                ]));
             }
         }
     }
@@ -611,8 +666,12 @@ fn decode_draco_mesh(data: &[u8]) -> Result<MeshData, String> {
                 let byte_offset = val_index.0 as usize * byte_stride;
                 let mut bytes = [0u8; 8];
                 uv_attr.buffer().read(byte_offset, &mut bytes);
-                result.uvs.push(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]));
-                result.uvs.push(f32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]));
+                result
+                    .uvs
+                    .push(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]));
+                result
+                    .uvs
+                    .push(f32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]));
             }
         }
     }

@@ -35,7 +35,7 @@ fn cpp_decoder() -> Option<PathBuf> {
             return Some(dec);
         }
     }
-    
+
     // Check common locations
     let build_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()?
@@ -106,7 +106,7 @@ fn encode_mesh_simple(
     let mut encoder_buffer = EncoderBuffer::new();
 
     let mut enc_options = EncoderOptions::default();
-    
+
     // Set quantization bits
     enc_options.set_attribute_int(0, "quantization_bits", position_quantization);
     enc_options.set_attribute_int(1, "quantization_bits", normal_quantization);
@@ -129,29 +129,16 @@ fn dump_rust_vs_cpp_bytes() {
     // vn -1 0 0
     // vn 0 1 0
     // f 1//1 2//2 3//3
-    
-    let positions: Vec<f32> = vec![
-        0.0, 0.0, 0.0,
-        1.0, 0.0, 0.0,
-        0.5, 1.0, 0.0,
-    ];
-    
-    let normals: Vec<f32> = vec![
-        1.0, 0.0, 0.0,
-        -1.0, 0.0, 0.0,
-        0.0, 1.0, 0.0,
-    ];
-    
+
+    let positions: Vec<f32> = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 1.0, 0.0];
+
+    let normals: Vec<f32> = vec![1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+
     let indices: Vec<u32> = vec![0, 1, 2];
-    
-    let draco_bytes = encode_mesh_simple(
-        &positions,
-        &normals,
-        &indices,
-        14,
-        10,
-    ).expect("Encoding failed");
-    
+
+    let draco_bytes =
+        encode_mesh_simple(&positions, &normals, &indices, 14, 10).expect("Encoding failed");
+
     println!("Rust encoded {} bytes", draco_bytes.len());
     println!("Hex dump:");
     for (i, byte) in draco_bytes.iter().enumerate() {
@@ -161,21 +148,26 @@ fn dump_rust_vs_cpp_bytes() {
         }
     }
     println!();
-    
+
     // Save to file for comparison
     let tmp = create_temp_dir("dump_bytes");
     let drc_path = tmp.join("rust_encoded.drc");
     fs::write(&drc_path, &draco_bytes).expect("Failed to write DRC");
     println!("Saved to: {}", drc_path.display());
-    
+
     // Try to decode with C++ decoder
     if let Some(decoder) = cpp_decoder() {
         let obj_path = tmp.join("decoded.obj");
         let output = Command::new(&decoder)
-            .args(["-i", drc_path.to_string_lossy().as_ref(), "-o", obj_path.to_string_lossy().as_ref()])
+            .args([
+                "-i",
+                drc_path.to_string_lossy().as_ref(),
+                "-o",
+                obj_path.to_string_lossy().as_ref(),
+            ])
             .output()
             .expect("Failed to run draco_decoder");
-        
+
         if output.status.success() {
             println!("\nC++ decode SUCCESS!");
             let obj_content = fs::read_to_string(&obj_path).expect("Failed to read OBJ");
@@ -308,42 +300,22 @@ fn rust_encode_gltf_style_mesh_cpp_decode() {
     // Create a cube mesh like what comes from glTF
     let positions: Vec<f32> = vec![
         // Front face
-        -1.0, -1.0,  1.0,
-         1.0, -1.0,  1.0,
-         1.0,  1.0,  1.0,
-        -1.0,  1.0,  1.0,
-        // Back face
-        -1.0, -1.0, -1.0,
-        -1.0,  1.0, -1.0,
-         1.0,  1.0, -1.0,
-         1.0, -1.0, -1.0,
+        -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0, // Back face
+        -1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0,
     ];
 
     let normals: Vec<f32> = vec![
-        0.0, 0.0, 1.0,
-        0.0, 0.0, 1.0,
-        0.0, 0.0, 1.0,
-        0.0, 0.0, 1.0,
-        0.0, 0.0, -1.0,
-        0.0, 0.0, -1.0,
-        0.0, 0.0, -1.0,
-        0.0, 0.0, -1.0,
+        0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, -1.0,
+        0.0, 0.0, -1.0, 0.0, 0.0, -1.0,
     ];
 
     let uvs: Vec<f32> = vec![
-        0.0, 0.0,
-        1.0, 0.0,
-        1.0, 1.0,
-        0.0, 1.0,
-        1.0, 0.0,
-        1.0, 1.0,
-        0.0, 1.0,
-        0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0,
     ];
 
     let indices: Vec<u32> = vec![
-        0, 1, 2, 2, 3, 0,  // Front
-        4, 5, 6, 6, 7, 4,  // Back
+        0, 1, 2, 2, 3, 0, // Front
+        4, 5, 6, 6, 7, 4, // Back
     ];
 
     // Encode with same settings as web app (14-bit position, 10-bit normal, 12-bit UV)
@@ -355,14 +327,20 @@ fn rust_encode_gltf_style_mesh_cpp_decode() {
         14, // position_quantization
         10, // normal_quantization
         12, // texcoord_quantization
-    ).expect("Encoding failed");
+    )
+    .expect("Encoding failed");
 
     println!("Draco encoded {} bytes", draco_bytes.len());
     fs::write(&drc_path, &draco_bytes).expect("Failed to write DRC");
 
     // Decode with C++ decoder
     let output = Command::new(&decoder)
-        .args(["-i", drc_path.to_string_lossy().as_ref(), "-o", obj_path.to_string_lossy().as_ref()])
+        .args([
+            "-i",
+            drc_path.to_string_lossy().as_ref(),
+            "-o",
+            obj_path.to_string_lossy().as_ref(),
+        ])
         .output()
         .expect("Failed to run draco_decoder");
 
@@ -379,12 +357,19 @@ fn rust_encode_gltf_style_mesh_cpp_decode() {
     let obj_content = fs::read_to_string(&obj_path).expect("Failed to read OBJ");
     let decoded_positions = parse_obj_positions(&obj_content);
 
-    println!("Original positions: {:?}", positions.chunks(3).collect::<Vec<_>>());
+    println!(
+        "Original positions: {:?}",
+        positions.chunks(3).collect::<Vec<_>>()
+    );
     println!("Decoded positions: {:?}", decoded_positions);
 
-    assert_eq!(decoded_positions.len(), positions.len() / 3, 
-        "Position count mismatch: expected {}, got {}", 
-        positions.len() / 3, decoded_positions.len());
+    assert_eq!(
+        decoded_positions.len(),
+        positions.len() / 3,
+        "Position count mismatch: expected {}, got {}",
+        positions.len() / 3,
+        decoded_positions.len()
+    );
 
     // Compare positions with tolerance for quantization error
     // 14-bit quantization over range 2.0 gives resolution of 2.0 / 16384 ≈ 0.000122
@@ -392,14 +377,21 @@ fn rust_encode_gltf_style_mesh_cpp_decode() {
     for (i, orig_chunk) in positions.chunks(3).enumerate() {
         let orig = [orig_chunk[0], orig_chunk[1], orig_chunk[2]];
         let decoded = decoded_positions[i];
-        
+
         let dx = (orig[0] - decoded[0]).abs();
         let dy = (orig[1] - decoded[1]).abs();
         let dz = (orig[2] - decoded[2]).abs();
-        
-        assert!(dx <= tolerance && dy <= tolerance && dz <= tolerance,
+
+        assert!(
+            dx <= tolerance && dy <= tolerance && dz <= tolerance,
             "Position {} mismatch: original {:?}, decoded {:?}, delta ({}, {}, {})",
-            i, orig, decoded, dx, dy, dz);
+            i,
+            orig,
+            decoded,
+            dx,
+            dy,
+            dz
+        );
     }
 
     println!("All positions match within tolerance!");
@@ -418,17 +410,9 @@ fn rust_encode_mesh_with_uvs_only_cpp_decode() {
     let drc_path = tmp.join("mesh.drc");
     let obj_path = tmp.join("mesh.obj");
 
-    let positions: Vec<f32> = vec![
-        0.0, 0.0, 0.0,
-        1.0, 0.0, 0.0,
-        0.5, 1.0, 0.0,
-    ];
+    let positions: Vec<f32> = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 1.0, 0.0];
 
-    let uvs: Vec<f32> = vec![
-        0.0, 0.0,
-        1.0, 0.0,
-        0.5, 1.0,
-    ];
+    let uvs: Vec<f32> = vec![0.0, 0.0, 1.0, 0.0, 0.5, 1.0];
 
     let indices: Vec<u32> = vec![0, 1, 2];
 
@@ -438,15 +422,23 @@ fn rust_encode_mesh_with_uvs_only_cpp_decode() {
         None, // No normals!
         Some(&uvs),
         &indices,
-        14, 10, 12,
-    ).expect("Encoding failed");
+        14,
+        10,
+        12,
+    )
+    .expect("Encoding failed");
 
     println!("Draco encoded {} bytes (no normals)", draco_bytes.len());
     fs::write(&drc_path, &draco_bytes).expect("Failed to write DRC");
 
     // Decode with C++ decoder
     let output = Command::new(&decoder)
-        .args(["-i", drc_path.to_string_lossy().as_ref(), "-o", obj_path.to_string_lossy().as_ref()])
+        .args([
+            "-i",
+            drc_path.to_string_lossy().as_ref(),
+            "-o",
+            obj_path.to_string_lossy().as_ref(),
+        ])
         .output()
         .expect("Failed to run draco_decoder");
 
@@ -465,7 +457,7 @@ fn rust_encode_mesh_with_uvs_only_cpp_decode() {
     println!("Decoded positions (UVs only): {:?}", decoded_positions);
 
     assert_eq!(decoded_positions.len(), 3);
-    
+
     // Verify positions are correct
     let tolerance = 0.001;
     for (i, orig_chunk) in positions.chunks(3).enumerate() {
@@ -473,8 +465,11 @@ fn rust_encode_mesh_with_uvs_only_cpp_decode() {
         let dx = (orig_chunk[0] - decoded[0]).abs();
         let dy = (orig_chunk[1] - decoded[1]).abs();
         let dz = (orig_chunk[2] - decoded[2]).abs();
-        assert!(dx <= tolerance && dy <= tolerance && dz <= tolerance,
-            "Position {} mismatch", i);
+        assert!(
+            dx <= tolerance && dy <= tolerance && dz <= tolerance,
+            "Position {} mismatch",
+            i
+        );
     }
 
     println!("UVs-only mesh positions correct!");
@@ -511,50 +506,36 @@ fn rust_encode_gltf_style_mesh_verify_normals() {
     // This tests both right hemisphere (x >= 0) and left hemisphere (x < 0)
     let positions: Vec<f32> = vec![
         // Vertex 0: normal +X
-        0.0, 0.0, 0.0,
-        // Vertex 1: normal -X (left hemisphere!)
-        1.0, 0.0, 0.0,
-        // Vertex 2: normal +Y
-        0.5, 1.0, 0.0,
-        // Vertex 3: normal -Y
-        2.0, 0.0, 0.0,
-        // Vertex 4: normal +Z
-        2.5, 1.0, 0.0,
-        // Vertex 5: normal -Z
-        1.5, 1.0, 0.0,
-        // Vertex 6: normal (+X+Y+Z)/sqrt(3)
-        3.0, 0.0, 0.0,
-        // Vertex 7: normal (-X+Y+Z)/sqrt(3) -- left hemisphere!
+        0.0, 0.0, 0.0, // Vertex 1: normal -X (left hemisphere!)
+        1.0, 0.0, 0.0, // Vertex 2: normal +Y
+        0.5, 1.0, 0.0, // Vertex 3: normal -Y
+        2.0, 0.0, 0.0, // Vertex 4: normal +Z
+        2.5, 1.0, 0.0, // Vertex 5: normal -Z
+        1.5, 1.0, 0.0, // Vertex 6: normal (+X+Y+Z)/sqrt(3)
+        3.0, 0.0, 0.0, // Vertex 7: normal (-X+Y+Z)/sqrt(3) -- left hemisphere!
         3.5, 1.0, 0.0,
     ];
 
     let normals: Vec<f32> = vec![
-        1.0, 0.0, 0.0,   // +X
-        -1.0, 0.0, 0.0,  // -X (LEFT)
-        0.0, 1.0, 0.0,   // +Y
-        0.0, -1.0, 0.0,  // -Y
-        0.0, 0.0, 1.0,   // +Z
-        0.0, 0.0, -1.0,  // -Z
-        0.57735, 0.57735, 0.57735,   // +X+Y+Z
-        -0.57735, 0.57735, 0.57735,  // -X+Y+Z (LEFT)
+        1.0, 0.0, 0.0, // +X
+        -1.0, 0.0, 0.0, // -X (LEFT)
+        0.0, 1.0, 0.0, // +Y
+        0.0, -1.0, 0.0, // -Y
+        0.0, 0.0, 1.0, // +Z
+        0.0, 0.0, -1.0, // -Z
+        0.57735, 0.57735, 0.57735, // +X+Y+Z
+        -0.57735, 0.57735, 0.57735, // -X+Y+Z (LEFT)
     ];
 
     let uvs: Vec<f32> = vec![
-        0.0, 0.0,
-        1.0, 0.0,
-        0.5, 1.0,
-        0.0, 0.0,
-        1.0, 0.0,
-        0.5, 1.0,
-        0.0, 0.0,
-        0.5, 1.0,
+        0.0, 0.0, 1.0, 0.0, 0.5, 1.0, 0.0, 0.0, 1.0, 0.0, 0.5, 1.0, 0.0, 0.0, 0.5, 1.0,
     ];
 
     // Two triangles and two more triangles
     let indices: Vec<u32> = vec![
-        0, 1, 2,  // First triangle
-        3, 4, 5,  // Second triangle
-        0, 6, 7,  // Third triangle (reuse vertex 0)
+        0, 1, 2, // First triangle
+        3, 4, 5, // Second triangle
+        0, 6, 7, // Third triangle (reuse vertex 0)
     ];
 
     let draco_bytes = encode_mesh_like_gltf_writer(
@@ -565,14 +546,20 @@ fn rust_encode_gltf_style_mesh_verify_normals() {
         14, // position_quantization
         10, // normal_quantization
         12, // texcoord_quantization
-    ).expect("Encoding failed");
+    )
+    .expect("Encoding failed");
 
     println!("Draco encoded {} bytes for normal test", draco_bytes.len());
     fs::write(&drc_path, &draco_bytes).expect("Failed to write DRC");
 
     // Decode with C++ decoder
     let output = Command::new(&decoder)
-        .args(["-i", drc_path.to_string_lossy().as_ref(), "-o", obj_path.to_string_lossy().as_ref()])
+        .args([
+            "-i",
+            drc_path.to_string_lossy().as_ref(),
+            "-o",
+            obj_path.to_string_lossy().as_ref(),
+        ])
         .output()
         .expect("Failed to run draco_decoder");
 
@@ -587,7 +574,7 @@ fn rust_encode_gltf_style_mesh_verify_normals() {
 
     let obj_content = fs::read_to_string(&obj_path).expect("Failed to read OBJ");
     println!("OBJ content:\n{}", obj_content);
-    
+
     let decoded_normals = parse_obj_normals(&obj_content);
 
     println!("\n=== NORMAL COMPARISON ===");
@@ -603,31 +590,45 @@ fn rust_encode_gltf_style_mesh_verify_normals() {
         }
         let orig = [orig_chunk[0], orig_chunk[1], orig_chunk[2]];
         let decoded = decoded_normals[i];
-        
+
         // Normalize both
-        let orig_len = (orig[0]*orig[0] + orig[1]*orig[1] + orig[2]*orig[2]).sqrt();
-        let decoded_len = (decoded[0]*decoded[0] + decoded[1]*decoded[1] + decoded[2]*decoded[2]).sqrt();
-        
-        let orig_normalized = [orig[0]/orig_len, orig[1]/orig_len, orig[2]/orig_len];
+        let orig_len = (orig[0] * orig[0] + orig[1] * orig[1] + orig[2] * orig[2]).sqrt();
+        let decoded_len =
+            (decoded[0] * decoded[0] + decoded[1] * decoded[1] + decoded[2] * decoded[2]).sqrt();
+
+        let orig_normalized = [orig[0] / orig_len, orig[1] / orig_len, orig[2] / orig_len];
         let decoded_normalized = if decoded_len > 0.0001 {
-            [decoded[0]/decoded_len, decoded[1]/decoded_len, decoded[2]/decoded_len]
+            [
+                decoded[0] / decoded_len,
+                decoded[1] / decoded_len,
+                decoded[2] / decoded_len,
+            ]
         } else {
             decoded
         };
-        
-        let dot = orig_normalized[0]*decoded_normalized[0] + 
-                  orig_normalized[1]*decoded_normalized[1] + 
-                  orig_normalized[2]*decoded_normalized[2];
-        
+
+        let dot = orig_normalized[0] * decoded_normalized[0]
+            + orig_normalized[1] * decoded_normalized[1]
+            + orig_normalized[2] * decoded_normalized[2];
+
         let is_left = orig[0] < 0.0;
-        println!("Normal {}: {} orig {:?} -> decoded {:?}, dot={:.4}", 
-                 i, 
-                 if is_left { "LEFT " } else { "RIGHT" },
-                 orig_normalized, decoded_normalized, dot);
-        
-        assert!(dot > 0.98 - tolerance,
+        println!(
+            "Normal {}: {} orig {:?} -> decoded {:?}, dot={:.4}",
+            i,
+            if is_left { "LEFT " } else { "RIGHT" },
+            orig_normalized,
+            decoded_normalized,
+            dot
+        );
+
+        assert!(
+            dot > 0.98 - tolerance,
             "Normal {} mismatch: original {:?}, decoded {:?}, dot={}",
-            i, orig_normalized, decoded_normalized, dot);
+            i,
+            orig_normalized,
+            decoded_normalized,
+            dot
+        );
     }
 
     println!("\nAll normals match within tolerance!");
@@ -636,81 +637,83 @@ fn rust_encode_gltf_style_mesh_verify_normals() {
 #[test]
 fn rust_encode_decode_normals_roundtrip() {
     // Test pure Rust encode/decode without C++ decoder
-    use draco_core::mesh_decoder::MeshDecoder;
     use draco_core::decoder_buffer::DecoderBuffer;
     use draco_core::mesh::Mesh;
-    
-    let positions: Vec<f32> = vec![
-        0.0, 0.0, 0.0,
-        1.0, 0.0, 0.0,
-        0.5, 1.0, 0.0,
-    ];
+    use draco_core::mesh_decoder::MeshDecoder;
+
+    let positions: Vec<f32> = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 1.0, 0.0];
 
     let normals: Vec<f32> = vec![
-        1.0, 0.0, 0.0,   // +X
-        -1.0, 0.0, 0.0,  // -X (left hemisphere)
-        0.0, 1.0, 0.0,   // +Y
+        1.0, 0.0, 0.0, // +X
+        -1.0, 0.0, 0.0, // -X (left hemisphere)
+        0.0, 1.0, 0.0, // +Y
     ];
 
-    let uvs: Vec<f32> = vec![
-        0.0, 0.0,
-        1.0, 0.0,
-        0.5, 1.0,
-    ];
+    let uvs: Vec<f32> = vec![0.0, 0.0, 1.0, 0.0, 0.5, 1.0];
 
     let indices: Vec<u32> = vec![0, 1, 2];
 
-    let draco_bytes = encode_mesh_like_gltf_writer(
-        &positions,
-        Some(&normals),
-        Some(&uvs),
-        &indices,
-        14, 10, 12,
-    ).expect("Encoding failed");
+    let draco_bytes =
+        encode_mesh_like_gltf_writer(&positions, Some(&normals), Some(&uvs), &indices, 14, 10, 12)
+            .expect("Encoding failed");
 
     println!("Draco encoded {} bytes", draco_bytes.len());
-    
+
     // Decode with Rust
     let mut decoder_buffer = DecoderBuffer::new(&draco_bytes);
     let mut decoder = MeshDecoder::new();
     let mut decoded_mesh = Mesh::new();
     let result = decoder.decode(&mut decoder_buffer, &mut decoded_mesh);
-    
+
     if let Err(e) = result {
         panic!("Rust decode failed: {:?}", e);
     }
-    
-    println!("\nDecoded mesh: {} points, {} attributes", 
-             decoded_mesh.num_points(), decoded_mesh.num_attributes());
-    
+
+    println!(
+        "\nDecoded mesh: {} points, {} attributes",
+        decoded_mesh.num_points(),
+        decoded_mesh.num_attributes()
+    );
+
     // Find normal attribute
     let norm_att = decoded_mesh.named_attribute(GeometryAttributeType::Normal);
     if let Some(norm_attr) = norm_att {
-        println!("Normal attribute: {} values, {} components", 
-                 norm_attr.size(), norm_attr.num_components());
-        
+        println!(
+            "Normal attribute: {} values, {} components",
+            norm_attr.size(),
+            norm_attr.num_components()
+        );
+
         // Read decoded normals
         for i in 0..norm_attr.size() {
             let offset = i * 3 * 4;
             let buffer = norm_attr.buffer();
             let data = buffer.data();
-            
-            let x = f32::from_le_bytes(data[offset..offset+4].try_into().unwrap());
-            let y = f32::from_le_bytes(data[offset+4..offset+8].try_into().unwrap());
-            let z = f32::from_le_bytes(data[offset+8..offset+12].try_into().unwrap());
-            
-            let orig = [normals[i*3], normals[i*3+1], normals[i*3+2]];
+
+            let x = f32::from_le_bytes(data[offset..offset + 4].try_into().unwrap());
+            let y = f32::from_le_bytes(data[offset + 4..offset + 8].try_into().unwrap());
+            let z = f32::from_le_bytes(data[offset + 8..offset + 12].try_into().unwrap());
+
+            let orig = [normals[i * 3], normals[i * 3 + 1], normals[i * 3 + 2]];
             let decoded = [x, y, z];
-            
-            let dot = orig[0]*decoded[0] + orig[1]*decoded[1] + orig[2]*decoded[2];
-            
-            println!("Normal {}: orig {:?} -> decoded {:?}, dot={:.4}", 
-                     i, orig, decoded, dot);
-            
-            assert!(dot > 0.98, "Normal {} mismatch: orig {:?}, decoded {:?}, dot={}",
-                    i, orig, decoded, dot);
+
+            let dot = orig[0] * decoded[0] + orig[1] * decoded[1] + orig[2] * decoded[2];
+
+            println!(
+                "Normal {}: orig {:?} -> decoded {:?}, dot={:.4}",
+                i, orig, decoded, dot
+            );
+
+            assert!(
+                dot > 0.98,
+                "Normal {} mismatch: orig {:?}, decoded {:?}, dot={}",
+                i,
+                orig,
+                decoded,
+                dot
+            );
         }
-        
+
         println!("\nRust encode/decode roundtrip: All normals match!");
     } else {
         panic!("No normal attribute found in decoded mesh");
@@ -721,9 +724,9 @@ fn rust_encode_decode_normals_roundtrip() {
 fn compare_cpp_vs_rust_encoded_bytes() {
     use std::fs;
     use std::process::Command;
-    
+
     let tmp = create_temp_dir("compare_encoders");
-    
+
     // Create an OBJ file with normals
     let obj_content = r#"# Simple triangle with normals
 v 0 0 0
@@ -736,102 +739,115 @@ f 1//1 2//2 3//3
 "#;
     let obj_path = tmp.join("input.obj");
     fs::write(&obj_path, obj_content).expect("Failed to write OBJ");
-    
+
     // Check for C++ encoder
     let encoder_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent().unwrap()
-        .parent().unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
         .join("build/Debug/draco_encoder.exe");
-    
+
     if !encoder_path.exists() {
         println!("C++ encoder not found, skipping test");
         return;
     }
-    
+
     // Encode with C++ - using sequential encoding (-cl 0) and quantization
     let cpp_drc_path = tmp.join("cpp_encoded.drc");
     let output = Command::new(&encoder_path)
         .args([
-            "-i", obj_path.to_string_lossy().as_ref(),
-            "-o", cpp_drc_path.to_string_lossy().as_ref(),
-            "-cl", "0",  // Sequential encoding
-            "-qp", "14", // Position quantization
-            "-qn", "10", // Normal quantization
+            "-i",
+            obj_path.to_string_lossy().as_ref(),
+            "-o",
+            cpp_drc_path.to_string_lossy().as_ref(),
+            "-cl",
+            "0", // Sequential encoding
+            "-qp",
+            "14", // Position quantization
+            "-qn",
+            "10", // Normal quantization
         ])
         .output()
         .expect("Failed to run draco_encoder");
-    
+
     if !output.status.success() {
-        println!("C++ encode failed: {}", String::from_utf8_lossy(&output.stderr));
+        println!(
+            "C++ encode failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         return;
     }
-    
+
     let cpp_bytes = fs::read(&cpp_drc_path).expect("Failed to read C++ DRC");
     println!("C++ encoded {} bytes", cpp_bytes.len());
-    
+
     // Now encode the same mesh with Rust
-    let positions: Vec<f32> = vec![
-        0.0, 0.0, 0.0,
-        1.0, 0.0, 0.0,
-        0.5, 1.0, 0.0,
-    ];
-    
-    let normals: Vec<f32> = vec![
-        0.0, 0.0, 1.0,
-        0.0, 0.0, 1.0,
-        0.0, 0.0, 1.0,
-    ];
-    
+    let positions: Vec<f32> = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 1.0, 0.0];
+
+    let normals: Vec<f32> = vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+
     let indices: Vec<u32> = vec![0, 1, 2];
-    
-    let rust_bytes = encode_mesh_simple(
-        &positions,
-        &normals,
-        &indices,
-        14,
-        10,
-    ).expect("Rust encoding failed");
-    
+
+    let rust_bytes =
+        encode_mesh_simple(&positions, &normals, &indices, 14, 10).expect("Rust encoding failed");
+
     println!("Rust encoded {} bytes", rust_bytes.len());
-    
+
     // Compare bytes
     println!("\n=== Byte comparison ===");
     println!("C++ bytes:");
     for (i, byte) in cpp_bytes.iter().enumerate() {
         print!("{:02X} ", byte);
-        if (i + 1) % 16 == 0 { println!(); }
+        if (i + 1) % 16 == 0 {
+            println!();
+        }
     }
     println!();
-    
+
     println!("Rust bytes:");
     for (i, byte) in rust_bytes.iter().enumerate() {
         print!("{:02X} ", byte);
-        if (i + 1) % 16 == 0 { println!(); }
+        if (i + 1) % 16 == 0 {
+            println!();
+        }
     }
     println!();
-    
+
     // Save Rust file for decoding comparison
     let rust_drc_path = tmp.join("rust_encoded.drc");
     fs::write(&rust_drc_path, &rust_bytes).expect("Failed to write Rust DRC");
-    
+
     // Decode both with C++ decoder
     let decoder_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent().unwrap()
-        .parent().unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
         .join("build/Debug/draco_decoder.exe");
-    
+
     if decoder_path.exists() {
         let cpp_obj_path = tmp.join("cpp_decoded.obj");
         let rust_obj_path = tmp.join("rust_decoded.obj");
-        
+
         let _ = Command::new(&decoder_path)
-            .args(["-i", cpp_drc_path.to_string_lossy().as_ref(), "-o", cpp_obj_path.to_string_lossy().as_ref()])
+            .args([
+                "-i",
+                cpp_drc_path.to_string_lossy().as_ref(),
+                "-o",
+                cpp_obj_path.to_string_lossy().as_ref(),
+            ])
             .output();
-        
+
         let _ = Command::new(&decoder_path)
-            .args(["-i", rust_drc_path.to_string_lossy().as_ref(), "-o", rust_obj_path.to_string_lossy().as_ref()])
+            .args([
+                "-i",
+                rust_drc_path.to_string_lossy().as_ref(),
+                "-o",
+                rust_obj_path.to_string_lossy().as_ref(),
+            ])
             .output();
-        
+
         println!("\n=== C++ decoder results ===");
         if cpp_obj_path.exists() {
             println!("From C++ encoded:");
@@ -842,18 +858,25 @@ f 1//1 2//2 3//3
             println!("{}", fs::read_to_string(&rust_obj_path).unwrap_or_default());
         }
     }
-    
+
     // Find first difference
     println!("\n=== First byte differences ===");
     let min_len = cpp_bytes.len().min(rust_bytes.len());
     let mut diff_count = 0;
     for i in 0..min_len {
         if cpp_bytes[i] != rust_bytes[i] && diff_count < 10 {
-            println!("Offset {}: C++={:02X}, Rust={:02X}", i, cpp_bytes[i], rust_bytes[i]);
+            println!(
+                "Offset {}: C++={:02X}, Rust={:02X}",
+                i, cpp_bytes[i], rust_bytes[i]
+            );
             diff_count += 1;
         }
     }
     if cpp_bytes.len() != rust_bytes.len() {
-        println!("Length differs: C++={}, Rust={}", cpp_bytes.len(), rust_bytes.len());
+        println!(
+            "Length differs: C++={}, Rust={}",
+            cpp_bytes.len(),
+            rust_bytes.len()
+        );
     }
 }

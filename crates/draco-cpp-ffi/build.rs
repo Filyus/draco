@@ -18,7 +18,7 @@ fn main() {
         .parent()
         .unwrap()
         .join("src");
-    
+
     // Path to build directory with pre-built libraries
     let draco_build = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
         .parent()
@@ -26,15 +26,18 @@ fn main() {
         .parent()
         .unwrap()
         .join("build-original");
-    
+
     // Check if libraries exist
     let lib_path = draco_build.join("src/draco/Release");
     if !lib_path.exists() {
-        println!("cargo:warning=C++ Draco library not found at {:?}. FFI features will be disabled.", lib_path);
+        println!(
+            "cargo:warning=C++ Draco library not found at {:?}. FFI features will be disabled.",
+            lib_path
+        );
         println!("cargo:rustc-cfg=draco_ffi_disabled");
         return;
     }
-    
+
     // Compile our FFI wrapper
     let mut build = cc::Build::new();
     build
@@ -48,24 +51,23 @@ fn main() {
         .flag_if_supported("-std=c++17")
         .opt_level(3);
 
-    
     // Windows-specific settings
     if cfg!(target_os = "windows") {
         build.flag("/EHsc");
     }
-    
+
     build.compile("draco_ffi_wrapper");
     // Ensure the compiled wrapper is linked into all test binaries
     println!("cargo:rustc-link-lib=static=draco_ffi_wrapper");
-    
+
     // Link to the pre-built Draco library
     println!("cargo:rustc-link-search=native={}", lib_path.display());
     println!("cargo:rustc-link-lib=static=draco");
-    
+
     // Link all the component libraries (Draco builds as multiple static libs)
     let component_libs = [
         "draco_animation",
-        "draco_animation_dec", 
+        "draco_animation_dec",
         "draco_animation_enc",
         "draco_attributes",
         "draco_compression_attributes_dec",
@@ -89,7 +91,7 @@ fn main() {
         "draco_point_cloud",
         "draco_src_io",
     ];
-    
+
     for lib_name in component_libs {
         let lib_dir = draco_build.join(format!("src/draco/{}.dir/Release", lib_name));
         if lib_dir.exists() {
@@ -97,7 +99,7 @@ fn main() {
             println!("cargo:rustc-link-lib=static={}", lib_name);
         }
     }
-    
+
     // Link C++ standard library
     if cfg!(target_os = "windows") {
         // MSVC links automatically
@@ -106,6 +108,6 @@ fn main() {
     } else {
         println!("cargo:rustc-link-lib=stdc++");
     }
-    
+
     println!("cargo:rerun-if-changed=cpp/draco_ffi.cpp");
 }

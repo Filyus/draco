@@ -7,14 +7,20 @@ use draco_core::draco_types::DataType;
 use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
 use draco_core::geometry_indices::{FaceIndex, PointIndex};
 use draco_core::mesh::Mesh;
-use draco_io::{FbxWriter, Writer};
 use draco_io::FbxReader;
+use draco_io::{FbxWriter, Writer};
 
 fn create_triangle_mesh() -> Mesh {
     let mut mesh = Mesh::new();
     let mut pos_att = PointAttribute::new();
 
-    pos_att.init(GeometryAttributeType::Position, 3, DataType::Float32, false, 3);
+    pos_att.init(
+        GeometryAttributeType::Position,
+        3,
+        DataType::Float32,
+        false,
+        3,
+    );
     let buffer = pos_att.buffer_mut();
     let positions: [[f32; 3]; 3] = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     for (i, pos) in positions.iter().enumerate() {
@@ -37,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let out_dir = std::path::Path::new("output");
     std::fs::create_dir_all(out_dir)?;
-    
+
     // Write without compression using FbxWriter
     let fbx_path = out_dir.join("triangle.fbx");
     println!("Writing FBX to {}...", fbx_path.display());
@@ -51,7 +57,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "compression")]
     {
         let fbx_compressed_path = out_dir.join("triangle_compressed.fbx");
-        println!("Writing compressed FBX to {}...", fbx_compressed_path.display());
+        println!(
+            "Writing compressed FBX to {}...",
+            fbx_compressed_path.display()
+        );
         let mut writer = FbxWriter::new()
             .with_compression(true)
             .with_compression_threshold(0);
@@ -67,7 +76,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let meshes = reader.read_meshes()?;
     println!("  Found {} mesh(es)", meshes.len());
     if let Some(m) = meshes.first() {
-        println!("  Read mesh: vertices={}, faces={}", m.num_points(), m.num_faces());
+        println!(
+            "  Read mesh: vertices={}, faces={}",
+            m.num_points(),
+            m.num_faces()
+        );
     }
 
     // Read compressed file back (if feature enabled)
@@ -79,7 +92,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let meshes = reader.read_meshes()?;
         println!("  Found {} mesh(es) from compressed file", meshes.len());
         if let Some(m) = meshes.first() {
-            println!("  Read mesh: vertices={}, faces={}", m.num_points(), m.num_faces());
+            println!(
+                "  Read mesh: vertices={}, faces={}",
+                m.num_points(),
+                m.num_faces()
+            );
         }
     }
 

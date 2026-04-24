@@ -37,12 +37,12 @@ fn extract_positions(mesh: &Mesh) -> Vec<[f32; 3]> {
     if pos_att_id < 0 {
         return Vec::new();
     }
-    
+
     let pos_attr = mesh.attribute(pos_att_id);
     let num_entries = pos_attr.size();
     let buffer = pos_attr.buffer();
     let byte_stride = pos_attr.byte_stride() as usize;
-    
+
     let mut positions = Vec::with_capacity(num_entries);
     for i in 0..num_entries {
         let offset = i * byte_stride;
@@ -73,10 +73,10 @@ fn compute_bbox(positions: &[[f32; 3]]) -> ([f32; 3], [f32; 3]) {
     if positions.is_empty() {
         return ([0.0; 3], [0.0; 3]);
     }
-    
+
     let mut min = positions[0];
     let mut max = positions[0];
-    
+
     for p in positions {
         for i in 0..3 {
             min[i] = min[i].min(p[i]);
@@ -87,7 +87,11 @@ fn compute_bbox(positions: &[[f32; 3]]) -> ([f32; 3], [f32; 3]) {
 }
 
 /// Check if two bounding boxes are approximately equal (within tolerance)
-fn bbox_approx_equal(bbox1: &([f32; 3], [f32; 3]), bbox2: &([f32; 3], [f32; 3]), tolerance: f32) -> bool {
+fn bbox_approx_equal(
+    bbox1: &([f32; 3], [f32; 3]),
+    bbox2: &([f32; 3], [f32; 3]),
+    tolerance: f32,
+) -> bool {
     for i in 0..3 {
         if (bbox1.0[i] - bbox2.0[i]).abs() > tolerance {
             return false;
@@ -111,16 +115,19 @@ fn verify_positions(
     // Check all decoded positions are finite
     for (i, p) in decoded.iter().enumerate() {
         if !p[0].is_finite() || !p[1].is_finite() || !p[2].is_finite() {
-            return Err(format!("Decoded position {} contains non-finite values: {:?}", i, p));
+            return Err(format!(
+                "Decoded position {} contains non-finite values: {:?}",
+                i, p
+            ));
         }
     }
-    
+
     // Check for degenerate mesh (all positions identical)
     let unique_positions: HashSet<[u32; 3]> = decoded
         .iter()
         .map(|p| [p[0].to_bits(), p[1].to_bits(), p[2].to_bits()])
         .collect();
-    
+
     if unique_positions.len() <= 1 && decoded.len() > 1 {
         return Err(format!(
             "Decoded mesh is degenerate: {} positions but only {} unique",
@@ -128,11 +135,11 @@ fn verify_positions(
             unique_positions.len()
         ));
     }
-    
+
     // Compute bounding boxes
     let orig_bbox = compute_bbox(original);
     let dec_bbox = compute_bbox(decoded);
-    
+
     // Calculate expected tolerance based on quantization
     // With Q bits, the error per component is roughly range / 2^Q
     let orig_range = [
@@ -144,18 +151,18 @@ fn verify_positions(
     let quant_step = max_range / (1 << quantization_bits) as f32;
     // Allow some tolerance for quantization error (2x quant step should be enough)
     let tolerance = quant_step * 2.0;
-    
+
     if !bbox_approx_equal(&orig_bbox, &dec_bbox, tolerance) {
         return Err(format!(
             "Bounding box mismatch!\n  Original: min={:?}, max={:?}\n  Decoded:  min={:?}, max={:?}\n  Tolerance: {}",
             orig_bbox.0, orig_bbox.1, dec_bbox.0, dec_bbox.1, tolerance
         ));
     }
-    
+
     // Additional check: variance of positions should be similar
     let orig_variance = compute_position_variance(original);
     let dec_variance = compute_position_variance(decoded);
-    
+
     // Variance should be within 50% (generous for quantization effects)
     if orig_variance > 0.0 {
         let variance_ratio = dec_variance / orig_variance;
@@ -166,7 +173,7 @@ fn verify_positions(
             ));
         }
     }
-    
+
     Ok(())
 }
 
@@ -175,7 +182,7 @@ fn compute_position_variance(positions: &[[f32; 3]]) -> f32 {
     if positions.len() < 2 {
         return 0.0;
     }
-    
+
     // Compute mean
     let mut sum = [0.0f64; 3];
     for p in positions {
@@ -185,7 +192,7 @@ fn compute_position_variance(positions: &[[f32; 3]]) -> f32 {
     }
     let n = positions.len() as f64;
     let mean = [sum[0] / n, sum[1] / n, sum[2] / n];
-    
+
     // Compute variance
     let mut var_sum = 0.0f64;
     for p in positions {
@@ -194,7 +201,7 @@ fn compute_position_variance(positions: &[[f32; 3]]) -> f32 {
         let dz = p[2] as f64 - mean[2];
         var_sum += dx * dx + dy * dy + dz * dz;
     }
-    
+
     (var_sum / n) as f32
 }
 
@@ -260,7 +267,7 @@ fn test_encoding_speed_roundtrip_iridescence_lamp() {
 
     // Assert all speeds work correctly
     let all_passed = results.iter().all(|(_, success, _)| *success);
-    
+
     // Print failures with more detail
     if !all_passed {
         println!("\n=== Failures Detail ===");
@@ -287,7 +294,7 @@ fn test_speed_with_method(
 ) -> (bool, String) {
     let original_faces = mesh.num_faces();
     let original_points = mesh.num_points();
-    
+
     // Extract original positions for comparison
     let original_positions = extract_positions(mesh);
     let quantization_bits = 14; // Position quantization bits
@@ -352,10 +359,7 @@ fn test_speed_with_method(
     if decoded_faces == 0 {
         return (
             false,
-            format!(
-                "Decoded mesh has 0 faces (expected {})",
-                original_faces
-            ),
+            format!("Decoded mesh has 0 faces (expected {})", original_faces),
         );
     }
 
@@ -393,11 +397,11 @@ fn test_speed_with_method(
 
     // CRITICAL: Verify actual position data is correct, not just counts
     let decoded_positions = extract_positions(&decoded_mesh);
-    
+
     if let Err(e) = verify_positions(&original_positions, &decoded_positions, quantization_bits) {
         return (false, format!("Position verification failed: {}", e));
     }
-    
+
     // Verify face indices are valid (within bounds)
     let decoded_face_data = extract_faces(&decoded_mesh);
     for (i, face) in decoded_face_data.iter().enumerate() {
@@ -407,7 +411,9 @@ fn test_speed_with_method(
                     false,
                     format!(
                         "Face {} has invalid vertex index {} (max={})",
-                        i, idx, decoded_points - 1
+                        i,
+                        idx,
+                        decoded_points - 1
                     ),
                 );
             }
@@ -449,7 +455,11 @@ fn test_prediction_scheme_selection_by_speed() {
     ];
 
     println!("Testing prediction scheme selection by speed:");
-    println!("Original mesh: {} faces, {} points\n", mesh.num_faces(), mesh.num_points());
+    println!(
+        "Original mesh: {} faces, {} points\n",
+        mesh.num_faces(),
+        mesh.num_points()
+    );
 
     let mut encoded_sizes: Vec<(i32, usize)> = Vec::new();
 
@@ -502,7 +512,10 @@ fn test_prediction_scheme_selection_by_speed() {
                 }
             }
             Err(e) => {
-                println!("Speed {:2} ({}): ENCODE FAILED - {:?}", speed, expected_scheme, e);
+                println!(
+                    "Speed {:2} ({}): ENCODE FAILED - {:?}",
+                    speed, expected_scheme, e
+                );
             }
         }
     }
@@ -516,12 +529,20 @@ fn test_prediction_scheme_selection_by_speed() {
         println!(
             "  Best compression: {} bytes (speed {})",
             min_size,
-            encoded_sizes.iter().min_by_key(|(_, s)| s).map(|(sp, _)| sp).unwrap_or(&-1)
+            encoded_sizes
+                .iter()
+                .min_by_key(|(_, s)| s)
+                .map(|(sp, _)| sp)
+                .unwrap_or(&-1)
         );
         println!(
             "  Worst compression: {} bytes (speed {})",
             max_size,
-            encoded_sizes.iter().max_by_key(|(_, s)| s).map(|(sp, _)| sp).unwrap_or(&-1)
+            encoded_sizes
+                .iter()
+                .max_by_key(|(_, s)| s)
+                .map(|(sp, _)| sp)
+                .unwrap_or(&-1)
         );
         if min_size > 0 {
             println!(
@@ -579,7 +600,10 @@ fn test_speed_affects_connectivity_handling() {
         let mut decoded_mesh = Mesh::new();
         let mut decoder_buffer = DecoderBuffer::new(enc_buffer.data());
 
-        if decoder.decode(&mut decoder_buffer, &mut decoded_mesh).is_err() {
+        if decoder
+            .decode(&mut decoder_buffer, &mut decoded_mesh)
+            .is_err()
+        {
             println!("Speed {}: Decode failed", speed);
             continue;
         }
@@ -637,7 +661,7 @@ fn test_encoding_speed_edge_cases() {
 
         let mut options = EncoderOptions::new();
         options.set_global_int("encoding_method", 1); // Edgebreaker only
-        // No speed setting - should default to 5
+                                                      // No speed setting - should default to 5
 
         for i in 0..mesh.num_attributes() {
             options.set_attribute_int(i, "quantization_bits", 14);
@@ -661,7 +685,10 @@ fn test_encoding_speed_edge_cases() {
                             decoded_mesh.num_faces(),
                             decoded_mesh.num_points()
                         );
-                        assert!(decoded_mesh.num_points() > 1, "Default speed produced 1 vertex bug");
+                        assert!(
+                            decoded_mesh.num_points() > 1,
+                            "Default speed produced 1 vertex bug"
+                        );
                     }
                     Err(e) => panic!("Default speed decode failed: {:?}", e),
                 }
@@ -796,7 +823,9 @@ fn test_compression_efficiency_by_speed() {
             let mut decoder = MeshDecoder::new();
             let mut decoded_mesh = Mesh::new();
             let mut decoder_buffer = DecoderBuffer::new(enc_buffer.data());
-            let decode_ok = decoder.decode(&mut decoder_buffer, &mut decoded_mesh).is_ok()
+            let decode_ok = decoder
+                .decode(&mut decoder_buffer, &mut decoded_mesh)
+                .is_ok()
                 && decoded_mesh.num_points() > 1;
 
             results.push((speed, size, decode_ok));

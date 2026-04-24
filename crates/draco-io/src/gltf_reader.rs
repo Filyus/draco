@@ -242,7 +242,9 @@ impl GltfReader {
     /// Parse from GLB binary data.
     pub fn from_glb(data: &[u8]) -> Result<Self> {
         if data.len() < 12 {
-            return Err(GltfError::InvalidGlb("File too small for GLB header".into()));
+            return Err(GltfError::InvalidGlb(
+                "File too small for GLB header".into(),
+            ));
         }
 
         let magic = read_u32_le(&data[0..4]);
@@ -379,9 +381,13 @@ impl GltfReader {
 
     /// Get the raw Draco-compressed data for a primitive.
     pub fn get_draco_data(&self, info: &DracoPrimitiveInfo) -> Result<&[u8]> {
-        let buffer_view = self.root.buffer_views.get(info.buffer_view).ok_or_else(|| {
-            GltfError::InvalidGltf(format!("Invalid buffer view index: {}", info.buffer_view))
-        })?;
+        let buffer_view = self
+            .root
+            .buffer_views
+            .get(info.buffer_view)
+            .ok_or_else(|| {
+                GltfError::InvalidGltf(format!("Invalid buffer view index: {}", info.buffer_view))
+            })?;
 
         let buffer = self.buffers.get(buffer_view.buffer).ok_or_else(|| {
             GltfError::InvalidGltf(format!("Invalid buffer index: {}", buffer_view.buffer))
@@ -520,11 +526,7 @@ impl GltfReader {
             }
             for i in 0..(num_points / 3) {
                 let base = (i * 3) as u32;
-                mesh.add_face([
-                    PointIndex(base),
-                    PointIndex(base + 1),
-                    PointIndex(base + 2),
-                ]);
+                mesh.add_face([PointIndex(base), PointIndex(base + 1), PointIndex(base + 2)]);
             }
         }
 
@@ -597,9 +599,9 @@ impl GltfReader {
             )));
         }
 
-        let buffer_view_idx = accessor.buffer_view.ok_or_else(|| {
-            GltfError::InvalidGltf("VEC3 accessor has no bufferView".into())
-        })?;
+        let buffer_view_idx = accessor
+            .buffer_view
+            .ok_or_else(|| GltfError::InvalidGltf("VEC3 accessor has no bufferView".into()))?;
 
         let buffer_view = self.root.buffer_views.get(buffer_view_idx).ok_or_else(|| {
             GltfError::InvalidGltf(format!("Invalid bufferView index: {}", buffer_view_idx))
@@ -664,9 +666,9 @@ impl GltfReader {
             )));
         }
 
-        let buffer_view_idx = accessor.buffer_view.ok_or_else(|| {
-            GltfError::InvalidGltf("VEC2 accessor has no bufferView".into())
-        })?;
+        let buffer_view_idx = accessor
+            .buffer_view
+            .ok_or_else(|| GltfError::InvalidGltf("VEC2 accessor has no bufferView".into()))?;
 
         let buffer_view = self.root.buffer_views.get(buffer_view_idx).ok_or_else(|| {
             GltfError::InvalidGltf(format!("Invalid bufferView index: {}", buffer_view_idx))
@@ -718,9 +720,9 @@ impl GltfReader {
             )));
         }
 
-        let buffer_view_idx = accessor.buffer_view.ok_or_else(|| {
-            GltfError::InvalidGltf("Index accessor has no bufferView".into())
-        })?;
+        let buffer_view_idx = accessor
+            .buffer_view
+            .ok_or_else(|| GltfError::InvalidGltf("Index accessor has no bufferView".into()))?;
 
         let buffer_view = self.root.buffer_views.get(buffer_view_idx).ok_or_else(|| {
             GltfError::InvalidGltf(format!("Invalid bufferView index: {}", buffer_view_idx))
@@ -742,7 +744,9 @@ impl GltfReader {
                 for i in 0..accessor.count {
                     let offset = start + i;
                     if offset >= buffer.len() {
-                        return Err(GltfError::InvalidGltf("Index accessor out of bounds".into()));
+                        return Err(GltfError::InvalidGltf(
+                            "Index accessor out of bounds".into(),
+                        ));
                     }
                     result.push(buffer[offset] as u32);
                 }
@@ -752,7 +756,9 @@ impl GltfReader {
                 for i in 0..accessor.count {
                     let offset = start + i * 2;
                     if offset + 2 > buffer.len() {
-                        return Err(GltfError::InvalidGltf("Index accessor out of bounds".into()));
+                        return Err(GltfError::InvalidGltf(
+                            "Index accessor out of bounds".into(),
+                        ));
                     }
                     let val = u16::from_le_bytes([buffer[offset], buffer[offset + 1]]);
                     result.push(val as u32);
@@ -763,7 +769,9 @@ impl GltfReader {
                 for i in 0..accessor.count {
                     let offset = start + i * 4;
                     if offset + 4 > buffer.len() {
-                        return Err(GltfError::InvalidGltf("Index accessor out of bounds".into()));
+                        return Err(GltfError::InvalidGltf(
+                            "Index accessor out of bounds".into(),
+                        ));
                     }
                     let val = u32::from_le_bytes([
                         buffer[offset],
@@ -835,8 +843,7 @@ fn decode_data_uri(uri: &str) -> Result<Vec<u8>> {
 // (Draco-compressed and standard) and returns them as meshes.
 impl crate::traits::Reader for GltfReader {
     fn open<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
-        GltfReader::open(path)
-            .map_err(|e| std::io::Error::other(e.to_string()))
+        GltfReader::open(path).map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     fn read_meshes(&mut self) -> std::io::Result<Vec<draco_core::mesh::Mesh>> {
@@ -1047,12 +1054,17 @@ impl crate::traits::SceneReader for GltfReader {
         let mut visited = vec![false; self.root.nodes.len()];
         let mut root_nodes = Vec::with_capacity(root_node_indices.len());
         for &node_idx in &root_node_indices {
-            let scene_node = self.build_scene_node(node_idx, &mut visited).map_err(map_err)?;
+            let scene_node = self
+                .build_scene_node(node_idx, &mut visited)
+                .map_err(map_err)?;
             root_nodes.push(scene_node);
         }
 
         // Collect all parts (flattened) for backward compatibility
-        fn collect_parts(node: &crate::traits::SceneNode, out: &mut Vec<crate::traits::SceneObject>) {
+        fn collect_parts(
+            node: &crate::traits::SceneNode,
+            out: &mut Vec<crate::traits::SceneObject>,
+        ) {
             out.extend(node.parts.clone());
             for child in &node.children {
                 collect_parts(child, out);
@@ -1082,7 +1094,10 @@ fn decode_base64(input: &str) -> Result<Vec<u8>> {
         46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1,
     ];
 
-    let input: Vec<u8> = input.bytes().filter(|&b| b != b'\n' && b != b'\r').collect();
+    let input: Vec<u8> = input
+        .bytes()
+        .filter(|&b| b != b'\n' && b != b'\r')
+        .collect();
     let mut output = Vec::with_capacity(input.len() * 3 / 4);
 
     let chunks = input.chunks(4);
@@ -1138,10 +1153,7 @@ fn percent_decode(input: &str) -> Vec<u8> {
 
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(h), Some(l)) = (
-                hex_digit(bytes[i + 1]),
-                hex_digit(bytes[i + 2]),
-            ) {
+            if let (Some(h), Some(l)) = (hex_digit(bytes[i + 1]), hex_digit(bytes[i + 2])) {
                 output.push((h << 4) | l);
                 i += 3;
                 continue;

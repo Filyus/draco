@@ -48,7 +48,7 @@ pub fn encode_symbols(
     // Compute bit lengths
     let mut bit_lengths = Vec::with_capacity(symbols.len());
     let mut max_value = 0;
-    
+
     for chunk in symbols.chunks(num_components) {
         let mut max_component_value = chunk[0];
         for &val in &chunk[1..] {
@@ -56,7 +56,7 @@ pub fn encode_symbols(
                 max_component_value = val;
             }
         }
-        
+
         // C++ uses: value_msb_pos = MostSignificantBit(max_component_value);
         //           bit_lengths.push(value_msb_pos + 1);
         // MostSignificantBit returns 0-indexed position, so +1 gives bit count.
@@ -75,7 +75,11 @@ pub fn encode_symbols(
     // Estimate bits for tagged scheme.
     let tagged_bits = compute_tagged_scheme_bits(symbols, num_components, &bit_lengths, max_value);
 
-    let max_value_bit_length = if max_value == 0 { 0 } else { 32 - max_value.leading_zeros() };
+    let max_value_bit_length = if max_value == 0 {
+        0
+    } else {
+        32 - max_value.leading_zeros()
+    };
     const K_MAX_RAW_ENCODING_BIT_LENGTH: u32 = 18;
 
     // If max value can't be represented efficiently by RAW, always use TAGGED.
@@ -118,7 +122,7 @@ pub fn estimate_bits(symbols: &[u32], num_components: usize) -> u64 {
     // Compute bit lengths
     let mut bit_lengths = Vec::with_capacity(symbols.len());
     let mut max_value = 0;
-    
+
     for chunk in symbols.chunks(num_components) {
         let mut max_component_value = chunk[0];
         for &val in &chunk[1..] {
@@ -126,7 +130,7 @@ pub fn estimate_bits(symbols: &[u32], num_components: usize) -> u64 {
                 max_component_value = val;
             }
         }
-        
+
         // C++ uses: value_msb_pos = MostSignificantBit(max_component_value);
         //           bit_lengths.push(value_msb_pos + 1);
         // For max_component_value == 0, bit_length = 1.
@@ -143,7 +147,7 @@ pub fn estimate_bits(symbols: &[u32], num_components: usize) -> u64 {
 
     let tagged_bits = compute_tagged_scheme_bits(symbols, num_components, &bit_lengths, max_value);
     let raw_bits = compute_raw_scheme_bits(symbols, max_value);
-    
+
     std::cmp::min(tagged_bits, raw_bits)
 }
 
@@ -191,7 +195,11 @@ fn compute_raw_scheme_bits_and_frequencies(
 
     let data_bits = (-total_bits) as i64;
     let table_bits = approximate_rans_frequency_table_bits(max_value, num_unique_symbols);
-    ((data_bits as u64) + table_bits, frequencies, num_unique_symbols)
+    (
+        (data_bits as u64) + table_bits,
+        frequencies,
+        num_unique_symbols,
+    )
 }
 
 #[cfg(feature = "encoder")]
@@ -206,7 +214,7 @@ fn compute_tagged_scheme_bits(
     for &len in bit_lengths.iter() {
         value_bits += len as u64 * num_components as u64;
     }
-    
+
     // 2. Bits for tags (RAns) using C++ ComputeShannonEntropy on bit lengths.
     // C++ calls ComputeShannonEntropy(bit_lengths, num_chunks, max_value=32).
     let (tag_bits, num_unique_symbols) = compute_shannon_entropy_bits_trunc(bit_lengths, 32);
@@ -246,7 +254,12 @@ fn compute_shannon_entropy_bits_trunc(symbols: &[u32], max_value: u32) -> (i64, 
 }
 
 #[cfg(feature = "encoder")]
-pub fn encode_raw_symbols(symbols: &[u32], max_value: u32, target_buffer: &mut EncoderBuffer, compression_level: i32) -> bool {
+pub fn encode_raw_symbols(
+    symbols: &[u32],
+    max_value: u32,
+    target_buffer: &mut EncoderBuffer,
+    compression_level: i32,
+) -> bool {
     // num_values is known by decoder
 
     // Count frequencies
@@ -254,7 +267,7 @@ pub fn encode_raw_symbols(symbols: &[u32], max_value: u32, target_buffer: &mut E
     for &s in symbols {
         frequencies[s as usize] += 1;
     }
-    
+
     let mut num_unique_symbols: u32 = 0;
     for &f in &frequencies {
         if f > 0 {
@@ -323,17 +336,17 @@ fn encode_raw_symbols_with_frequencies(
 fn encode_raw_symbols_internal<const RANS_PRECISION_BITS: u32>(
     symbols: &[u32],
     frequencies: &[u64],
-    target_buffer: &mut EncoderBuffer
+    target_buffer: &mut EncoderBuffer,
 ) -> bool {
     let mut encoder = RAnsSymbolEncoder::<RANS_PRECISION_BITS>::new();
     encoder.create(frequencies, frequencies.len(), target_buffer);
     encoder.start_encoding(target_buffer);
-    
+
     // Reverse encoding
     for &sym in symbols.iter().rev() {
         encoder.encode_symbol(sym);
     }
-    
+
     encoder.end_encoding(target_buffer);
     true
 }
@@ -343,7 +356,6 @@ pub fn encode_raw_symbols_no_scheme(symbols: &[u32], max_value: u32, target_buff
     // ...
 }
 */
-
 
 #[cfg(feature = "encoder")]
 #[allow(dead_code)]
@@ -357,7 +369,7 @@ fn encode_raw_symbols_typed<const PRECISION_BITS: u32>(
     if !encoder.create(frequencies, num_unique_symbols, target_buffer) {
         return false;
     }
-    
+
     encoder.start_encoding(target_buffer);
     for &sym in symbols.iter().rev() {
         encoder.encode_symbol(sym);
@@ -381,25 +393,28 @@ fn encode_tagged_symbols(
     for &len in bit_lengths {
         frequencies[len as usize] += 1;
     }
-    
+
     // Draco uses unique_symbols_bit_length=5 for tagged bit-length tags,
     // which corresponds to rANS precision bits = 12.
     let mut tag_encoder = RAnsSymbolEncoder::<12>::new();
     if !tag_encoder.create(&frequencies, 33, target_buffer) {
         return false;
     }
-    
+
     if std::env::var("DRACO_DEBUG_CMP").is_ok() {
-        eprintln!("RUST TAGGED tag frequencies: {:?}", &frequencies[..15.min(frequencies.len())]);
+        eprintln!(
+            "RUST TAGGED tag frequencies: {:?}",
+            &frequencies[..15.min(frequencies.len())]
+        );
     }
-    
+
     // Create a separate bit buffer for raw values (C++ value_buffer)
     let mut value_buffer = EncoderBuffer::new();
     let value_bits = 32 * (symbols.len()); // safe upper bound
     value_buffer.start_bit_encoding(value_bits, false);
 
     tag_encoder.start_encoding(target_buffer);
-    
+
     // 1. Encode bits in FORWARD order (because our BitEncoder is FIFO).
     for (i, &len) in bit_lengths.iter().enumerate() {
         let val_idx = i * num_components;
@@ -408,12 +423,12 @@ fn encode_tagged_symbols(
             value_buffer.encode_least_significant_bits32(len, val);
         }
     }
-    
+
     // 2. Encode tags in REVERSE order (because ANS is LIFO).
     for &len in bit_lengths.iter().rev() {
         tag_encoder.encode_symbol(len);
     }
-    
+
     tag_encoder.end_encoding(target_buffer);
     value_buffer.end_bit_encoding();
     target_buffer.encode_data(value_buffer.data());
@@ -451,7 +466,11 @@ pub fn decode_symbols(
 }
 
 #[cfg(feature = "decoder")]
-pub fn decode_raw_symbols(num_values: usize, in_buffer: &mut DecoderBuffer, symbols: &mut [u32]) -> bool {
+pub fn decode_raw_symbols(
+    num_values: usize,
+    in_buffer: &mut DecoderBuffer,
+    symbols: &mut [u32],
+) -> bool {
     // Read serialized symbol-bit-length header (written by encoder)
     let symbols_bit_length = match in_buffer.decode_u8() {
         Ok(v) => v as u32,
@@ -505,11 +524,11 @@ fn decode_tagged_symbols(
     }
 
     let num_chunks = num_values / num_components;
-    
+
     // Pre-validate that the bit stream has enough data for the worst case:
     // each chunk reads at most 32 bits × num_components.
     // The bit stream is already bounded by start_bit_decoding.
-    
+
     // Process each chunk
     let mut val_idx = 0;
     for _ in 0..num_chunks {
