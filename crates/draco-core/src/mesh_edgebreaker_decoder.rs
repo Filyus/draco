@@ -1051,10 +1051,13 @@ impl<'a> InternalTraversalDecoder<'a> {
 }
 
 impl<'a> EdgebreakerTraversalDecoder for InternalTraversalDecoder<'a> {
-    fn decode_symbol(&mut self) -> u32 {
-        let val = self.symbols[self.symbol_index];
+    fn decode_symbol(&mut self) -> Result<u32, String> {
+        let val = *self
+            .symbols
+            .get(self.symbol_index)
+            .ok_or_else(|| "Traversal symbol stream exhausted".to_string())?;
         self.symbol_index += 1;
-        val
+        Ok(val)
     }
 
     fn decode_start_face_configuration(&mut self) -> bool {

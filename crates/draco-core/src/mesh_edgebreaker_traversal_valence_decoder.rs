@@ -95,25 +95,32 @@ impl<'a> MeshEdgebreakerTraversalValenceDecoder<'a> {
 }
 
 impl<'a> EdgebreakerTraversalDecoder for MeshEdgebreakerTraversalValenceDecoder<'a> {
-    fn decode_symbol(&mut self) -> u32 {
+    fn decode_symbol(&mut self) -> Result<u32, String> {
         if self.active_context != -1 {
             let ctx = self.active_context as usize;
-            let counter = &mut self.context_counters[ctx];
+            let counter = self
+                .context_counters
+                .get_mut(ctx)
+                .ok_or_else(|| "Invalid Edgebreaker valence context".to_string())?;
             *counter -= 1;
             if *counter < 0 {
-                return 0xFFFF_FFFF; // invalid
+                return Err("Edgebreaker valence context symbol stream exhausted".to_string());
             }
-            let symbol_id = self.context_symbols[ctx][*counter as usize];
+            let symbol_id = *self
+                .context_symbols
+                .get(ctx)
+                .and_then(|symbols| symbols.get(*counter as usize))
+                .ok_or_else(|| "Edgebreaker valence context symbol stream exhausted".to_string())?;
             // symbol_id is EdgebreakerSymbol id (0..4). Validate and assign directly.
             if symbol_id > 4 {
-                return 0xFFFF_FFFF;
+                return Err(format!("Invalid Edgebreaker valence symbol {symbol_id}"));
             }
             self.last_symbol = symbol_id as i32;
         } else {
             // If no context, for new sequence the first symbol must be E (End = 4)
             self.last_symbol = 4;
         }
-        self.last_symbol as u32
+        Ok(self.last_symbol as u32)
     }
 
     fn decode_start_face_configuration(&mut self) -> bool {

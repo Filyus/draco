@@ -186,6 +186,16 @@ completed:
           - "inverse_quantization_rejects_short_min_values"
     note: "Quantization inverse transform now validates transform parameter dimensionality and uses checked offsets with fallible source reads and target writes while reconstructing float attributes."
 
+  - id: edgebreaker-traversal-symbol-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/edgebreaker_connectivity_decoder.rs"
+        tests:
+          - "exhausted_traversal_symbol_stream_fails_cleanly"
+      - path: "crates/draco-core/src/mesh_edgebreaker_decoder.rs"
+      - path: "crates/draco-core/src/mesh_edgebreaker_traversal_valence_decoder.rs"
+    note: "Edgebreaker traversal symbol decoding is now fallible, so truncated or inconsistent traversal symbol streams return controlled connectivity errors instead of indexing past the symbol buffer."
+
 open_risks:
   - id: no-sustained-fuzzing
     priority: high

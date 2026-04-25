@@ -6,7 +6,7 @@ use crate::mesh_edgebreaker_shared::EdgeFaceName;
 use std::collections::HashMap;
 
 pub trait EdgebreakerTraversalDecoder {
-    fn decode_symbol(&mut self) -> u32;
+    fn decode_symbol(&mut self) -> Result<u32, String>;
     fn decode_start_face_configuration(&mut self) -> bool;
     fn merge_vertices(&mut self, p: VertexIndex, n: VertexIndex);
     fn is_topology_split(&mut self, encoder_symbol_id: i32) -> Option<(EdgeFaceName, i32)>;
@@ -53,7 +53,7 @@ impl EdgebreakerConnectivityDecoder {
             num_faces += 1;
 
             let mut check_topology_split = false;
-            let symbol = traversal_decoder.decode_symbol();
+            let symbol = traversal_decoder.decode_symbol()?;
 
             // Internal symbol mapping (see `EdgebreakerSymbol`):
             //   Center = 0, Split = 1, Left = 2, Right = 3, End = 4
@@ -499,10 +499,13 @@ mod tests {
     }
 
     impl EdgebreakerTraversalDecoder for StaticTraversalDecoder {
-        fn decode_symbol(&mut self) -> u32 {
-            let symbol = self.symbols[self.next_symbol];
+        fn decode_symbol(&mut self) -> Result<u32, String> {
+            let symbol = *self
+                .symbols
+                .get(self.next_symbol)
+                .ok_or_else(|| "Traversal symbol stream exhausted".to_string())?;
             self.next_symbol += 1;
-            symbol
+            Ok(symbol)
         }
 
         fn decode_start_face_configuration(&mut self) -> bool {
@@ -536,6 +539,16 @@ mod tests {
     fn topology_symbol_that_requires_active_corner_fails_cleanly() {
         let mut decoder = EdgebreakerConnectivityDecoder::new(1, 3);
         let mut traversal_decoder = StaticTraversalDecoder::new(vec![0]); // TOPOLOGY_C
+
+        let status = decoder.decode_connectivity(1, &mut traversal_decoder, true);
+
+        assert!(status.is_err());
+    }
+
+    #[test]
+    fn exhausted_traversal_symbol_stream_fails_cleanly() {
+        let mut decoder = EdgebreakerConnectivityDecoder::new(1, 3);
+        let mut traversal_decoder = StaticTraversalDecoder::new(Vec::new());
 
         let status = decoder.decode_connectivity(1, &mut traversal_decoder, true);
 
