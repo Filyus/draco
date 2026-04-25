@@ -768,7 +768,7 @@ impl SequentialIntegerAttributeDecoder {
                     Err(_) => return false,
                 };
                 for chunk in bytes.chunks_exact(4) {
-                    let symbol = u32::from_le_bytes(chunk.try_into().unwrap());
+                    let symbol = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
                     raw_corrections.push(symbol_to_correction(symbol, needs_zigzag_conversion));
                 }
             } else {
@@ -796,7 +796,10 @@ impl SequentialIntegerAttributeDecoder {
         // 3. Decode prediction scheme data (if any).
         match selected_method {
             _ if self.prediction_scheme.is_some() => {
-                let scheme = self.prediction_scheme.as_mut().unwrap();
+                let Some(scheme) = self.prediction_scheme.as_mut() else {
+                    eprintln!("Prediction scheme was selected but not initialized");
+                    return false;
+                };
                 if !scheme.decode_prediction_data(in_buffer) {
                     eprintln!(
                         "Failed to decode prediction data (att_id={}, method={:?}, transform={:?})",
@@ -815,7 +818,10 @@ impl SequentialIntegerAttributeDecoder {
                         return false;
                     }
                 } else {
-                    let predictor = predictor_opt.as_mut().unwrap();
+                    let Some(predictor) = predictor_opt.as_mut() else {
+                        eprintln!("Difference predictor was selected but not initialized");
+                        return false;
+                    };
                     if !predictor.decode_prediction_data(in_buffer) {
                         eprintln!(
                             "Failed to decode prediction data (att_id={}, method={:?}, transform={:?})",
@@ -826,7 +832,10 @@ impl SequentialIntegerAttributeDecoder {
                 }
             }
             PredictionSchemeMethod::MeshPredictionParallelogram => {
-                let predictor = predictor_parallelogram_opt.as_mut().unwrap();
+                let Some(predictor) = predictor_parallelogram_opt.as_mut() else {
+                    eprintln!("Parallelogram predictor was selected but not initialized");
+                    return false;
+                };
                 if !predictor.decode_prediction_data(in_buffer) {
                     eprintln!(
                         "Failed to decode prediction data (att_id={}, method={:?}, transform={:?})",
@@ -837,7 +846,10 @@ impl SequentialIntegerAttributeDecoder {
             }
             #[cfg(feature = "legacy_bitstream_decode")]
             PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
-                let predictor = predictor_multi_parallelogram_opt.as_mut().unwrap();
+                let Some(predictor) = predictor_multi_parallelogram_opt.as_mut() else {
+                    eprintln!("MultiParallelogram predictor was selected but not initialized");
+                    return false;
+                };
                 if !predictor.decode_prediction_data(in_buffer) {
                     eprintln!(
                         "Failed to decode prediction data (att_id={}, method={:?}, transform={:?})",
@@ -852,9 +864,12 @@ impl SequentialIntegerAttributeDecoder {
                 return false;
             }
             PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram => {
-                let predictor = predictor_constrained_multi_parallelogram_opt
-                    .as_mut()
-                    .unwrap();
+                let Some(predictor) = predictor_constrained_multi_parallelogram_opt.as_mut() else {
+                    eprintln!(
+                        "ConstrainedMultiParallelogram predictor was selected but not initialized"
+                    );
+                    return false;
+                };
                 if !predictor.decode_prediction_data(in_buffer) {
                     eprintln!(
                         "Failed to decode prediction data (att_id={}, method={:?}, transform={:?})",
@@ -865,7 +880,10 @@ impl SequentialIntegerAttributeDecoder {
             }
             #[cfg(feature = "legacy_bitstream_decode")]
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
-                let predictor = predictor_tex_coords_deprecated_opt.as_mut().unwrap();
+                let Some(predictor) = predictor_tex_coords_deprecated_opt.as_mut() else {
+                    eprintln!("TexCoordsDeprecated predictor was selected but not initialized");
+                    return false;
+                };
                 if !predictor.decode_prediction_data(in_buffer) {
                     eprintln!(
                         "Failed to decode prediction data (att_id={}, method={:?}, transform={:?})",
@@ -880,7 +898,10 @@ impl SequentialIntegerAttributeDecoder {
                 return false;
             }
             PredictionSchemeMethod::MeshPredictionTexCoordsPortable => {
-                let predictor = predictor_tex_coords_opt.as_mut().unwrap();
+                let Some(predictor) = predictor_tex_coords_opt.as_mut() else {
+                    eprintln!("TexCoordsPortable predictor was selected but not initialized");
+                    return false;
+                };
                 if !predictor.decode_prediction_data(in_buffer) {
                     eprintln!(
                         "Failed to decode prediction data (att_id={}, method={:?}, transform={:?})",
@@ -890,7 +911,10 @@ impl SequentialIntegerAttributeDecoder {
                 }
             }
             PredictionSchemeMethod::MeshPredictionGeometricNormal => {
-                let predictor = predictor_geometric_normal_opt.as_mut().unwrap();
+                let Some(predictor) = predictor_geometric_normal_opt.as_mut() else {
+                    eprintln!("GeometricNormal predictor was selected but not initialized");
+                    return false;
+                };
                 if !predictor.decode_prediction_data(in_buffer) {
                     eprintln!(
                         "Failed to decode prediction data (att_id={}, method={:?}, transform={:?})",
@@ -908,7 +932,10 @@ impl SequentialIntegerAttributeDecoder {
         // 4. Apply Inverse Prediction.
         match selected_method {
             _ if self.prediction_scheme.is_some() => {
-                let scheme = self.prediction_scheme.as_mut().unwrap();
+                let Some(scheme) = self.prediction_scheme.as_mut() else {
+                    eprintln!("Prediction scheme was selected but not initialized");
+                    return false;
+                };
                 let map_opt = match selected_method {
                     PredictionSchemeMethod::MeshPredictionParallelogram
                     | PredictionSchemeMethod::MeshPredictionMultiParallelogram
@@ -950,7 +977,10 @@ impl SequentialIntegerAttributeDecoder {
                         return false;
                     }
                 } else {
-                    let predictor = predictor_opt.as_mut().unwrap();
+                    let Some(predictor) = predictor_opt.as_mut() else {
+                        eprintln!("Difference predictor was selected but not initialized");
+                        return false;
+                    };
                     if !predictor.compute_original_values(
                         &corrections,
                         &mut values,
@@ -967,7 +997,10 @@ impl SequentialIntegerAttributeDecoder {
                 }
             }
             PredictionSchemeMethod::MeshPredictionParallelogram => {
-                let predictor = predictor_parallelogram_opt.as_mut().unwrap();
+                let Some(predictor) = predictor_parallelogram_opt.as_mut() else {
+                    eprintln!("Parallelogram predictor was selected but not initialized");
+                    return false;
+                };
                 if !predictor.compute_original_values(
                     &corrections,
                     &mut values,
@@ -984,7 +1017,10 @@ impl SequentialIntegerAttributeDecoder {
             }
             #[cfg(feature = "legacy_bitstream_decode")]
             PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
-                let predictor = predictor_multi_parallelogram_opt.as_mut().unwrap();
+                let Some(predictor) = predictor_multi_parallelogram_opt.as_mut() else {
+                    eprintln!("MultiParallelogram predictor was selected but not initialized");
+                    return false;
+                };
                 if !predictor.compute_original_values(
                     &corrections,
                     &mut values,
@@ -1005,9 +1041,12 @@ impl SequentialIntegerAttributeDecoder {
                 return false;
             }
             PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram => {
-                let predictor = predictor_constrained_multi_parallelogram_opt
-                    .as_mut()
-                    .unwrap();
+                let Some(predictor) = predictor_constrained_multi_parallelogram_opt.as_mut() else {
+                    eprintln!(
+                        "ConstrainedMultiParallelogram predictor was selected but not initialized"
+                    );
+                    return false;
+                };
                 if !predictor.compute_original_values(
                     &corrections,
                     &mut values,
@@ -1024,7 +1063,10 @@ impl SequentialIntegerAttributeDecoder {
             }
             #[cfg(feature = "legacy_bitstream_decode")]
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
-                let predictor = predictor_tex_coords_deprecated_opt.as_mut().unwrap();
+                let Some(predictor) = predictor_tex_coords_deprecated_opt.as_mut() else {
+                    eprintln!("TexCoordsDeprecated predictor was selected but not initialized");
+                    return false;
+                };
                 if !predictor.compute_original_values(
                     &corrections,
                     &mut values,
@@ -1047,7 +1089,10 @@ impl SequentialIntegerAttributeDecoder {
                 return false;
             }
             PredictionSchemeMethod::MeshPredictionTexCoordsPortable => {
-                let predictor = predictor_tex_coords_opt.as_mut().unwrap();
+                let Some(predictor) = predictor_tex_coords_opt.as_mut() else {
+                    eprintln!("TexCoordsPortable predictor was selected but not initialized");
+                    return false;
+                };
                 if !predictor.compute_original_values(
                     &corrections,
                     &mut values,
@@ -1065,7 +1110,10 @@ impl SequentialIntegerAttributeDecoder {
                 }
             }
             PredictionSchemeMethod::MeshPredictionGeometricNormal => {
-                let predictor = predictor_geometric_normal_opt.as_mut().unwrap();
+                let Some(predictor) = predictor_geometric_normal_opt.as_mut() else {
+                    eprintln!("GeometricNormal predictor was selected but not initialized");
+                    return false;
+                };
                 if !predictor.compute_original_values(
                     &corrections,
                     &mut values,

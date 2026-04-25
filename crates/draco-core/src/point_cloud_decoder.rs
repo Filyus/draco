@@ -323,18 +323,15 @@ impl PointCloudDecoder {
                     let decoder_type = decoder_types[local_i];
                     match decoder_type {
                         1 => {
+                            let point_ids = point_ids.as_ref().ok_or_else(|| {
+                                DracoError::DracoError(
+                                    "Point ids missing for integer attribute decoder".to_string(),
+                                )
+                            })?;
                             let mut att_decoder = SequentialIntegerAttributeDecoder::new();
                             att_decoder.init(self, att_id);
                             if !att_decoder.decode_values(
-                                pc,
-                                point_ids.as_ref().unwrap(),
-                                buffer,
-                                None,
-                                None,
-                                None,
-                                None,
-                                None,
-                                None,
+                                pc, point_ids, buffer, None, None, None, None, None, None,
                             ) {
                                 return Err(DracoError::DracoError(
                                     "Failed to decode integer attribute".to_string(),
@@ -405,7 +402,12 @@ impl PointCloudDecoder {
                             };
                             if !att_decoder.decode_values(
                                 pc,
-                                point_ids.as_ref().unwrap(),
+                                point_ids.as_ref().ok_or_else(|| {
+                                    DracoError::DracoError(
+                                        "Point ids missing for quantized attribute decoder"
+                                            .to_string(),
+                                    )
+                                })?,
                                 buffer,
                                 None,
                                 None,
@@ -480,7 +482,12 @@ impl PointCloudDecoder {
                             };
                             if !att_decoder.decode_values(
                                 pc,
-                                point_ids.as_ref().unwrap(),
+                                point_ids.as_ref().ok_or_else(|| {
+                                    DracoError::DracoError(
+                                        "Point ids missing for normal attribute decoder"
+                                            .to_string(),
+                                    )
+                                })?,
                                 buffer,
                                 None,
                                 None,
@@ -543,7 +550,12 @@ impl PointCloudDecoder {
                                 let idx = pending_quant
                                     .iter()
                                     .position(|p| p.att_id == att_id)
-                                    .unwrap();
+                                    .ok_or_else(|| {
+                                        DracoError::DracoError(
+                                            "Missing pending quantized attribute transform"
+                                                .to_string(),
+                                        )
+                                    })?;
                                 let original = pc.attribute(att_id);
                                 if !pending_quant[idx]
                                     .transform
@@ -560,7 +572,11 @@ impl PointCloudDecoder {
                                 let idx = pending_normals
                                     .iter()
                                     .position(|p| p.att_id == att_id)
-                                    .unwrap();
+                                    .ok_or_else(|| {
+                                    DracoError::DracoError(
+                                        "Missing pending normal attribute transform".to_string(),
+                                    )
+                                })?;
                                 pending_normals[idx].quantization_bits = buffer.decode_u8()?;
                             }
                         }

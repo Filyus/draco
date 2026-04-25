@@ -57,7 +57,7 @@ impl<'a> MeshPredictionSchemeTexCoordsPortableDecoder<'a> {
     ) -> Option<[i64; 3]> {
         let entry_id = usize::try_from(entry_id).ok()?;
         let point_id = entry_to_point_id_map.get(entry_id)?;
-        let att = self.pos_attribute.unwrap();
+        let att = self.pos_attribute?;
         let mut pos = [0i64; 3];
         let val_index = att.mapped_index(PointIndex(point_id));
         if val_index == INVALID_ATTRIBUTE_VALUE_INDEX {
@@ -84,9 +84,15 @@ impl<'a> MeshPredictionSchemeTexCoordsPortableDecoder<'a> {
         entry_to_point_id_map: crate::prediction_scheme::EntryToPointIdMap<'_>,
         predicted_value: &mut [i32; 2],
     ) -> bool {
-        let mesh_data = self.mesh_data.as_ref().unwrap();
-        let corner_table = mesh_data.corner_table().unwrap();
-        let vertex_to_data_map = mesh_data.vertex_to_data_map().unwrap();
+        let Some(mesh_data) = self.mesh_data.as_ref() else {
+            return false;
+        };
+        let Some(corner_table) = mesh_data.corner_table() else {
+            return false;
+        };
+        let Some(vertex_to_data_map) = mesh_data.vertex_to_data_map() else {
+            return false;
+        };
 
         let next_corner_id = corner_table.next(corner_id);
         let prev_corner_id = corner_table.previous(corner_id);
@@ -181,7 +187,9 @@ impl<'a> MeshPredictionSchemeTexCoordsPortableDecoder<'a> {
                 if self.orientations.is_empty() {
                     return false;
                 }
-                let orientation = self.orientations.pop().unwrap(); // Pop from back (stack)
+                let Some(orientation) = self.orientations.pop() else {
+                    return false;
+                };
 
                 let predicted_uv = if orientation {
                     vec2_wrapping_add_div_u64(&x_uv, &cx_uv, pn_norm2_squared)
@@ -327,7 +335,9 @@ impl<'a> PredictionSchemeDecoder<'a, i32, i32>
             return false; // We need the map
         };
 
-        let mesh_data = self.mesh_data.as_ref().unwrap();
+        let Some(mesh_data) = self.mesh_data.as_ref() else {
+            return false;
+        };
         let Some(data_to_corner_map) = mesh_data.data_to_corner_map() else {
             return false;
         };

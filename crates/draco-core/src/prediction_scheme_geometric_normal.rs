@@ -93,10 +93,18 @@ impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
             return [0, 0, 0];
         }
 
-        let mesh_data = self.mesh_data.as_ref().unwrap();
-        let corner_table = mesh_data.corner_table().unwrap();
-        let vertex_to_data_map = mesh_data.vertex_to_data_map().unwrap();
-        let pos_attribute = self.pos_attribute.unwrap();
+        let Some(mesh_data) = self.mesh_data.as_ref() else {
+            return [0, 0, 0];
+        };
+        let Some(corner_table) = mesh_data.corner_table() else {
+            return [0, 0, 0];
+        };
+        let Some(vertex_to_data_map) = mesh_data.vertex_to_data_map() else {
+            return [0, 0, 0];
+        };
+        let Some(pos_attribute) = self.pos_attribute else {
+            return [0, 0, 0];
+        };
 
         // The corner table used for prediction may be seam-adjusted, which can
         // introduce new vertex ids that don't correspond to original PointIndex.
@@ -142,8 +150,18 @@ impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
             return;
         }
 
-        let mesh_data = self.mesh_data.as_ref().unwrap();
-        let corner_table = mesh_data.corner_table().unwrap();
+        let Some(mesh_data) = self.mesh_data.as_ref() else {
+            prediction[0] = 0;
+            prediction[1] = 0;
+            prediction[2] = 0;
+            return;
+        };
+        let Some(corner_table) = mesh_data.corner_table() else {
+            prediction[0] = 0;
+            prediction[1] = 0;
+            prediction[2] = 0;
+            return;
+        };
         let pos_cent = self.get_position_for_corner(corner_id);
 
         let mut normal = [0i128; 3];
@@ -264,8 +282,12 @@ impl<'a> PredictionSchemeDecoder<'a, i32, i32> for MeshPredictionSchemeGeometric
         }
         self.transform.init(num_components);
 
-        let mesh_data = self.mesh_data.as_ref().unwrap();
-        let data_to_corner_map = mesh_data.data_to_corner_map().unwrap();
+        let Some(mesh_data) = self.mesh_data.as_ref() else {
+            return false;
+        };
+        let Some(data_to_corner_map) = mesh_data.data_to_corner_map() else {
+            return false;
+        };
         let corner_map_size = data_to_corner_map.len();
         if corner_map_size * num_components > in_corr.len()
             || corner_map_size * num_components > out_data.len()

@@ -846,8 +846,15 @@ where
         }
         let num_entries = size / num_components;
 
-        let corner_table = self.mesh_data.corner_table().unwrap();
-        let vertex_to_data_map = self.mesh_data.vertex_to_data_map().unwrap();
+        let Some(corner_table) = self.mesh_data.corner_table() else {
+            return false;
+        };
+        let Some(vertex_to_data_map) = self.mesh_data.vertex_to_data_map() else {
+            return false;
+        };
+        if in_corr.len() < size || out_data.len() < size {
+            return false;
+        }
 
         let mut multi_pred_vals = vec![DataType::default(); num_components];
         let zero_vals = vec![DataType::default(); num_components];
@@ -968,15 +975,34 @@ where
                         // Compute prediction for this parallelogram
                         let ci = corners[i];
                         let oci = corner_table.opposite(ci);
-                        let vert_opp = vertex_to_data_map[corner_table.vertex(oci).0 as usize];
-                        let vert_next = vertex_to_data_map
-                            [corner_table.vertex(corner_table.next(oci)).0 as usize];
-                        let vert_prev = vertex_to_data_map
-                            [corner_table.vertex(corner_table.previous(oci)).0 as usize];
+                        let Some(&vert_opp) =
+                            vertex_to_data_map.get(corner_table.vertex(oci).0 as usize)
+                        else {
+                            return false;
+                        };
+                        let Some(&vert_next) = vertex_to_data_map
+                            .get(corner_table.vertex(corner_table.next(oci)).0 as usize)
+                        else {
+                            return false;
+                        };
+                        let Some(&vert_prev) = vertex_to_data_map
+                            .get(corner_table.vertex(corner_table.previous(oci)).0 as usize)
+                        else {
+                            return false;
+                        };
+                        if vert_opp < 0 || vert_next < 0 || vert_prev < 0 {
+                            return false;
+                        }
 
                         let v_opp_off = (vert_opp as usize) * num_components;
                         let v_next_off = (vert_next as usize) * num_components;
                         let v_prev_off = (vert_prev as usize) * num_components;
+                        if v_opp_off + num_components > out_data.len()
+                            || v_next_off + num_components > out_data.len()
+                            || v_prev_off + num_components > out_data.len()
+                        {
+                            return false;
+                        }
 
                         for k in 0..num_components {
                             let p = DataType::compute_parallelogram_prediction(

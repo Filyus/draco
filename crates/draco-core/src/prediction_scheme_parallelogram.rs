@@ -439,9 +439,28 @@ where
     ) -> bool {
         self.transform.init(num_components);
 
-        let table = self.mesh_data.corner_table().unwrap();
-        let vertex_to_data_map = self.mesh_data.vertex_to_data_map().unwrap();
-        let data_to_corner_map = self.mesh_data.data_to_corner_map().unwrap();
+        if num_components == 0 {
+            return false;
+        }
+
+        let Some(table) = self.mesh_data.corner_table() else {
+            return false;
+        };
+        let Some(vertex_to_data_map) = self.mesh_data.vertex_to_data_map() else {
+            return false;
+        };
+        let Some(data_to_corner_map) = self.mesh_data.data_to_corner_map() else {
+            return false;
+        };
+        let Some(required_values) = data_to_corner_map.len().checked_mul(num_components) else {
+            return false;
+        };
+        if required_values == 0
+            || in_corr.len() < required_values
+            || out_data.len() < required_values
+        {
+            return false;
+        }
 
         let mut pred_vals = vec![DataType::default(); num_components];
 
