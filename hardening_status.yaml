@@ -128,6 +128,14 @@ completed:
           - "generate_portable_attribute_rejects_truncated_source_data"
     note: "Fast bit decoding now respects the declared bitstream byte window without unwraps, decoder-facing byte skips use fallible advance guards, and octahedron attribute transforms reject truncated source/portable buffers instead of relying on unchecked slices."
 
+  - id: geometric-normal-position-buffer-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/prediction_scheme_geometric_normal.rs"
+        tests:
+          - "mesh_geometric_normal_position_lookup_returns_zero_for_truncated_buffer"
+    note: "Geometric-normal prediction position lookup uses fallible DataBuffer reads and falls back to zero prediction input when the referenced position buffer is truncated."
+
   - id: kd-tree-attribute-buffer-bounds
     status: covered
     evidence:
@@ -170,7 +178,7 @@ open_risks:
   - id: decode-path-indexing-audit
     priority: medium
     summary: "A final audit is still needed for unchecked indexing and DataBuffer reads reachable from lower-level decode helpers."
-    why_it_matters: "Many obvious prediction unwraps, octahedron transform slices, and KD-tree attribute writes are now guarded, but slice/indexing panics can still hide in lower-level attribute or buffer helpers."
+    why_it_matters: "Many obvious prediction unwraps, geometric-normal position reads, octahedron transform slices, and KD-tree attribute writes are now guarded, but slice/indexing panics can still hide in lower-level attribute or buffer helpers."
     next_steps:
       - "Audit decoder-facing DataBuffer::read/write callers and attribute transform offsets."
       - "Prefer local bounds checks or fallible helper variants where malformed input can control offsets."

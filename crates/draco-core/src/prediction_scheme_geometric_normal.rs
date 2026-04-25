@@ -128,7 +128,9 @@ impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
         }
 
         let mut pos = [0i64; 3];
-        read_vector3_as_i64(pos_attribute, pos_val_id.0 as usize, &mut pos);
+        if !read_vector3_as_i64(pos_attribute, pos_val_id.0 as usize, &mut pos) {
+            return [0, 0, 0];
+        }
 
         let clamp_i32 = |x: i64| -> i32 {
             if x > i32::MAX as i64 {
@@ -646,7 +648,9 @@ impl<'a> MeshPredictionSchemeGeometricNormalEncoder<'a> {
         let pos_val_id = pos_att.mapped_index(PointIndex(point_id));
 
         let mut pos = [0i64; 3];
-        read_vector3_as_i64(pos_att, pos_val_id.0 as usize, &mut pos);
+        if !read_vector3_as_i64(pos_att, pos_val_id.0 as usize, &mut pos) {
+            return [0, 0, 0];
+        }
         pos
     }
 }
@@ -821,81 +825,97 @@ fn cross_product(a: &[i64; 3], b: &[i64; 3]) -> [i64; 3] {
     ]
 }
 
-fn read_vector3_as_i64(att: &PointAttribute, index: usize, out: &mut [i64; 3]) {
+fn read_vector3_as_i64(att: &PointAttribute, index: usize, out: &mut [i64; 3]) -> bool {
     for c in 0..3 {
-        out[c] = read_component_as_i64(att, index, c);
+        let Some(value) = read_component_as_i64(att, index, c) else {
+            return false;
+        };
+        out[c] = value;
     }
+    true
 }
 
-fn read_component_as_i64(att: &PointAttribute, index: usize, component: usize) -> i64 {
+fn read_component_as_i64(att: &PointAttribute, index: usize, component: usize) -> Option<i64> {
     let buffer = att.buffer();
-    let byte_offset =
-        index * att.byte_stride() as usize + component * att.data_type().byte_length();
+    let byte_stride = usize::try_from(att.byte_stride()).ok()?;
+    let byte_offset = index
+        .checked_mul(byte_stride)?
+        .checked_add(component.checked_mul(att.data_type().byte_length())?)?;
 
-    let read_i8 = |offset| -> i8 {
+    let read_i8 = |offset| -> Option<i8> {
         let mut b = [0u8; 1];
-        buffer.read(offset, &mut b);
-        i8::from_le_bytes(b)
+        buffer
+            .try_read(offset, &mut b)
+            .then(|| i8::from_le_bytes(b))
     };
-    let read_u8 = |offset| -> u8 {
+    let read_u8 = |offset| -> Option<u8> {
         let mut b = [0u8; 1];
-        buffer.read(offset, &mut b);
-        u8::from_le_bytes(b)
+        buffer
+            .try_read(offset, &mut b)
+            .then(|| u8::from_le_bytes(b))
     };
-    let read_i16 = |offset| -> i16 {
+    let read_i16 = |offset| -> Option<i16> {
         let mut b = [0u8; 2];
-        buffer.read(offset, &mut b);
-        i16::from_le_bytes(b)
+        buffer
+            .try_read(offset, &mut b)
+            .then(|| i16::from_le_bytes(b))
     };
-    let read_u16 = |offset| -> u16 {
+    let read_u16 = |offset| -> Option<u16> {
         let mut b = [0u8; 2];
-        buffer.read(offset, &mut b);
-        u16::from_le_bytes(b)
+        buffer
+            .try_read(offset, &mut b)
+            .then(|| u16::from_le_bytes(b))
     };
-    let read_i32 = |offset| -> i32 {
+    let read_i32 = |offset| -> Option<i32> {
         let mut b = [0u8; 4];
-        buffer.read(offset, &mut b);
-        i32::from_le_bytes(b)
+        buffer
+            .try_read(offset, &mut b)
+            .then(|| i32::from_le_bytes(b))
     };
-    let read_u32 = |offset| -> u32 {
+    let read_u32 = |offset| -> Option<u32> {
         let mut b = [0u8; 4];
-        buffer.read(offset, &mut b);
-        u32::from_le_bytes(b)
+        buffer
+            .try_read(offset, &mut b)
+            .then(|| u32::from_le_bytes(b))
     };
-    let read_i64 = |offset| -> i64 {
+    let read_i64 = |offset| -> Option<i64> {
         let mut b = [0u8; 8];
-        buffer.read(offset, &mut b);
-        i64::from_le_bytes(b)
+        buffer
+            .try_read(offset, &mut b)
+            .then(|| i64::from_le_bytes(b))
     };
-    let read_u64 = |offset| -> u64 {
+    let read_u64 = |offset| -> Option<u64> {
         let mut b = [0u8; 8];
-        buffer.read(offset, &mut b);
-        u64::from_le_bytes(b)
+        buffer
+            .try_read(offset, &mut b)
+            .then(|| u64::from_le_bytes(b))
     };
-    let read_f32 = |offset| -> f32 {
+    let read_f32 = |offset| -> Option<f32> {
         let mut b = [0u8; 4];
-        buffer.read(offset, &mut b);
-        f32::from_le_bytes(b)
+        buffer
+            .try_read(offset, &mut b)
+            .then(|| f32::from_le_bytes(b))
     };
-    let read_f64 = |offset| -> f64 {
+    let read_f64 = |offset| -> Option<f64> {
         let mut b = [0u8; 8];
-        buffer.read(offset, &mut b);
-        f64::from_le_bytes(b)
+        buffer
+            .try_read(offset, &mut b)
+            .then(|| f64::from_le_bytes(b))
     };
 
     match att.data_type() {
-        DataType::Int8 => read_i8(byte_offset) as i64,
-        DataType::Uint8 => read_u8(byte_offset) as i64,
-        DataType::Int16 => read_i16(byte_offset) as i64,
-        DataType::Uint16 => read_u16(byte_offset) as i64,
-        DataType::Int32 => read_i32(byte_offset) as i64,
-        DataType::Uint32 => read_u32(byte_offset) as i64,
+        DataType::Int8 => read_i8(byte_offset).map(|v| v as i64),
+        DataType::Uint8 => read_u8(byte_offset).map(|v| v as i64),
+        DataType::Int16 => read_i16(byte_offset).map(|v| v as i64),
+        DataType::Uint16 => read_u16(byte_offset).map(|v| v as i64),
+        DataType::Int32 => read_i32(byte_offset).map(|v| v as i64),
+        DataType::Uint32 => read_u32(byte_offset).map(|v| v as i64),
         DataType::Int64 => read_i64(byte_offset),
-        DataType::Uint64 => read_u64(byte_offset) as i64,
-        DataType::Float32 => read_f32(byte_offset) as i64,
-        DataType::Float64 => read_f64(byte_offset) as i64,
-        DataType::Bool => read_u8(byte_offset) as i64,
-        _ => 0,
+        DataType::Uint64 => read_u64(byte_offset).map(|v| v as i64),
+        DataType::Float32 => read_f32(byte_offset).map(|v| v as i64),
+        DataType::Float64 => read_f64(byte_offset).map(|v| v as i64),
+        DataType::Bool => read_u8(byte_offset).map(|v| v as i64),
+        _ => Some(0),
     }
 }
 
@@ -925,6 +945,39 @@ mod tests {
             false,
             1,
         );
+
+        let mut decoder = MeshPredictionSchemeGeometricNormalDecoder::new(
+            PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform::new(),
+        );
+        assert!(decoder.init(&mesh_data));
+        assert!(decoder.set_parent_attribute(&position_attribute));
+
+        let entry_to_point_id_map = [0u32];
+        decoder
+            .set_entry_to_point_id_map(EntryToPointIdMap::from_u32_slice(&entry_to_point_id_map));
+
+        assert_eq!(decoder.get_position_for_corner(CornerIndex(0)), [0, 0, 0]);
+    }
+
+    #[test]
+    fn mesh_geometric_normal_position_lookup_returns_zero_for_truncated_buffer() {
+        let mut corner_table = CornerTable::new(1);
+        corner_table.set_face_vertices(FaceIndex(0), PointIndex(0), PointIndex(1), PointIndex(2));
+
+        let data_to_corner_map = [0u32];
+        let vertex_to_data_map = [0, 0, 0];
+        let mut mesh_data = MeshPredictionSchemeData::new();
+        mesh_data.set(&corner_table, &data_to_corner_map, &vertex_to_data_map);
+
+        let mut position_attribute = PointAttribute::new();
+        position_attribute.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Int32,
+            false,
+            1,
+        );
+        position_attribute.buffer_mut().resize(8);
 
         let mut decoder = MeshPredictionSchemeGeometricNormalDecoder::new(
             PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform::new(),
