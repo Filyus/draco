@@ -366,19 +366,11 @@ impl MeshDecoder {
                         let bytes_needed = num_indices.checked_mul(2).ok_or_else(|| {
                             DracoError::DracoError("Mesh u16 index byte count overflow".to_string())
                         })?;
-                        if data.len() < bytes_needed {
-                            return Err(DracoError::DracoError(
-                                "Not enough data for u16 indices".to_string(),
-                            ));
-                        }
-                        let mut indices = make_zeroed_indices(num_indices)?;
-                        for i in 0..num_indices {
-                            let off = i * 2;
-                            indices[i] = u16::from_le_bytes([data[off], data[off + 1]]) as u32;
-                        }
-                        buffer.advance(bytes_needed);
+                        let bytes = buffer.decode_slice(bytes_needed).map_err(|_| {
+                            DracoError::DracoError("Not enough data for u16 indices".to_string())
+                        })?;
                         mesh.try_set_num_faces(num_faces)?;
-                        mesh.set_faces_from_flat_indices(&indices);
+                        mesh.set_faces_from_le_u16_indices(bytes);
                     } else if num_points < (1 << 21) && seq_uses_varint {
                         let mut indices = make_zeroed_indices(num_indices)?;
                         for index in &mut indices {

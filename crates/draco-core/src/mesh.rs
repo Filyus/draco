@@ -44,6 +44,20 @@ impl Mesh {
         }
     }
 
+    /// Bulk-set all faces from tightly packed little-endian u16 indices.
+    /// Assumes `set_num_faces` has already been called with the right count.
+    #[inline]
+    pub fn set_faces_from_le_u16_indices(&mut self, bytes: &[u8]) {
+        debug_assert_eq!(bytes.len(), self.faces.len() * 3 * 2);
+        for (face, chunk) in self.faces.iter_mut().zip(bytes.chunks_exact(6)) {
+            *face = [
+                PointIndex(u16::from_le_bytes([chunk[0], chunk[1]]) as u32),
+                PointIndex(u16::from_le_bytes([chunk[2], chunk[3]]) as u32),
+                PointIndex(u16::from_le_bytes([chunk[4], chunk[5]]) as u32),
+            ];
+        }
+    }
+
     pub fn face(&self, face_id: FaceIndex) -> Face {
         self.faces[face_id.0 as usize]
     }
