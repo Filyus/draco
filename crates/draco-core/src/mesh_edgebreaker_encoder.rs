@@ -1666,7 +1666,7 @@ impl MeshEdgebreakerEncoder {
         #[cfg(feature = "edgebreaker_valence_encode")] valence_encoder: &mut Option<
             MeshEdgebreakerTraversalValenceEncoder,
         >,
-        #[cfg(not(feature = "edgebreaker_valence_encode"))] _valence_encoder: &mut (),
+        #[cfg(not(feature = "edgebreaker_valence_encode"))] valence_encoder: &mut (),
     ) -> Result<(), DracoError> {
         let mut corner_traversal_stack: Vec<CornerIndex> = vec![start_corner];
 
