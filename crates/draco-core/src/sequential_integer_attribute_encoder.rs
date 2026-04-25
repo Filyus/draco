@@ -274,12 +274,12 @@ impl SequentialIntegerAttributeEncoder {
                                 // are consistent with each other.
                                 if let Some(map) = encoder.get_data_to_corner_map() {
                                     if map.len() == num_points {
-                                        data_to_corner_map = map;
+                                        data_to_corner_map.copy_from_slice(map);
                                     }
                                 }
                                 if let Some(map) = encoder.get_vertex_to_data_map() {
                                     // Use the pre-computed vertex_to_data_map from the encoder
-                                    vertex_to_data_map = map;
+                                    replace_vec_from_slice(&mut vertex_to_data_map, map);
                                 }
                             } else {
                                 // Sequential encoding: PointIndex == VertexIndex (1:1 mapping)
@@ -385,11 +385,11 @@ impl SequentialIntegerAttributeEncoder {
                                 // For Edgebreaker, get both maps from the encoder.
                                 if let Some(map) = encoder.get_data_to_corner_map() {
                                     if map.len() == num_points {
-                                        data_to_corner_map = map;
+                                        data_to_corner_map.copy_from_slice(map);
                                     }
                                 }
                                 if let Some(map) = encoder.get_vertex_to_data_map() {
-                                    vertex_to_data_map = map;
+                                    replace_vec_from_slice(&mut vertex_to_data_map, map);
                                 }
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {
@@ -474,11 +474,11 @@ impl SequentialIntegerAttributeEncoder {
                                 // For Edgebreaker, get both maps from the encoder.
                                 if let Some(map) = encoder.get_data_to_corner_map() {
                                     if map.len() == num_points {
-                                        data_to_corner_map = map;
+                                        data_to_corner_map.copy_from_slice(map);
                                     }
                                 }
                                 if let Some(map) = encoder.get_vertex_to_data_map() {
-                                    vertex_to_data_map = map;
+                                    replace_vec_from_slice(&mut vertex_to_data_map, map);
                                 }
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {
@@ -581,11 +581,11 @@ impl SequentialIntegerAttributeEncoder {
                                 // For Edgebreaker, get both maps from the encoder.
                                 if let Some(map) = encoder.get_data_to_corner_map() {
                                     if map.len() == num_points {
-                                        data_to_corner_map = map;
+                                        data_to_corner_map.copy_from_slice(map);
                                     }
                                 }
                                 if let Some(map) = encoder.get_vertex_to_data_map() {
-                                    vertex_to_data_map = map;
+                                    replace_vec_from_slice(&mut vertex_to_data_map, map);
                                 }
                             } else {
                                 for (i, &point_id) in point_ids.iter().enumerate() {
@@ -799,5 +799,15 @@ fn read_value_as_i32(buffer: &DataBuffer, offset: usize, data_type: DataType) ->
             u32::from_le_bytes(bytes) as i32
         }
         _ => 0,
+    }
+}
+
+#[inline]
+fn replace_vec_from_slice<T: Copy>(dst: &mut Vec<T>, src: &[T]) {
+    if dst.len() == src.len() {
+        dst.copy_from_slice(src);
+    } else {
+        dst.clear();
+        dst.extend_from_slice(src);
     }
 }

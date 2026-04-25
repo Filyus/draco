@@ -168,6 +168,10 @@ where
         let mut pred_vals = vec![vec![DataType::default(); num_components]; MAX_NUM_PARALLELOGRAMS];
         let mut multi_pred_vals = vec![DataType::default(); num_components];
         let mut entropy_symbols = vec![0u32; num_components];
+        let mut predicted_val = vec![DataType::default(); num_components];
+        let mut corr_val = vec![CorrType::default(); num_components];
+        let mut tmp_entropy_symbols = vec![0u32; num_components];
+        let mut tmp_pred_vals = vec![DataType::default(); num_components];
 
         // Track total parallelograms and used parallelograms for overhead calculation
         let mut total_parallelograms: [i64; MAX_NUM_PARALLELOGRAMS] = [0; MAX_NUM_PARALLELOGRAMS];
@@ -197,7 +201,7 @@ where
             };
 
             if corner_id == INVALID_CORNER_INDEX {
-                let mut predicted_val = vec![DataType::default(); num_components];
+                predicted_val.fill(DataType::default());
                 if data_id > 0 {
                     let prev_offset = (data_id - 1) * num_components;
                     for c in 0..num_components {
@@ -205,7 +209,7 @@ where
                     }
                 }
 
-                let mut corr_val = vec![CorrType::default(); num_components];
+                corr_val.fill(CorrType::default());
                 self.transform.compute_correction(
                     &in_data[data_offset..data_offset + num_components],
                     &predicted_val,
@@ -299,7 +303,7 @@ where
             }
 
             if num_parallelograms == 0 {
-                let mut predicted_val = vec![DataType::default(); num_components];
+                predicted_val.fill(DataType::default());
                 if data_id > 0 {
                     let prev_offset = (data_id - 1) * num_components;
                     for c in 0..num_components {
@@ -307,7 +311,7 @@ where
                     }
                 }
 
-                let mut corr_val = vec![CorrType::default(); num_components];
+                corr_val.fill(CorrType::default());
                 self.transform.compute_correction(
                     &in_data[data_offset..data_offset + num_components],
                     &predicted_val,
@@ -377,7 +381,7 @@ where
 
                 if num_used == 0 {
                     // Delta prediction (config 0: all parallelograms marked as creases)
-                    let mut predicted_val = vec![DataType::default(); num_components];
+                    predicted_val.fill(DataType::default());
                     if data_id > 0 {
                         let prev_offset = (data_id - 1) * num_components;
                         for c in 0..num_components {
@@ -485,8 +489,8 @@ where
                         }
                     }
                     // compute residual/rans bits same as above
-                    let mut tmp_entropy_symbols = vec![0u32; num_components];
-                    let mut tmp_pred_vals = vec![DataType::default(); num_components];
+                    tmp_entropy_symbols.fill(0);
+                    tmp_pred_vals.fill(DataType::default());
                     if num_used == 0 {
                         if data_id > 0 {
                             let prev_offset = (data_id - 1) * num_components;
@@ -555,7 +559,7 @@ where
 
             // Recompute prediction for best config and update output/tracker
             if best_num_used == 0 {
-                let mut predicted_val = vec![DataType::default(); num_components];
+                predicted_val.fill(DataType::default());
                 if data_id > 0 {
                     let prev_offset = (data_id - 1) * num_components;
                     for c in 0..num_components {
@@ -563,7 +567,7 @@ where
                     }
                 }
 
-                let mut corr_val = vec![CorrType::default(); num_components];
+                corr_val.fill(CorrType::default());
                 self.transform.compute_correction(
                     &in_data[data_offset..data_offset + num_components],
                     &predicted_val,
@@ -594,7 +598,7 @@ where
                     multi_pred_vals[k] = DataType::from(val);
                 }
 
-                let mut corr_val = vec![CorrType::default(); num_components];
+                corr_val.fill(CorrType::default());
                 self.transform.compute_correction(
                     &in_data[data_offset..data_offset + num_components],
                     &multi_pred_vals,
@@ -615,8 +619,8 @@ where
 
         // First element is always fixed because it cannot be predicted.
         // Use zero prediction like C++ does.
-        let predicted_val = vec![DataType::default(); num_components];
-        let mut corr_val = vec![CorrType::default(); num_components];
+        predicted_val.fill(DataType::default());
+        corr_val.fill(CorrType::default());
         self.transform.compute_correction(
             &in_data[0..num_components],
             &predicted_val,
@@ -836,6 +840,8 @@ where
         let vertex_to_data_map = self.mesh_data.vertex_to_data_map().unwrap();
 
         let mut multi_pred_vals = vec![DataType::default(); num_components];
+        let zero_vals = vec![DataType::default(); num_components];
+        let mut predicted_val = vec![DataType::default(); num_components];
 
         // Current position in is_crease_edge
         let mut is_crease_edge_pos = [0usize; MAX_NUM_PARALLELOGRAMS];
@@ -843,7 +849,7 @@ where
         // First value
         if size > 0 {
             self.transform.compute_original_value(
-                &vec![DataType::default(); num_components],
+                &zero_vals,
                 &in_corr[0..num_components],
                 &mut out_data[0..num_components],
             );
@@ -866,7 +872,7 @@ where
 
             if corner_id == INVALID_CORNER_INDEX {
                 let prev_offset = (data_id - 1) * num_components;
-                let mut predicted_val = vec![DataType::default(); num_components];
+                predicted_val.fill(DataType::default());
                 for c in 0..num_components {
                     predicted_val[c] = out_data[prev_offset + c];
                 }
@@ -978,7 +984,7 @@ where
 
             if num_used_parallelograms == 0 {
                 let prev_offset = (data_id - 1) * num_components;
-                let mut predicted_val = vec![DataType::default(); num_components];
+                predicted_val.fill(DataType::default());
                 for c in 0..num_components {
                     predicted_val[c] = out_data[prev_offset + c];
                 }

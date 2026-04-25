@@ -25,10 +25,10 @@ pub trait GeometryEncoder {
     fn get_encoding_method(&self) -> Option<i32> {
         None
     }
-    fn get_data_to_corner_map(&self) -> Option<Vec<u32>> {
+    fn get_data_to_corner_map(&self) -> Option<&[u32]> {
         None
     }
-    fn get_vertex_to_data_map(&self) -> Option<Vec<i32>> {
+    fn get_vertex_to_data_map(&self) -> Option<&[i32]> {
         None
     }
 }

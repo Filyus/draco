@@ -69,16 +69,16 @@ impl GeometryEncoder for MeshEncoder {
         Some(self.method)
     }
 
-    fn get_data_to_corner_map(&self) -> Option<Vec<u32>> {
+    fn get_data_to_corner_map(&self) -> Option<&[u32]> {
         self.active_data_to_corner_map
-            .clone()
-            .or_else(|| self.data_to_corner_map.clone())
+            .as_deref()
+            .or(self.data_to_corner_map.as_deref())
     }
 
-    fn get_vertex_to_data_map(&self) -> Option<Vec<i32>> {
+    fn get_vertex_to_data_map(&self) -> Option<&[i32]> {
         self.active_vertex_to_data_map
-            .clone()
-            .or_else(|| self.vertex_to_data_map.clone())
+            .as_deref()
+            .or(self.vertex_to_data_map.as_deref())
     }
 }
 
