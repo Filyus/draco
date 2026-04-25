@@ -508,9 +508,14 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
         Some(out)
     }
 
-    fn get_axis(&mut self, num_remaining_points: u32, levels: &[u32], last_axis: u32) -> u32 {
+    fn get_axis(
+        &mut self,
+        num_remaining_points: u32,
+        levels: &[u32],
+        last_axis: u32,
+    ) -> Option<u32> {
         if self.compression_level != 6 {
-            return increment_mod(last_axis, self.dimension);
+            return Some(increment_mod(last_axis, self.dimension));
         }
 
         let mut best_axis = 0u32;
@@ -522,11 +527,12 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
             }
         } else {
             let mut v = 0u32;
-            // In C++, this always succeeds as axis bits exist.
-            let _ = self.axis_decoder.decode_least_significant_bits32(4, &mut v);
+            if !self.axis_decoder.decode_least_significant_bits32(4, &mut v) {
+                return None;
+            }
             best_axis = v;
         }
-        best_axis
+        Some(best_axis)
     }
 
     fn decode_number(&mut self, nbits: u32, value: &mut u32) -> bool {
@@ -568,7 +574,9 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
                 return false;
             }
 
-            let axis = self.get_axis(num_remaining_points, &levels, last_axis);
+            let Some(axis) = self.get_axis(num_remaining_points, &levels, last_axis) else {
+                return false;
+            };
             if axis >= self.dimension {
                 return false;
             }
@@ -658,5 +666,18 @@ impl<'a> DynamicIntegerPointsKdTreeDecoder<'a> {
         }
 
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_axis_rejects_truncated_axis_stream() {
+        let mut decoder = DynamicIntegerPointsKdTreeDecoder::new(6, 3);
+        let levels = [0, 0, 0];
+
+        assert_eq!(decoder.get_axis(64, &levels, 0), None);
     }
 }

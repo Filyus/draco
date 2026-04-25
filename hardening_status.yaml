@@ -235,6 +235,14 @@ completed:
       - path: "crates/draco-core/src/dynamic_integer_points_kd_tree.rs"
     note: "rANS bit decode now rejects invalid requested bit widths and unstarted decoder state, and KD-tree number decode propagates the failure instead of treating rANS bit reads as infallible."
 
+  - id: kd-tree-axis-bitstream-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/dynamic_integer_points_kd_tree.rs"
+        tests:
+          - "get_axis_rejects_truncated_axis_stream"
+    note: "KD-tree adaptive-axis decode now propagates a missing axis bitstream as decode failure instead of treating a failed bit read as axis zero."
+
 open_risks:
   - id: no-sustained-fuzzing
     priority: high
