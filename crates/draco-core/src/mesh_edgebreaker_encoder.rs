@@ -263,12 +263,20 @@ impl MeshEdgebreakerEncoder {
         // See mesh_edgebreaker_encoder.cc: const bool is_tiny_mesh = mesh()->num_faces() < 1000;
         let is_tiny_mesh = mesh.num_faces() < 1000;
 
-        #[cfg(feature = "encoder")]
+        #[cfg(feature = "edgebreaker_valence")]
         if speed < 5 && !is_tiny_mesh {
             let mut ve = MeshEdgebreakerTraversalValenceEncoder::new();
             ve.init(corner_table);
             self.valence_encoder = Some(ve);
-        } else {
+        }
+        #[cfg(not(feature = "edgebreaker_valence"))]
+        {
+            let _ = speed;
+            let _ = is_tiny_mesh;
+            self.valence_encoder = None;
+        }
+        #[cfg(feature = "edgebreaker_valence")]
+        if speed >= 5 || is_tiny_mesh {
             self.valence_encoder = None;
         }
 

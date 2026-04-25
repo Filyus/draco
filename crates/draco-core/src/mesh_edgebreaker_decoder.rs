@@ -98,6 +98,11 @@ impl MeshEdgebreakerDecoder {
                 self.traversal_decoder_type
             )));
         }
+        if self.traversal_decoder_type == 2 && !cfg!(feature = "edgebreaker_valence") {
+            return Err(DracoError::DracoError(
+                "Edgebreaker valence traversal decode support is disabled".to_string(),
+            ));
+        }
 
         let mut _num_new_vertices = 0;
         if bitstream_version < 0x0202 {
@@ -547,56 +552,66 @@ impl MeshEdgebreakerDecoder {
         #[allow(unused_assignments)]
         let mut processed_connectivity_corners: Vec<u32> = Vec::new();
 
-        // For valence mode, we need to save the seam decoders to use after connectivity
+        // For valence mode, we need to save the seam decoders to use after connectivity.
+        #[cfg(feature = "edgebreaker_valence")]
         let mut valence_seam_decoders: Vec<RAnsBitDecoder> = Vec::new();
         let remove_invalid_vertices = num_attribute_data == 0 || bitstream_version < 0x0202;
 
         let num_vertices = if self.traversal_decoder_type == 2 {
             // Valence mode
-            // For valence traversal, the buffer order is:
-            // 1. Start face bits (already decoded above)
-            // 2. Attribute seam decoders (need to skip past their size prefix to read context symbols)
-            // 3. Context symbols
-            //
-            // Start attribute seam decoders to position buffer past them
-            for _ in 0..num_attribute_data {
-                let mut seam_decoder = RAnsBitDecoder::new();
-                if !seam_decoder.start_decoding(in_buffer) {
-                    return Err(DracoError::DracoError(
-                        "Failed to start attribute seam decoding for valence".to_string(),
-                    ));
-                }
-                valence_seam_decoders.push(seam_decoder);
+            #[cfg(not(feature = "edgebreaker_valence"))]
+            {
+                return Err(DracoError::DracoError(
+                    "Edgebreaker valence traversal decode support is disabled".to_string(),
+                ));
             }
+            #[cfg(feature = "edgebreaker_valence")]
+            {
+                // For valence traversal, the buffer order is:
+                // 1. Start face bits (already decoded above)
+                // 2. Attribute seam decoders (need to skip past their size prefix to read context symbols)
+                // 3. Context symbols
+                //
+                // Start attribute seam decoders to position buffer past them
+                for _ in 0..num_attribute_data {
+                    let mut seam_decoder = RAnsBitDecoder::new();
+                    if !seam_decoder.start_decoding(in_buffer) {
+                        return Err(DracoError::DracoError(
+                            "Failed to start attribute seam decoding for valence".to_string(),
+                        ));
+                    }
+                    valence_seam_decoders.push(seam_decoder);
+                }
 
-            let mut valence_decoder = crate::mesh_edgebreaker_traversal_valence_decoder::MeshEdgebreakerTraversalValenceDecoder::new(
+                let mut valence_decoder = crate::mesh_edgebreaker_traversal_valence_decoder::MeshEdgebreakerTraversalValenceDecoder::new(
                 start_face_decoder,
                 has_start_face_bits,
                 topology_split_data.to_vec(),
                 start_face_bits_legacy.take(),
             );
-            // Initialize contexts by reading counts/symbol arrays from the buffer
-            if !valence_decoder.init_from_buffer(in_buffer, max_num_vertices) {
-                return Err(DracoError::DracoError(
-                    "Failed to init valence traversal decoder".to_string(),
-                ));
+                // Initialize contexts by reading counts/symbol arrays from the buffer
+                if !valence_decoder.init_from_buffer(in_buffer, max_num_vertices) {
+                    return Err(DracoError::DracoError(
+                        "Failed to init valence traversal decoder".to_string(),
+                    ));
+                }
+
+                let nv = connectivity_decoder
+                    .decode_connectivity(
+                        actual_num_symbols as i32,
+                        &mut valence_decoder,
+                        remove_invalid_vertices,
+                    )
+                    .map_err(DracoError::DracoError)? as usize;
+
+                // Don't end seam decoders yet - we need to decode from them after corner table is built
+
+                // Extract state we need after the decoder is consumed
+                has_start_face_bits_flag = valence_decoder.has_start_face_bits;
+                start_face_decoder_opt = Some(valence_decoder.start_face_decoder);
+                processed_connectivity_corners = valence_decoder.processed_connectivity_corners;
+                nv
             }
-
-            let nv = connectivity_decoder
-                .decode_connectivity(
-                    actual_num_symbols as i32,
-                    &mut valence_decoder,
-                    remove_invalid_vertices,
-                )
-                .map_err(DracoError::DracoError)? as usize;
-
-            // Don't end seam decoders yet - we need to decode from them after corner table is built
-
-            // Extract state we need after the decoder is consumed
-            has_start_face_bits_flag = valence_decoder.has_start_face_bits;
-            start_face_decoder_opt = Some(valence_decoder.start_face_decoder);
-            processed_connectivity_corners = valence_decoder.processed_connectivity_corners;
-            nv
         } else {
             let mut traversal_decoder = InternalTraversalDecoder::new(
                 symbols,
@@ -662,6 +677,13 @@ impl MeshEdgebreakerDecoder {
 
         if self.traversal_decoder_type == 2 {
             // Valence mode - use the seam decoders we already started
+            #[cfg(not(feature = "edgebreaker_valence"))]
+            {
+                return Err(DracoError::DracoError(
+                    "Edgebreaker valence traversal decode support is disabled".to_string(),
+                ));
+            }
+            #[cfg(feature = "edgebreaker_valence")]
             for mut seam_decoder in valence_seam_decoders.into_iter() {
                 let mut seam_corners = Vec::new();
                 if let Some(ct) = &self.corner_table {

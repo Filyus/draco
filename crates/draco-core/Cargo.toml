@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["encoder", "decoder", "point_cloud_decode"]
+default = ["encoder", "decoder", "point_cloud_decode", "edgebreaker_valence"]
 encoder = []
 decoder = []
 point_cloud_decode = ["decoder"]
+edgebreaker_valence = []
 debug_logs = []
 force_sequential_seeds = []
 
