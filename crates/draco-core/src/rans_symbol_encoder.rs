@@ -46,7 +46,10 @@ impl<const RANS_PRECISION_BITS: u32> RAnsSymbolEncoder<RANS_PRECISION_BITS> {
         self.num_symbols = num_symbols;
         self.probability_table
             .resize(num_symbols, RAnsSymbol::default());
-        let debug_cmp = std::env::var("DRACO_DEBUG_CMP").is_ok();
+        #[cfg(feature = "debug_logs")]
+        let debug_cmp = crate::debug_env_enabled("DRACO_DEBUG_CMP");
+        #[cfg(not(feature = "debug_logs"))]
+        let debug_cmp = false;
 
         if debug_cmp {
             eprintln!(

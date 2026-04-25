@@ -45,8 +45,6 @@ pub(crate) fn compute_parallelogram_prediction<DataType: ParallelogramDataType>(
     in_data: &[DataType],
     num_components: usize,
     out_prediction: &mut [DataType],
-    label: &str,
-    verbose: bool,
 ) -> bool {
     let oci = table.opposite(ci);
     if oci == INVALID_CORNER_INDEX {
@@ -93,11 +91,11 @@ pub(crate) fn compute_parallelogram_prediction<DataType: ParallelogramDataType>(
             );
         }
 
-        // Debug logging for first few predictions
-        if verbose {
+        #[cfg(feature = "debug_logs")]
+        if crate::debug_env_enabled("DRACO_VERBOSE") {
             println!(
-                "{} Pred p={} c={} (o={}): entries({}, {}, {})",
-                label, data_entry_id, ci.0, oci.0, vert_opp, vert_next, vert_prev
+                "Parallelogram pred p={} c={} (o={}): entries({}, {}, {})",
+                data_entry_id, ci.0, oci.0, vert_opp, vert_next, vert_prev
             );
         }
         return true;
@@ -316,7 +314,6 @@ where
 
         let num_entries = size / num_components;
         let mut pred_vals = vec![DataType::default(); num_components];
-        let verbose = std::env::var("DRACO_VERBOSE").is_ok();
 
         // Process from the end (highest data_id) down to 1.
         // Index 0 is handled separately at the end.
@@ -332,8 +329,6 @@ where
                 in_data,
                 num_components,
                 &mut pred_vals,
-                "Encoder",
-                verbose,
             );
 
             if !is_parallelogram {
@@ -449,7 +444,6 @@ where
         let data_to_corner_map = self.mesh_data.data_to_corner_map().unwrap();
 
         let mut pred_vals = vec![DataType::default(); num_components];
-        let verbose = std::env::var("DRACO_VERBOSE").is_ok();
 
         // Restore the first value.
         let zero_vals = vec![DataType::default(); num_components];
@@ -472,8 +466,6 @@ where
                 decoded_data,
                 num_components,
                 &mut pred_vals,
-                "Decoder",
-                verbose,
             );
 
             if !is_parallelogram {

@@ -21,15 +21,6 @@ fn repo_testdata_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata")
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates directory")
-        .parent()
-        .expect("repo root")
-        .to_path_buf()
-}
-
 fn collect_drc_files_recursive(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
@@ -238,17 +229,42 @@ struct LegacyCornerRecord {
     normal: [f32; 3],
 }
 
-fn legacy_decoder_path(version_dir: &str) -> PathBuf {
-    let path = repo_root()
-        .join("draco-version-tools")
-        .join(version_dir)
-        .join("draco_decoder.exe");
-    assert!(
-        path.exists(),
-        "missing legacy Draco decoder at {}",
-        path.display()
-    );
-    path
+#[derive(Clone, Copy, Debug)]
+enum LegacyDecoderVersion {
+    V1_0_0,
+    V1_1_0,
+}
+
+impl LegacyDecoderVersion {
+    fn env_var(self) -> &'static str {
+        match self {
+            Self::V1_0_0 => "DRACO_LEGACY_DECODER_1_0_0",
+            Self::V1_1_0 => "DRACO_LEGACY_DECODER_1_1_0",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::V1_0_0 => "1.0.0",
+            Self::V1_1_0 => "1.1.0",
+        }
+    }
+}
+
+fn legacy_decoder_path(version: LegacyDecoderVersion) -> Option<PathBuf> {
+    let env_var = version.env_var();
+
+    let path = std::env::var_os(env_var).map(PathBuf::from)?;
+    if path.exists() {
+        Some(path)
+    } else {
+        eprintln!(
+            "Skipping legacy decoder comparison for {}: {env_var} points to missing path {}",
+            version.label(),
+            path.display()
+        );
+        None
+    }
 }
 
 fn parse_obj_triplet_index(value: &str, component: usize) -> usize {
@@ -634,32 +650,54 @@ fn decode_generated_legacy_draco_smoke_fixtures() {
 #[test]
 fn generated_legacy_cube_attributes_match_cpp_decoder() {
     let fixtures = [
-        ("legacy_draco/cube_att.mesh_seq.1.0.0.drc", "1.0.0-b756664"),
-        ("legacy_draco/cube_att.mesh_eb.1.0.0.drc", "1.0.0-b756664"),
-        ("legacy_draco/cube_att.mesh_seq.1.1.0.drc", "1.1.0-dc28e6a"),
-        ("legacy_draco/cube_att.mesh_eb.1.1.0.drc", "1.1.0-dc28e6a"),
+        (
+            "legacy_draco/cube_att.mesh_seq.1.0.0.drc",
+            LegacyDecoderVersion::V1_0_0,
+        ),
+        (
+            "legacy_draco/cube_att.mesh_eb.1.0.0.drc",
+            LegacyDecoderVersion::V1_0_0,
+        ),
+        (
+            "legacy_draco/cube_att.mesh_seq.1.1.0.drc",
+            LegacyDecoderVersion::V1_1_0,
+        ),
+        (
+            "legacy_draco/cube_att.mesh_eb.1.1.0.drc",
+            LegacyDecoderVersion::V1_1_0,
+        ),
     ];
 
     for (fixture, decoder_version) in fixtures {
+        let Some(decoder_path) = legacy_decoder_path(decoder_version) else {
+            eprintln!(
+                "Skipping {fixture}: set a matching DRACO_LEGACY_DECODER_* env var to enable legacy decoder comparison"
+            );
+            continue;
+        };
         let drc_path = repo_testdata_dir().join(fixture);
         let obj_path = std::env::temp_dir().join(format!(
             "draco_legacy_attr_{}_{}.obj",
-            decoder_version,
+            decoder_version.label(),
             fixture.replace(['/', '\\', '.'], "_")
         ));
 
-        let output = Command::new(legacy_decoder_path(decoder_version))
+        let output = Command::new(decoder_path)
             .arg("-i")
             .arg(&drc_path)
             .arg("-o")
             .arg(&obj_path)
             .output()
             .unwrap_or_else(|e| {
-                panic!("{fixture}: failed to run legacy Draco decoder {decoder_version}: {e}")
+                panic!(
+                    "{fixture}: failed to run legacy Draco decoder {}: {e}",
+                    decoder_version.label()
+                )
             });
         assert!(
             output.status.success(),
-            "{fixture}: legacy Draco decoder {decoder_version} failed\nstdout:\n{}\nstderr:\n{}",
+            "{fixture}: legacy Draco decoder {} failed\nstdout:\n{}\nstderr:\n{}",
+            decoder_version.label(),
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );

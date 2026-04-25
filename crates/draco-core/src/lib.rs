@@ -7,6 +7,12 @@
 #![allow(clippy::needless_range_loop)] // Many loops follow C++ patterns for array indexing
 #![allow(clippy::manual_memcpy)] // Manual copying matches C++ patterns for clarity
 
+#[cfg(feature = "debug_logs")]
+#[inline]
+pub(crate) fn debug_env_enabled(name: &str) -> bool {
+    std::env::var_os(name).is_some()
+}
+
 // =============================================================================
 // Core modules - always available
 // =============================================================================

@@ -306,56 +306,13 @@ impl MeshEncoder {
             out_buffer,
             self.options.get_speed() as usize,
         )?;
-        if cfg!(feature = "debug_logs") {
+        #[cfg(feature = "debug_logs")]
+        {
             println!("DEBUG: encode_edgebreaker_connectivity: point_ids.len()={}, data_to_corner_map.len()={}, vertex_to_data_map.len()={}",
                  point_ids.len(), data_to_corner_map.len(), vertex_to_data_map.len());
         }
         self.point_ids = point_ids;
 
-        // Optional debug: compute bounds of the POSITION values in the *encoded point order*.
-        // If these bounds are already wrong, the issue is in point/vertex mapping (not prediction).
-        if std::env::var("DRACO_DEBUG_BOUNDS").is_ok() {
-            use crate::geometry_attribute::GeometryAttributeType;
-            let pos_att_id = mesh.named_attribute_id(GeometryAttributeType::Position);
-            if pos_att_id >= 0 {
-                let pos_att = mesh.attribute(pos_att_id);
-                if pos_att.data_type() == crate::draco_types::DataType::Float32
-                    && pos_att.num_components() >= 3
-                {
-                    let buffer = pos_att.buffer();
-                    let byte_stride = pos_att.byte_stride() as usize;
-                    let data = buffer.data();
-                    let mut min_x = f32::INFINITY;
-                    let mut max_x = f32::NEG_INFINITY;
-                    let mut min_y = f32::INFINITY;
-                    let mut max_y = f32::NEG_INFINITY;
-                    let mut min_z = f32::INFINITY;
-                    let mut max_z = f32::NEG_INFINITY;
-                    for pid in &self.point_ids {
-                        let p = pid.0 as usize;
-                        let off = p.saturating_mul(byte_stride);
-                        if off + 12 > data.len() {
-                            continue;
-                        }
-                        let x = f32::from_le_bytes(data[off..off + 4].try_into().unwrap());
-                        let y = f32::from_le_bytes(data[off + 4..off + 8].try_into().unwrap());
-                        let z = f32::from_le_bytes(data[off + 8..off + 12].try_into().unwrap());
-                        min_x = min_x.min(x);
-                        max_x = max_x.max(x);
-                        min_y = min_y.min(y);
-                        max_y = max_y.max(y);
-                        min_z = min_z.min(z);
-                        max_z = max_z.max(z);
-                    }
-                    if cfg!(feature = "debug_logs") {
-                        println!(
-                            "DEBUG: encoded POSITION bounds (point_ids order): x=[{}, {}] y=[{}, {}] z=[{}, {}]",
-                            min_x, max_x, min_y, max_y, min_z, max_z
-                        );
-                    }
-                }
-            }
-        }
         // Draco stores corner mapping in attribute (data) order.
         self.data_to_corner_map = Some(data_to_corner_map);
         self.vertex_to_data_map = Some(vertex_to_data_map);
@@ -433,7 +390,8 @@ impl MeshEncoder {
             })
             .collect();
 
-        if cfg!(feature = "debug_logs") {
+        #[cfg(feature = "debug_logs")]
+        {
             eprintln!(
                 "Rust created faces (first 12): {:?}",
                 faces
@@ -585,7 +543,8 @@ impl MeshEncoder {
             for i in 0..mesh.num_attributes() {
                 let att = mesh.attribute(i);
 
-                if cfg!(feature = "debug_logs") {
+                #[cfg(feature = "debug_logs")]
+                {
                     println!("DEBUG: Encoder encoding attribute {} metadata. Type: {:?}, Components: {}, Data: {:?}", i, att.attribute_type(), att.num_components(), att.data_type());
                 }
                 out_buffer.encode_u8(att.attribute_type() as u8);

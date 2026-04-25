@@ -162,17 +162,17 @@ impl AttributeQuantizationTransform {
         let src_data = src_buffer.data();
         let dst_data = dst_buffer.data_mut();
 
-        // Pre-allocate qvals outside the loop for debug printing
-        #[cfg(debug_assertions)]
+        // Pre-allocate qvals outside the loop for debug printing.
+        #[cfg(feature = "debug_logs")]
         let mut qvals = vec![0i32; num_components];
-        #[cfg(debug_assertions)]
-        let debug_cmp_cpp = std::env::var("DRACO_DEBUG_CMP_CPP").is_ok();
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "debug_logs")]
+        let debug_cmp_cpp = crate::debug_env_enabled("DRACO_DEBUG_CMP_CPP");
+        #[cfg(feature = "debug_logs")]
         let debug_cmp_cpp_max_print = std::env::var("DRACO_DEBUG_CMP_MAX_PRINT")
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(20);
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "debug_logs")]
         let debug_cmp_cpp_file = std::env::var("DRACO_DEBUG_CMP_CPP_FILE").ok();
 
         // Fast path for common case: 3-component float -> 3-component uint32
@@ -233,7 +233,7 @@ impl AttributeQuantizationTransform {
                     let val = raw_val - self.min_values[c];
                     let q_val = quantizer.quantize_float(val);
 
-                    #[cfg(debug_assertions)]
+                    #[cfg(feature = "debug_logs")]
                     {
                         qvals[c] = q_val;
                     }
@@ -244,7 +244,7 @@ impl AttributeQuantizationTransform {
                 }
 
                 // Allow limiting how many points are printed via env var.
-                #[cfg(debug_assertions)]
+                #[cfg(feature = "debug_logs")]
                 {
                     if debug_cmp_cpp && i < debug_cmp_cpp_max_print {
                         let orig_pt = point_idx.0;

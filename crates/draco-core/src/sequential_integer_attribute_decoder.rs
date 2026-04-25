@@ -1041,21 +1041,26 @@ impl SequentialIntegerAttributeDecoder {
             }
         }
 
-        if num_points > 0 && cfg!(feature = "debug_logs") {
-            println!(
-                "Sequential Decoded: Point 0 ID = {:?}, Value[0] = {}",
-                point_ids[0], values[0]
-            );
-            // Debug: print all decoded values (quantized) and where they go
-            println!("DEBUG decoded values (first 25 x/y/z):");
-            for i in 0..std::cmp::min(25, num_points) {
-                let x = values[i * 3];
-                let y = values[i * 3 + 1];
-                let z = values[i * 3 + 2];
+        #[cfg(feature = "debug_logs")]
+        {
+            if num_points > 0 {
                 println!(
-                    "  data_id={} -> point_ids[{}]={:?}: quantized({}, {}, {})",
-                    i, i, point_ids[i], x, y, z
+                    "Sequential Decoded: Point 0 ID = {:?}, Value[0] = {}",
+                    point_ids[0], values[0]
                 );
+                // Debug: print all decoded values (quantized) and where they go
+                println!("DEBUG decoded values (first 25 x/y/z):");
+                if num_components >= 3 {
+                    for i in 0..std::cmp::min(25, num_points) {
+                        let x = values[i * num_components];
+                        let y = values[i * num_components + 1];
+                        let z = values[i * num_components + 2];
+                        println!(
+                            "  data_id={} -> point_ids[{}]={:?}: quantized({}, {}, {})",
+                            i, i, point_ids[i], x, y, z
+                        );
+                    }
+                }
             }
         }
 

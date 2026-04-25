@@ -147,7 +147,8 @@ impl SequentialIntegerAttributeEncoder {
         let num_components = current_attribute.num_components() as usize;
         let num_points = point_ids.len();
         let num_values = num_points * num_components;
-        if cfg!(feature = "debug_logs") {
+        #[cfg(feature = "debug_logs")]
+        {
             println!(
                 "DEBUG: encode_values: num_points={} num_components={} num_values={}",
                 num_points, num_components, num_values
@@ -177,16 +178,19 @@ impl SequentialIntegerAttributeEncoder {
         }
 
         // Debug: print encoded values
-        if num_components == 3 && cfg!(feature = "debug_logs") {
-            println!("DEBUG encoder values (first 25 x/y/z):");
-            for i in 0..std::cmp::min(25, num_points) {
-                let x = values[i * 3];
-                let y = values[i * 3 + 1];
-                let z = values[i * 3 + 2];
-                println!(
-                    "  data_id={} -> point_ids[{}]={:?}: quantized({}, {}, {})",
-                    i, i, point_ids[i], x, y, z
-                );
+        #[cfg(feature = "debug_logs")]
+        {
+            if num_components == 3 {
+                println!("DEBUG encoder values (first 25 x/y/z):");
+                for i in 0..std::cmp::min(25, num_points) {
+                    let x = values[i * 3];
+                    let y = values[i * 3 + 1];
+                    let z = values[i * 3 + 2];
+                    println!(
+                        "  data_id={} -> point_ids[{}]={:?}: quantized({}, {}, {})",
+                        i, i, point_ids[i], x, y, z
+                    );
+                }
             }
         }
 
@@ -295,7 +299,8 @@ impl SequentialIntegerAttributeEncoder {
                             let mut mesh_data = MeshPredictionSchemeData::new();
                             mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
 
-                            if cfg!(feature = "debug_logs") {
+                            #[cfg(feature = "debug_logs")]
+                            {
                                 let head = vertex_to_data_map.iter().take(16).collect::<Vec<_>>();
                                 let tail =
                                     vertex_to_data_map.iter().rev().take(16).collect::<Vec<_>>();
@@ -704,7 +709,8 @@ impl SequentialIntegerAttributeEncoder {
         }
 
         // 4. Encode Prediction Method and Transform Type
-        if std::env::var("DRACO_DEBUG_CMP_CPP").is_ok() {
+        #[cfg(feature = "debug_logs")]
+        if crate::debug_env_enabled("DRACO_DEBUG_CMP_CPP") {
             eprintln!(
                 "RUST: Encoding prediction method {} (0x{:x}), transform type {:?}",
                 selected_method as i8, selected_method as u8, selected_transform_type

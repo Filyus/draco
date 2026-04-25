@@ -173,7 +173,10 @@ where
         let mut total_parallelograms: [i64; MAX_NUM_PARALLELOGRAMS] = [0; MAX_NUM_PARALLELOGRAMS];
         let mut total_used_parallelograms: [i64; MAX_NUM_PARALLELOGRAMS] =
             [0; MAX_NUM_PARALLELOGRAMS];
-        let debug_cmp = std::env::var("DRACO_DEBUG_CMP").is_ok();
+        #[cfg(feature = "debug_logs")]
+        let debug_cmp = crate::debug_env_enabled("DRACO_DEBUG_CMP");
+        #[cfg(not(feature = "debug_logs"))]
+        let debug_cmp = false;
 
         // C++ encoder processes vertices from the end because this prediction uses
         // data from previous entries that could be overwritten when an entry is processed.

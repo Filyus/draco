@@ -136,6 +136,7 @@ pub struct MeshEdgebreakerEncoder {
     // Tracks which holes have been visited during encoding
     visited_holes: Vec<bool>,
     encoding_speed: usize,
+    #[cfg(feature = "debug_logs")]
     verbose_logging: bool,
 
     #[cfg(feature = "encoder")]
@@ -143,6 +144,18 @@ pub struct MeshEdgebreakerEncoder {
 }
 
 impl MeshEdgebreakerEncoder {
+    #[inline(always)]
+    fn verbose_logging(&self) -> bool {
+        #[cfg(feature = "debug_logs")]
+        {
+            self.verbose_logging
+        }
+        #[cfg(not(feature = "debug_logs"))]
+        {
+            false
+        }
+    }
+
     pub fn new(num_faces: usize, num_vertices: usize) -> Self {
         Self {
             visited_faces: vec![false; num_faces],
@@ -161,7 +174,8 @@ impl MeshEdgebreakerEncoder {
             vertex_hole_id: vec![-1; num_vertices],
             visited_holes: Vec::new(),
             encoding_speed: 5, // Default
-            verbose_logging: std::env::var("DRACO_VERBOSE").is_ok(),
+            #[cfg(feature = "debug_logs")]
+            verbose_logging: crate::debug_env_enabled("DRACO_VERBOSE"),
             #[cfg(feature = "encoder")]
             valence_encoder: None,
         }
@@ -371,7 +385,7 @@ impl MeshEdgebreakerEncoder {
         // This matches C++ MeshTraversalSequencer which uses SetCornerOrder(processed_connectivity_corners_).
         // The key is that encoder and decoder use the same DFS logic on topologically equivalent
         // corner tables, producing matching vertex_to_data_map values.
-        if self.verbose_logging {
+        if self.verbose_logging() {
             println!(
                 "Encoder: processed_connectivity_corners count = {}",
                 self.processed_connectivity_corners.len()
@@ -438,7 +452,7 @@ impl MeshEdgebreakerEncoder {
         let (point_ids, data_to_corner_map, vertex_to_data_map) =
             self.generate_attribute_traversal(mesh, corner_table);
 
-        if self.verbose_logging {
+        if self.verbose_logging() {
             println!(
                 "Encoder: Using corner_table with {} faces, {} vertices",
                 corner_table.num_faces(),
@@ -492,8 +506,11 @@ impl MeshEdgebreakerEncoder {
             corner_order.push(c);
         }
 
-        let debug_cmp = std::env::var("DRACO_DEBUG_CMP").is_ok();
-        let verbose = self.verbose_logging;
+        #[cfg(feature = "debug_logs")]
+        let debug_cmp = crate::debug_env_enabled("DRACO_DEBUG_CMP");
+        #[cfg(not(feature = "debug_logs"))]
+        let debug_cmp = false;
+        let verbose = self.verbose_logging();
         let event_log_enabled = test_event_log::enabled();
 
         // Debug: compare corner_order with C++
@@ -1244,7 +1261,7 @@ impl MeshEdgebreakerEncoder {
     ) -> Result<(), DracoError> {
         let mut traversal_buffer = EncoderBuffer::new();
         traversal_buffer.set_version(2, 2);
-        let verbose = self.verbose_logging;
+        let verbose = self.verbose_logging();
 
         // DEBUG: Print symbols before encoding
         if verbose {
@@ -1678,7 +1695,7 @@ impl MeshEdgebreakerEncoder {
                 // Standard Draco: Record the entry corner for every face reached.
                 // This will be used (after reversal) as the seeds for attribute traversal.
                 self.processed_connectivity_corners.push(corner_id);
-                if self.verbose_logging {
+                if self.verbose_logging() {
                     let v = corner_table.vertex(corner_id).0;
                     eprintln!(
                         "Encoder: pushed seed corner {} (face {}) vertex={}",

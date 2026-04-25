@@ -17,7 +17,8 @@ impl<'a> RAnsBitDecoder<'a> {
 
         // Read zero_prob
         if let Ok(prob) = source_buffer.decode::<u8>() {
-            if cfg!(feature = "debug_logs") {
+            #[cfg(feature = "debug_logs")]
+            {
                 println!("DEBUG: RAnsBitDecoder prob_zero: {}", prob);
             }
             self.prob_zero = prob;
@@ -40,12 +41,14 @@ impl<'a> RAnsBitDecoder<'a> {
                 Err(_) => return false,
             }
         };
-        if cfg!(feature = "debug_logs") {
+        #[cfg(feature = "debug_logs")]
+        {
             println!("DEBUG: RAnsBitDecoder size: {}", size);
         }
 
         if let Ok(slice) = source_buffer.decode_slice(size as usize) {
-            if cfg!(feature = "debug_logs") {
+            #[cfg(feature = "debug_logs")]
+            {
                 println!("DEBUG: RAnsBitDecoder slice: {:?}", slice);
             }
             let mut decoder = AnsDecoder::new(slice);

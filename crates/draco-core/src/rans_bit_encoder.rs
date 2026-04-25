@@ -70,7 +70,8 @@ impl RAnsBitEncoder {
     }
 
     pub fn end_encoding(&mut self, target_buffer: &mut EncoderBuffer) {
-        if cfg!(feature = "debug_logs") {
+        #[cfg(feature = "debug_logs")]
+        {
             println!(
                 "DEBUG: RAnsBitEncoder bit_counts: [{}, {}]",
                 self.bit_counts[0], self.bit_counts[1]
@@ -111,17 +112,20 @@ impl RAnsBitEncoder {
             .expect("ANS state should always be valid for bit encoding");
 
         target_buffer.encode_u8(zero_prob);
-        if cfg!(feature = "debug_logs") {
+        #[cfg(feature = "debug_logs")]
+        {
             println!("DEBUG: RAnsBitEncoder zero_prob: {}", zero_prob);
         }
 
         target_buffer.encode_varint(size as u64);
-        if cfg!(feature = "debug_logs") {
+        #[cfg(feature = "debug_logs")]
+        {
             println!("DEBUG: RAnsBitEncoder size: {}", size);
         }
 
         let data = ans_coder.data();
-        if cfg!(feature = "debug_logs") {
+        #[cfg(feature = "debug_logs")]
+        {
             println!("DEBUG: RAnsBitEncoder data: {:?}", data);
         }
         target_buffer.encode_data(data);

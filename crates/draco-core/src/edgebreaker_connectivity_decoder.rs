@@ -26,7 +26,6 @@ pub struct EdgebreakerConnectivityDecoder {
     active_corner_stack: Vec<CornerIndex>,
     topology_split_active_corners: HashMap<i32, CornerIndex>,
     invalid_vertices: Vec<VertexIndex>,
-    conn_debug: bool,
 }
 
 impl EdgebreakerConnectivityDecoder {
@@ -37,7 +36,6 @@ impl EdgebreakerConnectivityDecoder {
             active_corner_stack: Vec::new(),
             topology_split_active_corners: HashMap::new(),
             invalid_vertices: Vec::new(),
-            conn_debug: std::env::var("DRACO_CONN_DEBUG").is_ok(),
         }
     }
 
@@ -56,13 +54,6 @@ impl EdgebreakerConnectivityDecoder {
 
             let mut check_topology_split = false;
             let symbol = traversal_decoder.decode_symbol();
-
-            if self.conn_debug {
-                eprintln!(
-                    "CONN_DEBUG: symbol_id={} symbol={} (face={})",
-                    symbol_id, symbol, face.0
-                );
-            }
 
             // Internal symbol mapping (see `EdgebreakerSymbol`):
             //   Center = 0, Split = 1, Left = 2, Right = 3, End = 4
@@ -419,7 +410,8 @@ impl EdgebreakerConnectivityDecoder {
         }
 
         // Debug output: show corner table after connectivity decoding
-        if std::env::var("DRACO_VERBOSE").is_ok() {
+        #[cfg(feature = "debug_logs")]
+        if crate::debug_env_enabled("DRACO_VERBOSE") {
             eprintln!("Rust CONN: Corner table after connectivity:");
             let max_corners = 12.min(self.corner_table.num_faces() * 3);
             for c in 0..max_corners {

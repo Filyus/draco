@@ -120,8 +120,6 @@ where
             &mut out_data[0..num_components],
         );
 
-        let verbose = std::env::var("DRACO_VERBOSE").is_ok();
-
         for p in 1..data_to_corner_map.len() {
             let start_corner_id = CornerIndex(data_to_corner_map[p]);
             if start_corner_id == INVALID_CORNER_INDEX {
@@ -149,8 +147,6 @@ where
                     out_data,
                     num_components,
                     &mut parallelogram_pred_vals,
-                    "MultiParallelogramDecoder",
-                    verbose,
                 ) {
                     for c in 0..num_components {
                         pred_vals[c] =
