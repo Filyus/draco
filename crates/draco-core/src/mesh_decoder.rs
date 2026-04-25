@@ -346,22 +346,14 @@ impl MeshDecoder {
                     mesh.try_set_num_faces(num_faces)?;
                     mesh.set_faces_from_flat_indices(&indices);
                 } else if connectivity_method == 1 {
-                    let data = buffer.remaining_data();
                     // Raw - bulk read indices from buffer
                     if num_points < 256 {
                         let bytes_needed = num_indices;
-                        if data.len() < bytes_needed {
-                            return Err(DracoError::DracoError(
-                                "Not enough data for u8 indices".to_string(),
-                            ));
-                        }
-                        let mut indices = make_zeroed_indices(num_indices)?;
-                        for i in 0..num_indices {
-                            indices[i] = data[i] as u32;
-                        }
-                        buffer.advance(bytes_needed);
+                        let bytes = buffer.decode_slice(bytes_needed).map_err(|_| {
+                            DracoError::DracoError("Not enough data for u8 indices".to_string())
+                        })?;
                         mesh.try_set_num_faces(num_faces)?;
-                        mesh.set_faces_from_flat_indices(&indices);
+                        mesh.set_faces_from_u8_indices(bytes);
                     } else if num_points < 65536 {
                         let bytes_needed = num_indices.checked_mul(2).ok_or_else(|| {
                             DracoError::DracoError("Mesh u16 index byte count overflow".to_string())
@@ -372,34 +364,26 @@ impl MeshDecoder {
                         mesh.try_set_num_faces(num_faces)?;
                         mesh.set_faces_from_le_u16_indices(bytes);
                     } else if num_points < (1 << 21) && seq_uses_varint {
-                        let mut indices = make_zeroed_indices(num_indices)?;
-                        for index in &mut indices {
-                            *index = buffer.decode_varint()? as u32;
-                        }
                         mesh.try_set_num_faces(num_faces)?;
-                        mesh.set_faces_from_flat_indices(&indices);
+                        for face_id in 0..num_faces {
+                            mesh.set_face_from_indices(
+                                face_id,
+                                [
+                                    buffer.decode_varint()? as u32,
+                                    buffer.decode_varint()? as u32,
+                                    buffer.decode_varint()? as u32,
+                                ],
+                            );
+                        }
                     } else {
                         let bytes_needed = num_indices.checked_mul(4).ok_or_else(|| {
                             DracoError::DracoError("Mesh u32 index byte count overflow".to_string())
                         })?;
-                        if data.len() < bytes_needed {
-                            return Err(DracoError::DracoError(
-                                "Not enough data for u32 indices".to_string(),
-                            ));
-                        }
-                        let mut indices = make_zeroed_indices(num_indices)?;
-                        for i in 0..num_indices {
-                            let off = i * 4;
-                            indices[i] = u32::from_le_bytes([
-                                data[off],
-                                data[off + 1],
-                                data[off + 2],
-                                data[off + 3],
-                            ]);
-                        }
-                        buffer.advance(bytes_needed);
+                        let bytes = buffer.decode_slice(bytes_needed).map_err(|_| {
+                            DracoError::DracoError("Not enough data for u32 indices".to_string())
+                        })?;
                         mesh.try_set_num_faces(num_faces)?;
-                        mesh.set_faces_from_flat_indices(&indices);
+                        mesh.set_faces_from_le_u32_indices(bytes);
                     }
                 } else {
                     return Err(DracoError::DracoError(format!(

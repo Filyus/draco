@@ -44,6 +44,20 @@ impl Mesh {
         }
     }
 
+    /// Bulk-set all faces from tightly packed u8 indices.
+    /// Assumes `set_num_faces` has already been called with the right count.
+    #[inline]
+    pub fn set_faces_from_u8_indices(&mut self, bytes: &[u8]) {
+        debug_assert_eq!(bytes.len(), self.faces.len() * 3);
+        for (face, chunk) in self.faces.iter_mut().zip(bytes.chunks_exact(3)) {
+            *face = [
+                PointIndex(chunk[0] as u32),
+                PointIndex(chunk[1] as u32),
+                PointIndex(chunk[2] as u32),
+            ];
+        }
+    }
+
     /// Bulk-set all faces from tightly packed little-endian u16 indices.
     /// Assumes `set_num_faces` has already been called with the right count.
     #[inline]
@@ -56,6 +70,32 @@ impl Mesh {
                 PointIndex(u16::from_le_bytes([chunk[4], chunk[5]]) as u32),
             ];
         }
+    }
+
+    /// Bulk-set all faces from tightly packed little-endian u32 indices.
+    /// Assumes `set_num_faces` has already been called with the right count.
+    #[inline]
+    pub fn set_faces_from_le_u32_indices(&mut self, bytes: &[u8]) {
+        debug_assert_eq!(bytes.len(), self.faces.len() * 3 * 4);
+        for (face, chunk) in self.faces.iter_mut().zip(bytes.chunks_exact(12)) {
+            *face = [
+                PointIndex(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])),
+                PointIndex(u32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]])),
+                PointIndex(u32::from_le_bytes([
+                    chunk[8], chunk[9], chunk[10], chunk[11],
+                ])),
+            ];
+        }
+    }
+
+    /// Sets one face from raw u32 point ids.
+    #[inline]
+    pub fn set_face_from_indices(&mut self, face_id: usize, indices: [u32; 3]) {
+        self.faces[face_id] = [
+            PointIndex(indices[0]),
+            PointIndex(indices[1]),
+            PointIndex(indices[2]),
+        ];
     }
 
     pub fn face(&self, face_id: FaceIndex) -> Face {
