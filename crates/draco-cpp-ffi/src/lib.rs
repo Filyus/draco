@@ -295,8 +295,10 @@ pub fn encode_cpp_mesh(
     let num_points = (positions.len() / 3) as u32;
     let num_faces = (faces.len() / 3) as u32;
 
-    // Allocate a large enough buffer (estimate: 10 bytes per vertex + overhead)
-    let buffer_size = (num_points as usize * 10 + 1024).max(65536);
+    // Allocate enough space for both compressed and fast sequential outputs.
+    // Fast sequential connectivity can be much larger than the compressed
+    // low-speed streams, especially on dense grids.
+    let buffer_size = (num_points as usize * 12 + faces.len() * 4 + 4096).max(65536);
     let mut buffer = vec![0u8; buffer_size];
 
     let encoded_size = unsafe {
