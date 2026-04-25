@@ -91,6 +91,32 @@ fn fill_pseudo_random_bytes(seed: u64, len: usize) -> Vec<u8> {
     bytes
 }
 
+fn deterministic_fuzz_case(seed: u64, len: usize) -> Vec<u8> {
+    let mut bytes = fill_pseudo_random_bytes(seed, len);
+
+    if len >= 10 && (seed & 1) == 0 {
+        let geometry = if (seed & 2) == 0 { 1 } else { 0 };
+        let method = ((seed >> 8) & 3) as u8;
+        bytes[0..5].copy_from_slice(b"DRACO");
+        bytes[5] = 2;
+        bytes[6] = if (seed & 4) == 0 { 2 } else { 0 };
+        bytes[7] = geometry;
+        bytes[8] = method;
+        bytes[9] = 0;
+    }
+
+    for bit in 0..4 {
+        if bytes.is_empty() {
+            break;
+        }
+        let idx = ((seed.rotate_left(bit * 13) as usize) ^ (len.wrapping_mul(17 + bit as usize)))
+            % bytes.len();
+        bytes[idx] ^= 1 << bit;
+    }
+
+    bytes
+}
+
 #[test]
 fn decode_rejects_invalid_magic() {
     let mut bytes = vec![0u8; 32];
@@ -454,6 +480,23 @@ fn synthetic_drc_like_inputs_do_not_panic() {
                 let _ = decode_by_header_without_panic(&bytes);
             }
         }
+    }
+}
+
+#[test]
+fn deterministic_fuzz_like_drc_inputs_do_not_panic() {
+    const CASES: usize = 96;
+    const MAX_LEN: usize = 768;
+
+    let mut seed = 0x4452_4143_4f5f_6675u64;
+    for case_id in 0..CASES {
+        seed = seed
+            .wrapping_mul(0xd134_2543_de82_ef95)
+            .wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let len = ((seed >> 17) as usize % MAX_LEN).saturating_add(case_id % 11);
+        let bytes = deterministic_fuzz_case(seed ^ case_id as u64, len);
+
+        assert_both_decoders_do_not_panic(&bytes);
     }
 }
 

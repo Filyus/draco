@@ -33,7 +33,8 @@ completed:
         tests:
           - "malformed_drc_inputs_fail_without_panic"
           - "mutated_supported_drc_inputs_do_not_panic"
-    note: "Covers empty/short/bad-magic streams, invalid geometry type, truncation, corrupt point-cloud varints, truncated metadata, deterministic byte flips, truncations, and trailing garbage over supported fixtures."
+          - "deterministic_fuzz_like_drc_inputs_do_not_panic"
+    note: "Covers empty/short/bad-magic streams, invalid geometry type, truncation, corrupt point-cloud varints, truncated metadata, deterministic byte flips, fuzz-like synthetic byte streams, truncations, and trailing garbage over supported fixtures."
 
   - id: resource-count-preflight
     status: covered
