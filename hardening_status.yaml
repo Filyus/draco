@@ -159,6 +159,15 @@ completed:
           - "deprecated_tex_coords_rejects_truncated_position_buffer"
     note: "Portable and deprecated texcoord prediction position reads now use checked offset arithmetic and fallible DataBuffer reads, returning a controlled prediction failure when the referenced position buffer is truncated."
 
+  - id: sequential-integer-attribute-store-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/sequential_integer_attribute_decoder.rs"
+        tests:
+          - "store_i32_values_rejects_short_decoded_values"
+          - "store_i32_values_rejects_impossible_required_size"
+    note: "Sequential integer attribute decode now validates decoded value counts, required buffer sizes, and per-component writes before storing reconstructed i32 values into attribute buffers."
+
 open_risks:
   - id: no-sustained-fuzzing
     priority: high

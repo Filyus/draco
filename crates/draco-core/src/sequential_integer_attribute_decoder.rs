@@ -1164,10 +1164,14 @@ impl SequentialIntegerAttributeDecoder {
 
         // 5. Store values (+ optional inverse transform)
         if let Some(portable_att) = portable_attribute {
-            store_i32_values_to_attribute(portable_att, &values, num_points, num_components);
+            if !store_i32_values_to_attribute(portable_att, &values, num_points, num_components) {
+                return false;
+            }
         } else {
             let dst_attribute = point_cloud.attribute_mut(att_id);
-            store_i32_values_to_attribute(dst_attribute, &values, num_points, num_components);
+            if !store_i32_values_to_attribute(dst_attribute, &values, num_points, num_components) {
+                return false;
+            }
         }
 
         true
@@ -1199,44 +1203,66 @@ fn store_i32_values_to_attribute(
     values: &[i32],
     num_points: usize,
     num_components: usize,
-) {
-    let byte_stride = attr.byte_stride() as usize;
+) -> bool {
+    let Ok(byte_stride) = usize::try_from(attr.byte_stride()) else {
+        return false;
+    };
     let data_type = attr.data_type();
     let component_size = data_type.byte_length();
-    let packed_row = num_components * component_size;
+    let Some(packed_row) = num_components.checked_mul(component_size) else {
+        return false;
+    };
+    let Some(num_values_required) = num_points.checked_mul(num_components) else {
+        return false;
+    };
+    if values.len() < num_values_required {
+        return false;
+    }
 
     // Ensure buffer is large enough for num_points entries.
-    let required = num_points * byte_stride;
-    if attr.buffer().data_size() < required {
-        attr.buffer_mut().resize(required);
+    let Some(required) = num_points.checked_mul(byte_stride) else {
+        return false;
+    };
+    if attr.buffer().data_size() < required && attr.buffer_mut().try_resize(required).is_err() {
+        return false;
     }
 
     // Fast path: i32/u32 tightly packed — bulk memcpy the entire values array.
     if (data_type == DataType::Int32 || data_type == DataType::Uint32) && byte_stride == packed_row
     {
-        let n = std::cmp::min(num_points, values.len() / num_components);
-        let src: &[u8] = bytemuck::cast_slice(&values[..n * num_components]);
+        let src: &[u8] = bytemuck::cast_slice(&values[..num_values_required]);
         let dst = attr.buffer_mut().data_mut();
-        let copy_len = std::cmp::min(src.len(), dst.len());
-        dst[..copy_len].copy_from_slice(&src[..copy_len]);
-        return;
+        let Some(dst) = dst.get_mut(..src.len()) else {
+            return false;
+        };
+        dst.copy_from_slice(src);
+        return true;
     }
 
     // Slow path: per-component write with type conversion.
     let dst_buffer = attr.buffer_mut();
-    let num_values_decoded = values.len() / num_components;
-    for i in 0..std::cmp::min(num_points, num_values_decoded) {
-        let entry_offset = i * byte_stride;
+    for i in 0..num_points {
+        let Some(entry_offset) = i.checked_mul(byte_stride) else {
+            return false;
+        };
         for c in 0..num_components {
-            let component_offset = entry_offset + c * component_size;
-            write_value_from_i32(
+            let Some(component_byte_offset) = c.checked_mul(component_size) else {
+                return false;
+            };
+            let Some(component_offset) = entry_offset.checked_add(component_byte_offset) else {
+                return false;
+            };
+            if !write_value_from_i32(
                 dst_buffer,
                 component_offset,
                 data_type,
                 values[i * num_components + c],
-            );
+            ) {
+                return false;
+            }
         }
     }
+    true
 }
 
 #[inline(always)]
@@ -1245,26 +1271,41 @@ fn write_value_from_i32(
     offset: usize,
     data_type: DataType,
     val: i32,
-) {
+) -> bool {
     match data_type {
-        DataType::Int8 => {
-            buffer.write(offset, &(val as i8).to_le_bytes());
-        }
-        DataType::Uint8 => {
-            buffer.write(offset, &(val as u8).to_le_bytes());
-        }
-        DataType::Int16 => {
-            buffer.write(offset, &(val as i16).to_le_bytes());
-        }
-        DataType::Uint16 => {
-            buffer.write(offset, &(val as u16).to_le_bytes());
-        }
-        DataType::Int32 => {
-            buffer.write(offset, &val.to_le_bytes());
-        }
-        DataType::Uint32 => {
-            buffer.write(offset, &(val as u32).to_le_bytes());
-        }
-        _ => {}
+        DataType::Int8 => buffer.try_write(offset, &(val as i8).to_le_bytes()),
+        DataType::Uint8 => buffer.try_write(offset, &(val as u8).to_le_bytes()),
+        DataType::Int16 => buffer.try_write(offset, &(val as i16).to_le_bytes()),
+        DataType::Uint16 => buffer.try_write(offset, &(val as u16).to_le_bytes()),
+        DataType::Int32 => buffer.try_write(offset, &val.to_le_bytes()),
+        DataType::Uint32 => buffer.try_write(offset, &(val as u32).to_le_bytes()),
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
+
+    #[test]
+    fn store_i32_values_rejects_short_decoded_values() {
+        let mut attr = PointAttribute::new();
+        attr.init(GeometryAttributeType::Generic, 3, DataType::Int16, false, 2);
+
+        assert!(!store_i32_values_to_attribute(&mut attr, &[1, 2, 3], 2, 3));
+    }
+
+    #[test]
+    fn store_i32_values_rejects_impossible_required_size() {
+        let mut attr = PointAttribute::new();
+        attr.init(GeometryAttributeType::Generic, 1, DataType::Int32, false, 1);
+
+        assert!(!store_i32_values_to_attribute(
+            &mut attr,
+            &[1],
+            usize::MAX,
+            1,
+        ));
     }
 }
