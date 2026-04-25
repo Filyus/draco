@@ -261,6 +261,17 @@ completed:
           - "try_resize_rejects_impossible_size"
     note: "Generic sequential attribute decode now uses fallible DataBuffer resizing before copying decoded bytes, so allocation failure is reported as a decode error instead of panicking during Vec resize."
 
+  - id: point-cloud-attribute-id-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/point_cloud.rs"
+        tests:
+          - "try_attribute_rejects_out_of_range_ids"
+      - path: "crates/draco-core/src/sequential_generic_attribute_decoder.rs"
+        tests:
+          - "decode_values_rejects_invalid_attribute_id"
+    note: "PointCloud now exposes fallible attribute lookup helpers, and generic sequential attribute decode uses them so invalid attribute ids return decode errors instead of indexing the attribute array unchecked."
+
 open_risks:
   - id: no-sustained-fuzzing
     priority: high

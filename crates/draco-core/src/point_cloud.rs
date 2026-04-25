@@ -1,4 +1,5 @@
 use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
+use crate::status::DracoError;
 
 #[derive(Debug, Default, Clone)]
 pub struct PointCloud {
@@ -37,8 +38,32 @@ impl PointCloud {
         &self.attributes[att_id as usize]
     }
 
+    pub fn try_attribute(&self, att_id: i32) -> Result<&PointAttribute, DracoError> {
+        let Some(attribute) = (att_id >= 0)
+            .then_some(att_id as usize)
+            .and_then(|index| self.attributes.get(index))
+        else {
+            return Err(DracoError::DracoError(
+                "Point cloud attribute id out of range".to_string(),
+            ));
+        };
+        Ok(attribute)
+    }
+
     pub fn attribute_mut(&mut self, att_id: i32) -> &mut PointAttribute {
         &mut self.attributes[att_id as usize]
+    }
+
+    pub fn try_attribute_mut(&mut self, att_id: i32) -> Result<&mut PointAttribute, DracoError> {
+        let Some(attribute) = (att_id >= 0)
+            .then_some(att_id as usize)
+            .and_then(|index| self.attributes.get_mut(index))
+        else {
+            return Err(DracoError::DracoError(
+                "Point cloud attribute id out of range".to_string(),
+            ));
+        };
+        Ok(attribute)
     }
 
     pub fn named_attribute_id(&self, att_type: GeometryAttributeType) -> i32 {
@@ -61,5 +86,20 @@ impl PointCloud {
 
     pub fn num_points(&self) -> usize {
         self.num_points
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn try_attribute_rejects_out_of_range_ids() {
+        let mut point_cloud = PointCloud::new();
+
+        assert!(point_cloud.try_attribute(-1).is_err());
+        assert!(point_cloud.try_attribute(0).is_err());
+        assert!(point_cloud.try_attribute_mut(-1).is_err());
+        assert!(point_cloud.try_attribute_mut(0).is_err());
     }
 }

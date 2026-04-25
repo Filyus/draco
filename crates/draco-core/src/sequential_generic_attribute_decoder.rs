@@ -33,7 +33,7 @@ impl SequentialGenericAttributeDecoder {
         buffer: &mut DecoderBuffer,
     ) -> Status {
         let attribute_id = self.base.attribute_id();
-        let attribute = point_cloud.attribute_mut(attribute_id);
+        let attribute = point_cloud.try_attribute_mut(attribute_id)?;
 
         let num_components = attribute.num_components() as usize;
         let num_points = point_ids.len();
@@ -52,5 +52,25 @@ impl SequentialGenericAttributeDecoder {
         })?;
         attribute.buffer_mut().data_mut().copy_from_slice(bytes);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::point_cloud_decoder::PointCloudDecoder;
+
+    #[test]
+    fn decode_values_rejects_invalid_attribute_id() {
+        let mut decoder = SequentialGenericAttributeDecoder::new();
+        let point_cloud_decoder = PointCloudDecoder::new();
+        assert!(decoder.init(&point_cloud_decoder, 0));
+
+        let mut point_cloud = PointCloud::new();
+        let mut buffer = DecoderBuffer::new(&[]);
+
+        assert!(decoder
+            .decode_values(&mut point_cloud, &[], &mut buffer)
+            .is_err());
     }
 }
