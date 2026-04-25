@@ -16,6 +16,7 @@ use crate::prediction_scheme_geometric_normal::MeshPredictionSchemeGeometricNorm
 use crate::prediction_scheme_multi_parallelogram::PredictionSchemeMultiParallelogramDecoder;
 use crate::prediction_scheme_normal_octahedron_canonicalized_decoding_transform::PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform;
 use crate::prediction_scheme_parallelogram::PredictionSchemeParallelogramDecoder;
+#[cfg(feature = "deprecated_tex_coords_prediction")]
 use crate::prediction_scheme_tex_coords_deprecated::PredictionSchemeTexCoordsDeprecatedDecoder;
 use crate::prediction_scheme_tex_coords_portable::PredictionSchemeTexCoordsPortableDecoder;
 use crate::prediction_scheme_wrap::PredictionSchemeWrapDecodingTransform;
@@ -178,6 +179,7 @@ impl SequentialIntegerAttributeDecoder {
                 PredictionSchemeWrapDecodingTransform<i32>,
             >,
         > = None;
+        #[cfg(feature = "deprecated_tex_coords_prediction")]
         let mut predictor_tex_coords_deprecated_opt: Option<
             PredictionSchemeTexCoordsDeprecatedDecoder<
                 '_,
@@ -415,6 +417,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
+            #[cfg(feature = "deprecated_tex_coords_prediction")]
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
                 if let Some(corner_table) = corner_table {
                     data_to_corner_map.resize(num_points, 0);
@@ -493,6 +496,11 @@ impl SequentialIntegerAttributeDecoder {
                     eprintln!("TexCoordsDeprecated prediction requires corner table");
                     return false;
                 }
+            }
+            #[cfg(not(feature = "deprecated_tex_coords_prediction"))]
+            PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
+                eprintln!("TexCoordsDeprecated prediction is disabled");
+                return false;
             }
             PredictionSchemeMethod::MeshPredictionTexCoordsPortable => {
                 if let Some(corner_table) = corner_table {
@@ -837,6 +845,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
+            #[cfg(feature = "deprecated_tex_coords_prediction")]
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
                 let predictor = predictor_tex_coords_deprecated_opt.as_mut().unwrap();
                 if !predictor.decode_prediction_data(in_buffer) {
@@ -846,6 +855,11 @@ impl SequentialIntegerAttributeDecoder {
                     );
                     return false;
                 }
+            }
+            #[cfg(not(feature = "deprecated_tex_coords_prediction"))]
+            PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
+                eprintln!("TexCoordsDeprecated prediction is disabled");
+                return false;
             }
             PredictionSchemeMethod::MeshPredictionTexCoordsPortable => {
                 let predictor = predictor_tex_coords_opt.as_mut().unwrap();
@@ -984,6 +998,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
+            #[cfg(feature = "deprecated_tex_coords_prediction")]
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
                 let predictor = predictor_tex_coords_deprecated_opt.as_mut().unwrap();
                 if !predictor.compute_original_values(
@@ -1001,6 +1016,11 @@ impl SequentialIntegerAttributeDecoder {
                     );
                     return false;
                 }
+            }
+            #[cfg(not(feature = "deprecated_tex_coords_prediction"))]
+            PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
+                eprintln!("TexCoordsDeprecated prediction is disabled");
+                return false;
             }
             PredictionSchemeMethod::MeshPredictionTexCoordsPortable => {
                 let predictor = predictor_tex_coords_opt.as_mut().unwrap();

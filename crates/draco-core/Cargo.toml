@@ -4,11 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["encoder", "decoder", "point_cloud_decode", "edgebreaker_valence"]
+default = [
+    "encoder",
+    "decoder",
+    "point_cloud_decode",
+    "edgebreaker_valence",
+    "deprecated_tex_coords_prediction",
+]
 encoder = []
 decoder = []
 point_cloud_decode = ["decoder"]
 edgebreaker_valence = []
+deprecated_tex_coords_prediction = ["decoder"]
 debug_logs = []
 force_sequential_seeds = []
 
@@ -19,3 +26,4 @@ bytemuck = { version = "1.24.0", features = ["derive"] }
 [dev-dependencies]
 draco-io = { path = "../draco-io" }
 tempfile = "3.24.0"
+

@@ -50,7 +50,7 @@ pub mod prediction_scheme_normal_octahedron_canonicalized_transform_base;
 pub mod prediction_scheme_normal_octahedron_transform_base;
 pub mod prediction_scheme_parallelogram;
 pub mod prediction_scheme_selection;
-#[cfg(feature = "decoder")]
+#[cfg(all(feature = "decoder", feature = "deprecated_tex_coords_prediction"))]
 pub mod prediction_scheme_tex_coords_deprecated;
 pub mod prediction_scheme_tex_coords_portable;
 pub mod prediction_scheme_wrap;
