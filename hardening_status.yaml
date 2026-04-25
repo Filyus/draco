@@ -243,6 +243,15 @@ completed:
           - "get_axis_rejects_truncated_axis_stream"
     note: "KD-tree adaptive-axis decode now propagates a missing axis bitstream as decode failure instead of treating a failed bit read as axis zero."
 
+  - id: point-attribute-map-write-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/geometry_attribute.rs"
+        tests:
+          - "try_set_point_map_entry_rejects_out_of_range_point"
+      - path: "crates/draco-core/src/mesh_decoder.rs"
+    note: "Point attribute explicit map writes now have a fallible setter, and mesh decode uses it when reconstructing point-to-attribute mappings from bitstream-controlled ids."
+
 open_risks:
   - id: no-sustained-fuzzing
     priority: high

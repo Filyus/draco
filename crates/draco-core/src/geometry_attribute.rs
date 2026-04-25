@@ -288,12 +288,25 @@ impl PointAttribute {
         point_index: PointIndex,
         entry_index: AttributeValueIndex,
     ) {
+        self.try_set_point_map_entry(point_index, entry_index)
+            .expect("point map entry must be in range");
+    }
+
+    pub fn try_set_point_map_entry(
+        &mut self,
+        point_index: PointIndex,
+        entry_index: AttributeValueIndex,
+    ) -> Result<(), DracoError> {
         if self.identity_mapping {
-            // Switch to explicit mapping if needed, or just assert?
-            // For now, assume caller called SetExplicitMapping
-            return;
+            return Ok(());
         }
-        self.indices_map[point_index.0 as usize] = entry_index;
+        let Some(slot) = self.indices_map.get_mut(point_index.0 as usize) else {
+            return Err(DracoError::DracoError(
+                "Point map entry index out of range".to_string(),
+            ));
+        };
+        *slot = entry_index;
+        Ok(())
     }
 
     pub fn set_attribute_transform_data(&mut self, data: AttributeTransformData) {
@@ -318,5 +331,20 @@ impl PointAttribute {
 
     pub fn byte_stride(&self) -> i64 {
         self.base.byte_stride()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn try_set_point_map_entry_rejects_out_of_range_point() {
+        let mut attribute = PointAttribute::new();
+        attribute.set_explicit_mapping(1);
+
+        assert!(attribute
+            .try_set_point_map_entry(PointIndex(1), AttributeValueIndex(0))
+            .is_err());
     }
 }

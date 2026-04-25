@@ -48,12 +48,17 @@ fn validate_num_components(num_components: u8) -> Result<(), DracoError> {
     Ok(())
 }
 
-fn copy_point_mapping(source: &PointAttribute, target: &mut PointAttribute, num_points: usize) {
+fn copy_point_mapping(
+    source: &PointAttribute,
+    target: &mut PointAttribute,
+    num_points: usize,
+) -> Result<(), DracoError> {
     target.set_explicit_mapping(num_points);
     for point in 0..num_points {
         let point_id = PointIndex(point as u32);
-        target.set_point_map_entry(point_id, source.mapped_index(point_id));
+        target.try_set_point_map_entry(point_id, source.mapped_index(point_id))?;
     }
+    Ok(())
 }
 
 fn upsert_portable_attribute(
@@ -751,7 +756,7 @@ impl MeshDecoder {
                     let att_mut = mesh.attribute_mut(att_id);
                     att_mut.set_explicit_mapping(num_points);
                     for (i, &pid) in point_ids.iter().enumerate() {
-                        att_mut.set_point_map_entry(pid, AttributeValueIndex(i as u32));
+                        att_mut.try_set_point_map_entry(pid, AttributeValueIndex(i as u32))?;
                     }
                 }
             }
@@ -1311,7 +1316,7 @@ impl MeshDecoder {
                         att.set_explicit_mapping(num_points);
                         for (point, value) in point_to_value.iter().enumerate() {
                             if let Some(value) = value {
-                                att.set_point_map_entry(PointIndex(point as u32), *value);
+                                att.try_set_point_map_entry(PointIndex(point as u32), *value)?;
                             }
                         }
                     }
@@ -1320,12 +1325,12 @@ impl MeshDecoder {
 
             for q in pending_quant {
                 let mut portable = q.portable;
-                copy_point_mapping(mesh.attribute(q.att_id), &mut portable, mesh.num_points());
+                copy_point_mapping(mesh.attribute(q.att_id), &mut portable, mesh.num_points())?;
                 upsert_portable_attribute(&mut portable_attributes_by_id, q.att_id, portable);
             }
             for n in pending_normals {
                 let mut portable = n.portable;
-                copy_point_mapping(mesh.attribute(n.att_id), &mut portable, mesh.num_points());
+                copy_point_mapping(mesh.attribute(n.att_id), &mut portable, mesh.num_points())?;
                 upsert_portable_attribute(&mut portable_attributes_by_id, n.att_id, portable);
             }
         }
