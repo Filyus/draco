@@ -646,7 +646,9 @@ impl SequentialIntegerAttributeDecoder {
                     predictor.init(&mesh_data);
 
                     // Provide mapping from decoded-entry index to original point id.
-                    predictor.set_entry_to_point_id_map(point_ids);
+                    predictor.set_entry_to_point_id_map(
+                        crate::prediction_scheme::EntryToPointIdMap::from_point_indices(point_ids),
+                    );
 
                     // Set parent attribute (Position)
                     let pos_att_id = point_cloud.named_attribute_id(

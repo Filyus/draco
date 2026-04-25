@@ -110,7 +110,7 @@ pub struct MeshPredictionSchemeGeometricNormalDecoder<'a> {
     transform: PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform,
     mesh_data: Option<MeshPredictionSchemeData<'a>>,
     pos_attribute: Option<&'a PointAttribute>,
-    entry_to_point_id_map: Vec<u32>,
+    entry_to_point_id_map: Option<crate::prediction_scheme::EntryToPointIdMap<'a>>,
     prediction_mode: NormalPredictionMode,
     octahedron_tool_box: OctahedronToolBox,
     flip_normal_bits: Vec<bool>,
@@ -124,7 +124,7 @@ impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
             transform,
             mesh_data: None,
             pos_attribute: None,
-            entry_to_point_id_map: Vec::new(),
+            entry_to_point_id_map: None,
             prediction_mode: NormalPredictionMode::TriangleArea,
             octahedron_tool_box: OctahedronToolBox::new(),
             flip_normal_bits: Vec::new(),
@@ -132,12 +132,11 @@ impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
         }
     }
 
-    pub fn set_entry_to_point_id_map(&mut self, point_ids: &[PointIndex]) {
-        self.entry_to_point_id_map.clear();
-        self.entry_to_point_id_map.reserve(point_ids.len());
-        for &p in point_ids {
-            self.entry_to_point_id_map.push(p.0);
-        }
+    pub fn set_entry_to_point_id_map(
+        &mut self,
+        point_ids: crate::prediction_scheme::EntryToPointIdMap<'a>,
+    ) {
+        self.entry_to_point_id_map = Some(point_ids);
     }
 
     pub fn init(&mut self, mesh_data: &MeshPredictionSchemeData<'a>) -> bool {
@@ -156,7 +155,7 @@ impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
                 .and_then(|m| m.data_to_corner_map())
                 .is_some()
             && self.pos_attribute.is_some()
-            && !self.entry_to_point_id_map.is_empty()
+            && self.entry_to_point_id_map.is_some()
     }
 
     fn get_position_for_corner(&self, corner_id: CornerIndex) -> [i32; 3] {
@@ -179,10 +178,12 @@ impl<'a> MeshPredictionSchemeGeometricNormalDecoder<'a> {
             return [0, 0, 0];
         }
         let data_id = data_id as usize;
-        if data_id >= self.entry_to_point_id_map.len() {
+        let Some(entry_to_point_id_map) = self.entry_to_point_id_map else {
             return [0, 0, 0];
-        }
-        let point_id = self.entry_to_point_id_map[data_id];
+        };
+        let Some(point_id) = entry_to_point_id_map.get(data_id) else {
+            return [0, 0, 0];
+        };
         let pos_val_id = pos_attribute.mapped_index(PointIndex(point_id));
         if pos_val_id == INVALID_ATTRIBUTE_VALUE_INDEX {
             return [0, 0, 0];
@@ -1241,5 +1242,37 @@ mod tests {
         );
 
         assert_eq!(position, [0, 0, 0]);
+    }
+
+    #[test]
+    fn mesh_geometric_normal_position_lookup_returns_zero_when_entry_map_is_too_short() {
+        let mut corner_table = CornerTable::new(1);
+        corner_table.set_face_vertices(FaceIndex(0), PointIndex(0), PointIndex(1), PointIndex(2));
+
+        let data_to_corner_map = [0u32];
+        let vertex_to_data_map = [1, 0, 0];
+        let mut mesh_data = MeshPredictionSchemeData::new();
+        mesh_data.set(&corner_table, &data_to_corner_map, &vertex_to_data_map);
+
+        let mut position_attribute = PointAttribute::new();
+        position_attribute.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Int32,
+            false,
+            1,
+        );
+
+        let mut decoder = MeshPredictionSchemeGeometricNormalDecoder::new(
+            PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform::new(),
+        );
+        assert!(decoder.init(&mesh_data));
+        assert!(decoder.set_parent_attribute(&position_attribute));
+
+        let entry_to_point_id_map = [0u32];
+        decoder
+            .set_entry_to_point_id_map(EntryToPointIdMap::from_u32_slice(&entry_to_point_id_map));
+
+        assert_eq!(decoder.get_position_for_corner(CornerIndex(0)), [0, 0, 0]);
     }
 }
