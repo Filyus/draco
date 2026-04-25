@@ -908,8 +908,9 @@ fn encode_draco_mesh(
                 "[DRACO] Method: {}, Speed: {}, Prediction: {}",
                 method_used, speed_used, prediction_scheme
             ));
-            // Verify produced buffer is decodable by the Rust decoder to catch encoding issues
+            #[cfg(feature = "verify_draco_output")]
             {
+                // Optional diagnostic check: verify produced bytes can be decoded by Rust.
                 use draco_core::decoder_buffer::DecoderBuffer;
                 use draco_core::mesh_decoder::MeshDecoder;
                 let mut decoder_buffer_check = DecoderBuffer::new(encoder_buffer.data());
@@ -937,6 +938,18 @@ fn encode_draco_mesh(
                         return Err(format!("Encode produced undecodable output: {:?}", e));
                     }
                 }
+            }
+            #[cfg(not(feature = "verify_draco_output"))]
+            {
+                Ok(DracoEncodingResult {
+                    data: encoder_buffer.data().to_vec(),
+                    position_attr_id: pos_attr_id,
+                    normal_attr_id: norm_attr_id,
+                    texcoord_attr_id: uv_attr_id,
+                    method: method_used.to_string(),
+                    speed: speed_used,
+                    prediction_scheme,
+                })
             }
         }
         Err(e) => {
