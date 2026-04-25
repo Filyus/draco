@@ -216,6 +216,15 @@ completed:
           - "decode_least_significant_bits32_rejects_missing_second_word"
     note: "Direct bit decode now rejects invalid requested bit counts and missing continuation words through false returns instead of assert/index panics."
 
+  - id: folded-bit-decoder-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/folded_bit32_coder.rs"
+        tests:
+          - "decode_least_significant_bits32_rejects_invalid_bit_counts"
+      - path: "crates/draco-core/src/dynamic_integer_points_kd_tree.rs"
+    note: "Folded bit decode now validates requested bit widths and propagates failure through KD-tree number decode instead of indexing folded decoder slots unchecked."
+
 open_risks:
   - id: no-sustained-fuzzing
     priority: high

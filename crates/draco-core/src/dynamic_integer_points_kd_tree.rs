@@ -397,10 +397,7 @@ impl<'a> NumbersDecoder<'a> {
                 d.decode_least_significant_bits32(nbits as i32, value);
                 true
             }
-            NumbersDecoder::Folded(d) => {
-                d.decode_least_significant_bits32(nbits, value);
-                true
-            }
+            NumbersDecoder::Folded(d) => d.decode_least_significant_bits32(nbits, value),
         }
     }
 

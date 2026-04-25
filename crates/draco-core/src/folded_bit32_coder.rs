@@ -93,13 +93,20 @@ impl<'a> FoldedBit32Decoder<'a> {
         self.bit_decoder.decode_next_bit()
     }
 
-    pub fn decode_least_significant_bits32(&mut self, nbits: u32, value: &mut u32) {
+    pub fn decode_least_significant_bits32(&mut self, nbits: u32, value: &mut u32) -> bool {
+        if nbits == 0 || nbits > 32 {
+            return false;
+        }
         let mut result = 0u32;
         for i in 0..nbits {
-            let bit = self.folded_number_decoders[i as usize].decode_next_bit();
+            let Some(decoder) = self.folded_number_decoders.get_mut(i as usize) else {
+                return false;
+            };
+            let bit = decoder.decode_next_bit();
             result = (result << 1) + (bit as u32);
         }
         *value = result;
+        true
     }
 
     pub fn end_decoding(&mut self) {
@@ -107,5 +114,20 @@ impl<'a> FoldedBit32Decoder<'a> {
         for dec in &mut self.folded_number_decoders {
             dec.end_decoding();
         }
+    }
+}
+
+#[cfg(all(test, feature = "decoder"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_least_significant_bits32_rejects_invalid_bit_counts() {
+        let mut decoder = FoldedBit32Decoder::new();
+        let mut value = 123;
+
+        assert!(!decoder.decode_least_significant_bits32(0, &mut value));
+        assert!(!decoder.decode_least_significant_bits32(33, &mut value));
+        assert_eq!(value, 123);
     }
 }
