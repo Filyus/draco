@@ -76,6 +76,21 @@ fn decode_by_header_without_panic(bytes: &[u8]) -> Result<(), String> {
     decode_malformed_without_panic(kind, bytes)
 }
 
+fn assert_both_decoders_do_not_panic(bytes: &[u8]) {
+    let _ = decode_malformed_without_panic(DecoderKind::Mesh, bytes);
+    let _ = decode_malformed_without_panic(DecoderKind::PointCloud, bytes);
+}
+
+fn fill_pseudo_random_bytes(seed: u64, len: usize) -> Vec<u8> {
+    let mut state = seed;
+    let mut bytes = Vec::with_capacity(len);
+    for _ in 0..len {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        bytes.push((state >> 32) as u8);
+    }
+    bytes
+}
+
 #[test]
 fn decode_rejects_invalid_magic() {
     let mut bytes = vec![0u8; 32];
@@ -192,6 +207,16 @@ fn oversized_drc_counts_fail_before_large_allocation() {
     oversized_point_cloud_points.push(0); // unique id (varint)
     oversized_point_cloud_points.push(0); // raw decoder type
 
+    let mut oversized_kd_point_cloud_points = draco_header(2, 0, 0, 1);
+    oversized_kd_point_cloud_points.extend_from_slice(&u32::MAX.to_le_bytes());
+    oversized_kd_point_cloud_points.push(1); // one attribute decoder
+    append_varint(&mut oversized_kd_point_cloud_points, 1); // one attribute
+    oversized_kd_point_cloud_points.push(0); // POSITION
+    oversized_kd_point_cloud_points.push(9); // FLOAT32
+    oversized_kd_point_cloud_points.push(3); // 3 components
+    oversized_kd_point_cloud_points.push(0); // not normalized
+    append_varint(&mut oversized_kd_point_cloud_points, 0); // unique id
+
     let cases = [
         (
             "oversized mesh face count",
@@ -202,6 +227,11 @@ fn oversized_drc_counts_fail_before_large_allocation() {
             "oversized point-cloud point count",
             DecoderKind::PointCloud,
             oversized_point_cloud_points,
+        ),
+        (
+            "oversized KD-tree point-cloud point count",
+            DecoderKind::PointCloud,
+            oversized_kd_point_cloud_points,
         ),
     ];
 
@@ -329,6 +359,44 @@ fn mutated_supported_drc_inputs_do_not_panic() {
         let mut extended = original.clone();
         extended.extend_from_slice(&[0x80, 0x80, 0x80, 0x80, 0x00]);
         let _ = decode_by_header_without_panic(&extended);
+    }
+}
+
+#[test]
+fn synthetic_drc_like_inputs_do_not_panic() {
+    let lengths = [
+        0usize, 1, 2, 4, 5, 8, 10, 11, 12, 16, 24, 31, 32, 48, 64, 96, 128, 192, 256,
+    ];
+    let seeds = [
+        0u64,
+        1,
+        0x44_52_41_43_4f,
+        0x0202_0100,
+        0xa5a5_a5a5_a5a5_a5a5,
+        0xffff_ffff_ffff_ffff,
+    ];
+
+    for len in lengths {
+        for seed in seeds {
+            let bytes = fill_pseudo_random_bytes(seed, len);
+            assert_both_decoders_do_not_panic(&bytes);
+        }
+    }
+
+    for geometry in [0u8, 1, 2, 255] {
+        for method in [0u8, 1, 2, 3, 255] {
+            for version in [(0, 0), (1, 0), (1, 1), (2, 0), (2, 2), (255, 255)] {
+                let mut bytes = draco_header(version.0, version.1, geometry, method);
+                bytes.extend_from_slice(&1u32.to_le_bytes());
+                bytes.extend_from_slice(&3u32.to_le_bytes());
+                bytes.push(1);
+                bytes.extend_from_slice(&fill_pseudo_random_bytes(
+                    ((geometry as u64) << 32) | ((method as u64) << 16) | version.0 as u64,
+                    64,
+                ));
+                let _ = decode_by_header_without_panic(&bytes);
+            }
+        }
     }
 }
 

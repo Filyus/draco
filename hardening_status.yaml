@@ -43,17 +43,20 @@ completed:
           - "oversized_drc_counts_fail_before_large_allocation"
       - path: "crates/draco-core/src/mesh_decoder.rs"
       - path: "crates/draco-core/src/point_cloud_decoder.rs"
-    note: "Oversized mesh face counts, point-cloud point counts, and impossible attribute counts fail before large allocations where these counts are parsed."
+      - path: "crates/draco-core/src/kd_tree_attributes_decoder.rs"
+      - path: "crates/draco-core/src/dynamic_integer_points_kd_tree.rs"
+    note: "Oversized mesh face counts, sequential/KD-tree point-cloud point counts, and impossible attribute counts fail before large allocations where these counts are parsed."
 
   - id: attribute-descriptor-validation
     status: covered
     evidence:
       - path: "crates/draco-core/src/draco_types.rs"
       - path: "crates/draco-core/src/geometry_attribute.rs"
+      - path: "crates/draco-core/src/kd_tree_attributes_decoder.rs"
       - path: "crates/draco-core/tests/drc_edge_cases_test.rs"
         tests:
           - "semantically_invalid_drc_payloads_fail_without_panic"
-    note: "Invalid attribute type ids, invalid data type ids, zero-component attributes, and impossible attribute counts are rejected instead of silently constructing invalid descriptors."
+    note: "Invalid attribute type ids, invalid data type ids, zero-component attributes, impossible attribute counts, and impossible KD-tree attribute descriptor counts are rejected instead of silently constructing invalid descriptors."
 
   - id: edgebreaker-attribute-seam-bounds
     status: covered
@@ -107,8 +110,8 @@ completed:
 open_risks:
   - id: no-sustained-fuzzing
     priority: high
-    summary: "There is no sustained fuzz/property harness that feeds arbitrary bytes into MeshDecoder and PointCloudDecoder."
-    why_it_matters: "Deterministic mutations and hand-written malformed cases catch known classes, but hostile inputs can combine format sections in unexpected ways."
+    summary: "There is deterministic no-panic mutation coverage, but no sustained fuzz/property harness that continuously feeds arbitrary bytes into MeshDecoder and PointCloudDecoder."
+    why_it_matters: "Deterministic mutations, synthetic byte streams, and hand-written malformed cases catch known classes, but hostile inputs can combine format sections in unexpected ways."
     next_steps:
       - "Add a small fuzz/property entrypoint that asserts decode never panics for arbitrary byte slices."
       - "Seed it with supported fixtures and current malformed edge cases."

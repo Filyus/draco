@@ -60,44 +60,42 @@ impl KdTreeAttributesDecoder {
             Ok(v) => v as usize,
             Err(_) => return false,
         };
+        // Attribute descriptor minimum is 5 bytes: four one-byte fields
+        // (type, data_type, num_components, normalized) plus at least one
+        // byte for the unique_id varint, even when the id is zero.
+        const MIN_ATTRIBUTE_DESCRIPTOR_BYTES: usize = 5;
+        if num_attributes == 0
+            || num_attributes > in_buffer.remaining_size() / MIN_ATTRIBUTE_DESCRIPTOR_BYTES
+        {
+            return false;
+        }
 
         for _ in 0..num_attributes {
             let att_type_val = match in_buffer.decode_u8() {
                 Ok(v) => v,
                 Err(_) => return false,
             };
-            let att_type = match att_type_val {
-                0 => GeometryAttributeType::Position,
-                1 => GeometryAttributeType::Normal,
-                2 => GeometryAttributeType::Color,
-                3 => GeometryAttributeType::TexCoord,
-                4 => GeometryAttributeType::Generic,
-                _ => GeometryAttributeType::Invalid,
+            let att_type = match GeometryAttributeType::try_from(att_type_val) {
+                Ok(v) => v,
+                Err(_) => return false,
             };
 
             let data_type_val = match in_buffer.decode_u8() {
                 Ok(v) => v,
                 Err(_) => return false,
             };
-            let data_type = match data_type_val {
-                1 => DataType::Int8,
-                2 => DataType::Uint8,
-                3 => DataType::Int16,
-                4 => DataType::Uint16,
-                5 => DataType::Int32,
-                6 => DataType::Uint32,
-                7 => DataType::Int64,
-                8 => DataType::Uint64,
-                9 => DataType::Float32,
-                10 => DataType::Float64,
-                11 => DataType::Bool,
-                _ => DataType::Invalid,
+            let data_type = match DataType::try_from(data_type_val) {
+                Ok(v) => v,
+                Err(_) => return false,
             };
 
             let num_components = match in_buffer.decode_u8() {
                 Ok(v) => v,
                 Err(_) => return false,
             };
+            if num_components == 0 {
+                return false;
+            }
             let normalized = match in_buffer.decode_u8() {
                 Ok(v) => v != 0,
                 Err(_) => return false,
@@ -108,13 +106,18 @@ impl KdTreeAttributesDecoder {
             };
 
             let mut att = PointAttribute::new();
-            att.init(
-                att_type,
-                num_components,
-                data_type,
-                normalized,
-                point_cloud.num_points(),
-            );
+            if att
+                .try_init(
+                    att_type,
+                    num_components,
+                    data_type,
+                    normalized,
+                    point_cloud.num_points(),
+                )
+                .is_err()
+            {
+                return false;
+            }
             att.set_unique_id(unique_id);
 
             let att_id = point_cloud.add_attribute(att);
@@ -156,6 +159,9 @@ impl KdTreeAttributesDecoder {
             Ok(v) => v,
             Err(_) => return false,
         };
+        if compression_level > 6 {
+            return false;
+        }
 
         let mut total_dimensionality: usize = 0;
         let mut float_specs: Vec<(i32, usize, usize)> = Vec::new();
@@ -186,11 +192,21 @@ impl KdTreeAttributesDecoder {
                 }
                 _ => return false,
             }
-            total_dimensionality += num_components;
+            total_dimensionality = match total_dimensionality.checked_add(num_components) {
+                Some(v) => v,
+                None => return false,
+            };
+        }
+        if total_dimensionality == 0 {
+            return false;
         }
 
+        let total_dimensionality_u32 = match u32::try_from(total_dimensionality) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
         let mut decoder =
-            DynamicIntegerPointsKdTreeDecoder::new(compression_level, total_dimensionality as u32);
+            DynamicIntegerPointsKdTreeDecoder::new(compression_level, total_dimensionality_u32);
         let decoded = match decoder.decode_points(in_buffer, num_expected_points as u32) {
             Some(v) => v,
             None => return false,
@@ -198,7 +214,11 @@ impl KdTreeAttributesDecoder {
         if decoder.num_decoded_points() as usize != num_expected_points {
             return false;
         }
-        if decoded.len() != num_expected_points * total_dimensionality {
+        let Some(expected_decoded_len) = num_expected_points.checked_mul(total_dimensionality)
+        else {
+            return false;
+        };
+        if decoded.len() != expected_decoded_len {
             return false;
         }
 
@@ -206,13 +226,18 @@ impl KdTreeAttributesDecoder {
         for (att_id, offset, num_components) in float_specs {
             let att = point_cloud.attribute(att_id);
             let mut portable = PointAttribute::default();
-            portable.init(
-                att.attribute_type(),
-                att.num_components(),
-                DataType::Uint32,
-                false,
-                num_expected_points,
-            );
+            if portable
+                .try_init(
+                    att.attribute_type(),
+                    att.num_components(),
+                    DataType::Uint32,
+                    false,
+                    num_expected_points,
+                )
+                .is_err()
+            {
+                return false;
+            }
             portable.set_identity_mapping();
 
             write_u32_components_from_decoded(
