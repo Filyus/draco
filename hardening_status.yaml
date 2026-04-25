@@ -115,6 +115,18 @@ completed:
       - path: "crates/draco-core/src/prediction_scheme_constrained_multi_parallelogram.rs"
     note: "Central integer attribute prediction dispatch, point-cloud sequential decode, and core mesh prediction decoders now use explicit missing-state/bounds guards instead of unwraps for selected decode paths."
 
+  - id: bit-and-octahedron-bounds-guards
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/decoder_buffer.rs"
+        tests:
+          - "bit_decode_respects_declared_byte_size"
+      - path: "crates/draco-core/src/attribute_octahedron_transform.rs"
+        tests:
+          - "inverse_transform_rejects_truncated_portable_data"
+          - "generate_portable_attribute_rejects_truncated_source_data"
+    note: "Fast bit decoding now respects the declared bitstream byte window without unwraps, and octahedron attribute transforms reject truncated source/portable buffers instead of relying on unchecked slices."
+
 open_risks:
   - id: no-sustained-fuzzing
     priority: high
@@ -144,8 +156,8 @@ open_risks:
 
   - id: decode-path-indexing-audit
     priority: medium
-    summary: "A final audit is still needed for unchecked indexing and DataBuffer reads reachable from decode-side attribute transforms."
-    why_it_matters: "Many obvious prediction unwraps are now guarded, but slice/indexing panics can still hide in lower-level attribute or buffer helpers."
+    summary: "A final audit is still needed for unchecked indexing and DataBuffer reads reachable from lower-level decode helpers."
+    why_it_matters: "Many obvious prediction unwraps and octahedron transform slices are now guarded, but slice/indexing panics can still hide in lower-level attribute or buffer helpers."
     next_steps:
       - "Audit decoder-facing DataBuffer::read/write callers and attribute transform offsets."
       - "Prefer local bounds checks or fallible helper variants where malformed input can control offsets."

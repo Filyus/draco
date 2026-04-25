@@ -138,7 +138,12 @@ impl<'a> DecoderBuffer<'a> {
         self.bit_sequence_size_known = decode_size;
 
         if decode_size {
-            self.bit_stream_end_pos = self.bit_start_pos + size_bytes as usize;
+            let size_bytes = usize::try_from(size_bytes)
+                .map_err(|_| DracoError::BufferError("Bit stream size too large".into()))?;
+            self.bit_stream_end_pos =
+                self.bit_start_pos.checked_add(size_bytes).ok_or_else(|| {
+                    DracoError::BufferError("Bit stream end position overflow".into())
+                })?;
         } else {
             // If size is not encoded, assume the rest of the buffer.
             self.bit_stream_end_pos = self.data.len();
@@ -185,16 +190,18 @@ impl<'a> DecoderBuffer<'a> {
         let byte_offset = self.bit_start_pos + total_bit_offset / 8;
         let bit_shift = (total_bit_offset % 8) as u32;
 
-        let remaining = self.data.len() - byte_offset;
-        if byte_offset >= self.bit_stream_end_pos || remaining == 0 {
+        if byte_offset >= self.bit_stream_end_pos || byte_offset >= self.data.len() {
             return Err(DracoError::BufferError(
                 "Unexpected end of bit stream".into(),
             ));
         }
+        let available_end = self.bit_stream_end_pos.min(self.data.len());
+        let remaining = available_end - byte_offset;
 
         // Fast path: read 8 bytes at once when enough data remains (avoids per-byte loop).
         let raw = if remaining >= 8 {
-            let bytes: [u8; 8] = self.data[byte_offset..byte_offset + 8].try_into().unwrap();
+            let mut bytes = [0u8; 8];
+            bytes.copy_from_slice(&self.data[byte_offset..byte_offset + 8]);
             u64::from_le_bytes(bytes)
         } else {
             let needed_bytes = ((bit_shift + nbits + 7) / 8) as usize;
@@ -392,5 +399,19 @@ impl<'a> DecoderBuffer<'a> {
         let slice = &self.data[self.pos..self.pos + size];
         self.pos += size;
         Ok(slice)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DecoderBuffer;
+
+    #[test]
+    fn bit_decode_respects_declared_byte_size() {
+        let data = [1, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+        let mut buffer = DecoderBuffer::new(&data);
+
+        assert_eq!(buffer.start_bit_decoding(true).unwrap(), 1);
+        assert!(buffer.decode_least_significant_bits32(16).is_err());
     }
 }
