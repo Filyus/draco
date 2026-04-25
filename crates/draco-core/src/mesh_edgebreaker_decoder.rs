@@ -94,12 +94,17 @@ impl MeshEdgebreakerDecoder {
         self.traversal_decoder_type = in_buffer.decode_u8().map_err(|_| {
             DracoError::DracoError("Failed to read traversal decoder type".to_string())
         })?;
-        // Type 0 = Standard, Type 1 = Predictive, Type 2 = Valence
+        // Type 0 = Standard, Type 1 = Predictive (deprecated), Type 2 = Valence.
         if self.traversal_decoder_type > 2 {
             return Err(DracoError::DracoError(format!(
                 "Unsupported Edgebreaker traversal decoder type: {}",
                 self.traversal_decoder_type
             )));
+        }
+        if self.traversal_decoder_type == 1 {
+            return Err(DracoError::UnsupportedFeature(
+                "Edgebreaker predictive traversal decode is not supported".to_string(),
+            ));
         }
         if self.traversal_decoder_type == 2 && !cfg!(feature = "edgebreaker_valence") {
             return Err(DracoError::DracoError(
@@ -1114,5 +1119,28 @@ impl<'a> EdgebreakerTraversalDecoder for InternalTraversalDecoder<'a> {
         // Matches C++ MeshEdgebreakerDecoderImpl::processed_connectivity_corners_:
         // store corners in the order they were visited during connectivity decoding.
         self.processed_connectivity_corners.push(corner.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn predictive_traversal_type_is_rejected_explicitly() {
+        let mut buffer = DecoderBuffer::new(&[1]);
+        let mut decoder = MeshEdgebreakerDecoder::new();
+        let mut mesh = Mesh::new();
+
+        let err = decoder
+            .decode_connectivity(&mut buffer, &mut mesh)
+            .expect_err("predictive traversal should be rejected before payload decode");
+
+        assert_eq!(
+            err,
+            DracoError::UnsupportedFeature(
+                "Edgebreaker predictive traversal decode is not supported".to_string()
+            )
+        );
     }
 }
