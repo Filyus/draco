@@ -9,20 +9,13 @@ default = [
     "decoder",
     "point_cloud_decode",
     "edgebreaker_valence",
-    "backwards_compat_decode",
+    "legacy_bitstream_decode",
 ]
 encoder = []
 decoder = []
 point_cloud_decode = ["decoder"]
 edgebreaker_valence = []
-backwards_compat_decode = [
-    "deprecated_multi_parallelogram_decode",
-    "deprecated_tex_coords_prediction",
-    "legacy_bitstream_decode",
-]
 legacy_bitstream_decode = ["decoder"]
-deprecated_multi_parallelogram_decode = ["decoder"]
-deprecated_tex_coords_prediction = ["decoder"]
 debug_logs = []
 force_sequential_seeds = []
 

@@ -13,11 +13,11 @@ use crate::prediction_scheme::{
 use crate::prediction_scheme_constrained_multi_parallelogram::MeshPredictionSchemeConstrainedMultiParallelogramDecoder;
 use crate::prediction_scheme_delta::PredictionSchemeDeltaDecoder;
 use crate::prediction_scheme_geometric_normal::MeshPredictionSchemeGeometricNormalDecoder;
-#[cfg(feature = "deprecated_multi_parallelogram_decode")]
+#[cfg(feature = "legacy_bitstream_decode")]
 use crate::prediction_scheme_multi_parallelogram::MeshPredictionSchemeMultiParallelogramDecoder;
 use crate::prediction_scheme_normal_octahedron_canonicalized_decoding_transform::PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform;
 use crate::prediction_scheme_parallelogram::MeshPredictionSchemeParallelogramDecoder;
-#[cfg(feature = "deprecated_tex_coords_prediction")]
+#[cfg(feature = "legacy_bitstream_decode")]
 use crate::prediction_scheme_tex_coords_deprecated::MeshPredictionSchemeTexCoordsDeprecatedDecoder;
 use crate::prediction_scheme_tex_coords_portable::MeshPredictionSchemeTexCoordsPortableDecoder;
 use crate::prediction_scheme_wrap::PredictionSchemeWrapDecodingTransform;
@@ -164,7 +164,7 @@ impl SequentialIntegerAttributeDecoder {
                 PredictionSchemeWrapDecodingTransform<i32>,
             >,
         > = None;
-        #[cfg(feature = "deprecated_multi_parallelogram_decode")]
+        #[cfg(feature = "legacy_bitstream_decode")]
         let mut predictor_multi_parallelogram_opt: Option<
             MeshPredictionSchemeMultiParallelogramDecoder<
                 '_,
@@ -181,7 +181,7 @@ impl SequentialIntegerAttributeDecoder {
                 PredictionSchemeWrapDecodingTransform<i32>,
             >,
         > = None;
-        #[cfg(feature = "deprecated_tex_coords_prediction")]
+        #[cfg(feature = "legacy_bitstream_decode")]
         let mut predictor_tex_coords_deprecated_opt: Option<
             MeshPredictionSchemeTexCoordsDeprecatedDecoder<
                 '_,
@@ -287,7 +287,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
-            #[cfg(feature = "deprecated_multi_parallelogram_decode")]
+            #[cfg(feature = "legacy_bitstream_decode")]
             PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
                 if let Some(corner_table) = corner_table {
                     data_to_corner_map.resize(num_points, 0);
@@ -351,7 +351,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
-            #[cfg(not(feature = "deprecated_multi_parallelogram_decode"))]
+            #[cfg(not(feature = "legacy_bitstream_decode"))]
             PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
                 eprintln!("MultiParallelogram prediction is disabled");
                 return false;
@@ -427,7 +427,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
-            #[cfg(feature = "deprecated_tex_coords_prediction")]
+            #[cfg(feature = "legacy_bitstream_decode")]
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
                 if let Some(corner_table) = corner_table {
                     data_to_corner_map.resize(num_points, 0);
@@ -508,7 +508,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
-            #[cfg(not(feature = "deprecated_tex_coords_prediction"))]
+            #[cfg(not(feature = "legacy_bitstream_decode"))]
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
                 eprintln!("TexCoordsDeprecated prediction is disabled");
                 return false;
@@ -835,7 +835,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
-            #[cfg(feature = "deprecated_multi_parallelogram_decode")]
+            #[cfg(feature = "legacy_bitstream_decode")]
             PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
                 let predictor = predictor_multi_parallelogram_opt.as_mut().unwrap();
                 if !predictor.decode_prediction_data(in_buffer) {
@@ -846,7 +846,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
-            #[cfg(not(feature = "deprecated_multi_parallelogram_decode"))]
+            #[cfg(not(feature = "legacy_bitstream_decode"))]
             PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
                 eprintln!("MultiParallelogram prediction is disabled");
                 return false;
@@ -863,7 +863,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
-            #[cfg(feature = "deprecated_tex_coords_prediction")]
+            #[cfg(feature = "legacy_bitstream_decode")]
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
                 let predictor = predictor_tex_coords_deprecated_opt.as_mut().unwrap();
                 if !predictor.decode_prediction_data(in_buffer) {
@@ -874,7 +874,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
-            #[cfg(not(feature = "deprecated_tex_coords_prediction"))]
+            #[cfg(not(feature = "legacy_bitstream_decode"))]
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
                 eprintln!("TexCoordsDeprecated prediction is disabled");
                 return false;
@@ -982,7 +982,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
-            #[cfg(feature = "deprecated_multi_parallelogram_decode")]
+            #[cfg(feature = "legacy_bitstream_decode")]
             PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
                 let predictor = predictor_multi_parallelogram_opt.as_mut().unwrap();
                 if !predictor.compute_original_values(
@@ -999,7 +999,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
-            #[cfg(not(feature = "deprecated_multi_parallelogram_decode"))]
+            #[cfg(not(feature = "legacy_bitstream_decode"))]
             PredictionSchemeMethod::MeshPredictionMultiParallelogram => {
                 eprintln!("MultiParallelogram prediction is disabled");
                 return false;
@@ -1022,7 +1022,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
-            #[cfg(feature = "deprecated_tex_coords_prediction")]
+            #[cfg(feature = "legacy_bitstream_decode")]
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
                 let predictor = predictor_tex_coords_deprecated_opt.as_mut().unwrap();
                 if !predictor.compute_original_values(
@@ -1041,7 +1041,7 @@ impl SequentialIntegerAttributeDecoder {
                     return false;
                 }
             }
-            #[cfg(not(feature = "deprecated_tex_coords_prediction"))]
+            #[cfg(not(feature = "legacy_bitstream_decode"))]
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
                 eprintln!("TexCoordsDeprecated prediction is disabled");
                 return false;
