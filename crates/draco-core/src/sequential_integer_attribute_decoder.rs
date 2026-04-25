@@ -693,8 +693,6 @@ impl SequentialIntegerAttributeDecoder {
             Err(_) => return false,
         };
 
-        let mut symbols = vec![0u32; num_values];
-
         // Check if the prediction scheme produces positive corrections (no ZigZag needed)
         // Octahedron transforms (for normals) produce positive corrections
         let are_corrections_positive = match selected_transform {
@@ -710,11 +708,11 @@ impl SequentialIntegerAttributeDecoder {
             }
         };
 
-        let needs_zigzag_conversion;
-        if compressed > 0 {
+        let needs_zigzag_conversion = !are_corrections_positive;
+        let corrections: Vec<i32> = if compressed > 0 {
             // Entropy-coded symbols are zigzag encoded UNLESS the prediction scheme
             // guarantees positive corrections (e.g., normal octahedron transform)
-            needs_zigzag_conversion = !are_corrections_positive;
+            let mut symbols = vec![0u32; num_values];
             let options = SymbolEncodingOptions::default();
             if !decode_symbols(
                 num_values,
@@ -725,11 +723,10 @@ impl SequentialIntegerAttributeDecoder {
             ) {
                 return false;
             }
+            symbols_to_corrections(symbols, needs_zigzag_conversion)
         } else {
             // Raw uncompressed integers. Read directly as bytes.
             // ZigZag conversion is needed unless the scheme guarantees positive corrections.
-            needs_zigzag_conversion = !are_corrections_positive;
-
             let num_bytes = match in_buffer.decode_u8() {
                 Ok(v) => v as usize,
                 Err(_) => return false,
@@ -738,34 +735,33 @@ impl SequentialIntegerAttributeDecoder {
                 return false;
             }
 
+            let mut raw_corrections = Vec::with_capacity(num_values);
             if num_bytes == 0 {
                 // All values are zero — nothing to read from the buffer.
+                raw_corrections.resize(num_values, 0);
             } else if num_bytes == 4 {
-                for s in &mut symbols {
-                    *s = match in_buffer.decode_u32() {
-                        Ok(v) => v,
-                        Err(_) => return false,
-                    };
+                let Some(byte_len) = num_values.checked_mul(4) else {
+                    return false;
+                };
+                let bytes = match in_buffer.decode_slice(byte_len) {
+                    Ok(bytes) => bytes,
+                    Err(_) => return false,
+                };
+                for chunk in bytes.chunks_exact(4) {
+                    let symbol = u32::from_le_bytes(chunk.try_into().unwrap());
+                    raw_corrections.push(symbol_to_correction(symbol, needs_zigzag_conversion));
                 }
             } else {
-                for s in &mut symbols {
+                for _ in 0..num_values {
                     let mut tmp = [0u8; 4];
                     if in_buffer.decode_bytes(&mut tmp[..num_bytes]).is_err() {
                         return false;
                     }
-                    *s = u32::from_le_bytes(tmp);
+                    let symbol = u32::from_le_bytes(tmp);
+                    raw_corrections.push(symbol_to_correction(symbol, needs_zigzag_conversion));
                 }
             }
-        }
-
-        // 2. Convert symbols to signed corrections in-place.
-        let corrections: Vec<i32> = if needs_zigzag_conversion {
-            symbols
-                .into_iter()
-                .map(|s| ((s >> 1) as i32) ^ (-((s & 1) as i32)))
-                .collect()
-        } else {
-            symbols.into_iter().map(|s| s as i32).collect()
+            raw_corrections
         };
 
         // Initialize values array that will be computed by prediction schemes
@@ -1078,6 +1074,23 @@ impl SequentialIntegerAttributeDecoder {
 
         true
     }
+}
+
+#[inline]
+fn symbol_to_correction(symbol: u32, needs_zigzag_conversion: bool) -> i32 {
+    if needs_zigzag_conversion {
+        ((symbol >> 1) as i32) ^ (-((symbol & 1) as i32))
+    } else {
+        symbol as i32
+    }
+}
+
+#[inline]
+fn symbols_to_corrections(symbols: Vec<u32>, needs_zigzag_conversion: bool) -> Vec<i32> {
+    symbols
+        .into_iter()
+        .map(|symbol| symbol_to_correction(symbol, needs_zigzag_conversion))
+        .collect()
 }
 
 /// Store decoded i32 values into an attribute buffer.
