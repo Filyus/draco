@@ -45,6 +45,11 @@ impl<'a> RAnsSymbolDecoder<'a> {
         let bitstream_version =
             ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
         let num_symbols = if bitstream_version < 0x0200 {
+            #[cfg(not(feature = "legacy_bitstream_decode"))]
+            {
+                return false;
+            }
+            #[cfg(feature = "legacy_bitstream_decode")]
             match buffer.decode_u32() {
                 Ok(v) => v as usize,
                 Err(_) => return false,
@@ -131,6 +136,11 @@ impl<'a> RAnsSymbolDecoder<'a> {
         let bitstream_version =
             ((buffer.version_major() as u16) << 8) | (buffer.version_minor() as u16);
         let bytes_to_read = if bitstream_version < 0x0200 {
+            #[cfg(not(feature = "legacy_bitstream_decode"))]
+            {
+                return false;
+            }
+            #[cfg(feature = "legacy_bitstream_decode")]
             match buffer.decode::<u64>() {
                 Ok(v) => v as usize,
                 Err(_) => return false,

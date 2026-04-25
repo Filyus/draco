@@ -304,9 +304,16 @@ impl MeshDecoder {
             // C++ MeshSequentialDecoder uses raw u32 for v < 2.2, varint for v >= 2.2
             let seq_uses_varint = version_at_least(self.version_major, self.version_minor, (2, 2));
             let (num_faces, num_points) = if !seq_uses_varint {
-                let nf = buffer.decode_u32()? as usize;
-                let np = buffer.decode_u32()? as usize;
-                (nf, np)
+                #[cfg(not(feature = "legacy_bitstream_decode"))]
+                {
+                    return Err(DracoError::BitstreamVersionUnsupported);
+                }
+                #[cfg(feature = "legacy_bitstream_decode")]
+                {
+                    let nf = buffer.decode_u32()? as usize;
+                    let np = buffer.decode_u32()? as usize;
+                    (nf, np)
+                }
             } else {
                 let nf = buffer.decode_varint()? as usize;
                 let np = buffer.decode_varint()? as usize;
@@ -685,6 +692,8 @@ impl MeshDecoder {
                 // DEPTH_FIRST (0).
                 if bitstream_version >= 0x0102 {
                     traversal_method_by_decoder[i] = buffer.decode_u8()?;
+                } else if !cfg!(feature = "legacy_bitstream_decode") {
+                    return Err(DracoError::BitstreamVersionUnsupported);
                 }
             }
         }
@@ -696,6 +705,9 @@ impl MeshDecoder {
 
         for _ in 0..num_attributes_decoders {
             let num_attributes_in_decoder: usize = if bitstream_version < 0x0200 {
+                if !cfg!(feature = "legacy_bitstream_decode") {
+                    return Err(DracoError::BitstreamVersionUnsupported);
+                }
                 buffer.decode_u32()? as usize
             } else {
                 buffer.decode_varint()? as usize
@@ -721,6 +733,9 @@ impl MeshDecoder {
                 validate_num_components(num_components)?;
                 let normalized = buffer.decode_u8()? != 0;
                 let unique_id: u32 = if bitstream_version < 0x0103 {
+                    if !cfg!(feature = "legacy_bitstream_decode") {
+                        return Err(DracoError::BitstreamVersionUnsupported);
+                    }
                     buffer.decode_u16()? as u32
                 } else {
                     buffer.decode_varint()? as u32
@@ -976,40 +991,49 @@ impl MeshDecoder {
                             false,
                             point_ids_for_values.len(),
                         )?;
+                        #[allow(unused_mut)]
                         let mut transform = AttributeQuantizationTransform::new();
                         // Legacy compatibility shim: C++ bitstreams with version < 2.0 store
                         // quantization params before the integer values, while v2.0+ stores
                         // them after the values. Rust-generated files never use the legacy
                         // layout, so this peek-ahead only exists to decode genuine old C++ files.
                         let quant_skip_bytes = if bitstream_version < 0x0200 {
-                            let saved_pos = buffer.position();
-                            let method_byte = buffer.decode_u8().map_err(|_| {
-                                DracoError::DracoError(
-                                    "Failed to read prediction method".to_string(),
-                                )
-                            })?;
-                            if method_byte != 0xFF {
-                                let _transform_byte = buffer.decode_u8().map_err(|_| {
+                            #[cfg(not(feature = "legacy_bitstream_decode"))]
+                            {
+                                return Err(DracoError::BitstreamVersionUnsupported);
+                            }
+                            #[cfg(feature = "legacy_bitstream_decode")]
+                            {
+                                let saved_pos = buffer.position();
+                                let method_byte = buffer.decode_u8().map_err(|_| {
                                     DracoError::DracoError(
-                                        "Failed to read transform type".to_string(),
+                                        "Failed to read prediction method".to_string(),
                                     )
                                 })?;
+                                if method_byte != 0xFF {
+                                    let _transform_byte = buffer.decode_u8().map_err(|_| {
+                                        DracoError::DracoError(
+                                            "Failed to read transform type".to_string(),
+                                        )
+                                    })?;
+                                }
+                                let original = mesh.attribute(att_id);
+                                if !transform.decode_parameters(original, buffer) {
+                                    return Err(DracoError::DracoError(
+                                        "Failed to decode quantization parameters (v<2.0)"
+                                            .to_string(),
+                                    ));
+                                }
+                                let bytes_consumed = buffer.position() - saved_pos;
+                                let pred_header_bytes = if method_byte != 0xFF { 2 } else { 1 };
+                                let skip = bytes_consumed - pred_header_bytes;
+                                buffer.set_position(saved_pos).map_err(|_| {
+                                    DracoError::DracoError(
+                                        "Failed to reset buffer position".to_string(),
+                                    )
+                                })?;
+                                skip
                             }
-                            let original = mesh.attribute(att_id);
-                            if !transform.decode_parameters(original, buffer) {
-                                return Err(DracoError::DracoError(
-                                    "Failed to decode quantization parameters (v<2.0)".to_string(),
-                                ));
-                            }
-                            let bytes_consumed = buffer.position() - saved_pos;
-                            let pred_header_bytes = if method_byte != 0xFF { 2 } else { 1 };
-                            let skip = bytes_consumed - pred_header_bytes;
-                            buffer.set_position(saved_pos).map_err(|_| {
-                                DracoError::DracoError(
-                                    "Failed to reset buffer position".to_string(),
-                                )
-                            })?;
-                            skip
                         } else {
                             0
                         };
@@ -1070,37 +1094,45 @@ impl MeshDecoder {
                         // Legacy compatibility shim: C++ bitstreams with version < 2.0 store
                         // normal octahedron quantization bits after the prediction header but
                         // before integer values. Rust-generated files never use this layout.
+                        #[allow(unused_mut)]
                         let mut quant_bits: u8 = 0;
                         let normal_skip_bytes = if bitstream_version < 0x0200 {
-                            let saved_pos = buffer.position();
-                            // Skip prediction_method + transform_type
-                            let method_byte = buffer.decode_u8().map_err(|_| {
-                                DracoError::DracoError(
-                                    "Failed to read prediction method".to_string(),
-                                )
-                            })?;
-                            if method_byte != 0xFF {
-                                let _transform_byte = buffer.decode_u8().map_err(|_| {
+                            #[cfg(not(feature = "legacy_bitstream_decode"))]
+                            {
+                                return Err(DracoError::BitstreamVersionUnsupported);
+                            }
+                            #[cfg(feature = "legacy_bitstream_decode")]
+                            {
+                                let saved_pos = buffer.position();
+                                // Skip prediction_method + transform_type
+                                let method_byte = buffer.decode_u8().map_err(|_| {
                                     DracoError::DracoError(
-                                        "Failed to read transform type".to_string(),
+                                        "Failed to read prediction method".to_string(),
                                     )
                                 })?;
+                                if method_byte != 0xFF {
+                                    let _transform_byte = buffer.decode_u8().map_err(|_| {
+                                        DracoError::DracoError(
+                                            "Failed to read transform type".to_string(),
+                                        )
+                                    })?;
+                                }
+                                // Read quant_bits at the correct position
+                                quant_bits = buffer.decode_u8().map_err(|_| {
+                                    DracoError::DracoError(
+                                        "Failed to read normal quant_bits".to_string(),
+                                    )
+                                })?;
+                                let bytes_consumed = buffer.position() - saved_pos;
+                                let pred_header_bytes = if method_byte != 0xFF { 2 } else { 1 };
+                                let skip = bytes_consumed - pred_header_bytes;
+                                buffer.set_position(saved_pos).map_err(|_| {
+                                    DracoError::DracoError(
+                                        "Failed to reset buffer position".to_string(),
+                                    )
+                                })?;
+                                skip
                             }
-                            // Read quant_bits at the correct position
-                            quant_bits = buffer.decode_u8().map_err(|_| {
-                                DracoError::DracoError(
-                                    "Failed to read normal quant_bits".to_string(),
-                                )
-                            })?;
-                            let bytes_consumed = buffer.position() - saved_pos;
-                            let pred_header_bytes = if method_byte != 0xFF { 2 } else { 1 };
-                            let skip = bytes_consumed - pred_header_bytes;
-                            buffer.set_position(saved_pos).map_err(|_| {
-                                DracoError::DracoError(
-                                    "Failed to reset buffer position".to_string(),
-                                )
-                            })?;
-                            skip
                         } else {
                             0
                         };

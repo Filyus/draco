@@ -31,6 +31,11 @@ impl<'a> RAnsBitDecoder<'a> {
         let bitstream_version =
             ((source_buffer.version_major() as u16) << 8) | (source_buffer.version_minor() as u16);
         let size: u32 = if bitstream_version < 0x0202 {
+            #[cfg(not(feature = "legacy_bitstream_decode"))]
+            {
+                return false;
+            }
+            #[cfg(feature = "legacy_bitstream_decode")]
             match source_buffer.decode::<u32>() {
                 Ok(v) => v,
                 Err(_) => return false,

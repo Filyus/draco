@@ -86,6 +86,9 @@ impl MeshEdgebreakerDecoder {
         let version_major = in_buffer.version_major();
         let version_minor = in_buffer.version_minor();
         let bitstream_version = ((version_major as u16) << 8) | (version_minor as u16);
+        if bitstream_version < 0x0202 && !cfg!(feature = "legacy_bitstream_decode") {
+            return Err(DracoError::BitstreamVersionUnsupported);
+        }
 
         // Traversal decoder type is always present (C++ reads unconditionally in InitializeDecoder).
         self.traversal_decoder_type = in_buffer.decode_u8().map_err(|_| {

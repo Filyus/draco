@@ -123,6 +123,9 @@ impl<'a> DecoderBuffer<'a> {
         let mut size_bytes: u64 = 0;
         if decode_size {
             if bitstream_version < 0x0202 {
+                if !cfg!(feature = "legacy_bitstream_decode") {
+                    return Err(DracoError::BitstreamVersionUnsupported);
+                }
                 size_bytes = self.decode_u64()?;
             } else {
                 size_bytes = self.decode_varint()?;
