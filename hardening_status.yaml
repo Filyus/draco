@@ -177,6 +177,15 @@ completed:
           - "set_parameter_value_ignores_overflowing_offset"
     note: "Attribute transform metadata parameter access now uses checked offset arithmetic plus fallible DataBuffer reads/resizes/writes, avoiding overflow-prone direct buffer indexing."
 
+  - id: quantization-inverse-transform-buffer-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/attribute_quantization_transform.rs"
+        tests:
+          - "inverse_quantization_rejects_truncated_source_buffer"
+          - "inverse_quantization_rejects_short_min_values"
+    note: "Quantization inverse transform now validates transform parameter dimensionality and uses checked offsets with fallible source reads and target writes while reconstructing float attributes."
+
 open_risks:
   - id: no-sustained-fuzzing
     priority: high

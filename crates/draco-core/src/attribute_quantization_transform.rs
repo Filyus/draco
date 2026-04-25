@@ -349,29 +349,48 @@ impl AttributeTransform for AttributeQuantizationTransform {
         }
 
         let num_components = target_attribute.num_components() as usize;
+        if self.min_values.len() < num_components {
+            return false;
+        }
         let num_values = target_attribute.size();
 
-        let src_data = attribute.buffer().data();
-        let dst_stride = target_attribute.byte_stride() as usize;
-        let src_stride = attribute.byte_stride() as usize;
-        let dst_data = target_attribute.buffer_mut().data_mut();
+        let Ok(dst_stride) = usize::try_from(target_attribute.byte_stride()) else {
+            return false;
+        };
+        let Ok(src_stride) = usize::try_from(attribute.byte_stride()) else {
+            return false;
+        };
+        let src_buffer = attribute.buffer();
+        let dst_buffer = target_attribute.buffer_mut();
 
         for i in 0..num_values {
-            let src_offset = i * src_stride;
-            let dst_offset = i * dst_stride;
+            let Some(src_offset) = i.checked_mul(src_stride) else {
+                return false;
+            };
+            let Some(dst_offset) = i.checked_mul(dst_stride) else {
+                return false;
+            };
 
             for c in 0..num_components {
-                let src_pos = src_offset + c * 4;
-                let q_val = i32::from_le_bytes([
-                    src_data[src_pos],
-                    src_data[src_pos + 1],
-                    src_data[src_pos + 2],
-                    src_data[src_pos + 3],
-                ]);
+                let Some(component_offset) = c.checked_mul(4) else {
+                    return false;
+                };
+                let Some(src_pos) = src_offset.checked_add(component_offset) else {
+                    return false;
+                };
+                let mut q_bytes = [0u8; 4];
+                if !src_buffer.try_read(src_pos, &mut q_bytes) {
+                    return false;
+                }
+                let q_val = i32::from_le_bytes(q_bytes);
 
                 let val = dequantizer.dequantize_float(q_val) + self.min_values[c];
-                let dst_pos = dst_offset + c * 4;
-                dst_data[dst_pos..dst_pos + 4].copy_from_slice(&val.to_le_bytes());
+                let Some(dst_pos) = dst_offset.checked_add(component_offset) else {
+                    return false;
+                };
+                if !dst_buffer.try_write(dst_pos, &val.to_le_bytes()) {
+                    return false;
+                }
             }
         }
 
@@ -430,5 +449,64 @@ impl AttributeTransform for AttributeQuantizationTransform {
 
     fn get_transformed_num_components(&self, attribute: &PointAttribute) -> i32 {
         attribute.num_components() as i32
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
+
+    #[test]
+    fn inverse_quantization_rejects_truncated_source_buffer() {
+        let mut source = PointAttribute::new();
+        source.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Uint32,
+            false,
+            1,
+        );
+        source.buffer_mut().write(0, &1u32.to_le_bytes());
+        source.buffer_mut().write(4, &2u32.to_le_bytes());
+        source.buffer_mut().resize(8);
+
+        let mut target = PointAttribute::new();
+        target.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Float32,
+            false,
+            1,
+        );
+
+        let mut transform = AttributeQuantizationTransform::new();
+        assert!(transform.set_parameters(10, &[0.0, 0.0, 0.0], 1.0));
+        assert!(!transform.inverse_transform_attribute(&source, &mut target));
+    }
+
+    #[test]
+    fn inverse_quantization_rejects_short_min_values() {
+        let mut source = PointAttribute::new();
+        source.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Uint32,
+            false,
+            1,
+        );
+
+        let mut target = PointAttribute::new();
+        target.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Float32,
+            false,
+            1,
+        );
+
+        let mut transform = AttributeQuantizationTransform::new();
+        assert!(transform.set_parameters(10, &[0.0, 0.0], 1.0));
+        assert!(!transform.inverse_transform_attribute(&source, &mut target));
     }
 }
