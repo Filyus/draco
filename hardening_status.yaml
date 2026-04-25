@@ -168,6 +168,15 @@ completed:
           - "store_i32_values_rejects_impossible_required_size"
     note: "Sequential integer attribute decode now validates decoded value counts, required buffer sizes, and per-component writes before storing reconstructed i32 values into attribute buffers."
 
+  - id: attribute-transform-data-buffer-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/attribute_transform_data.rs"
+        tests:
+          - "get_parameter_value_rejects_overflowing_offset"
+          - "set_parameter_value_ignores_overflowing_offset"
+    note: "Attribute transform metadata parameter access now uses checked offset arithmetic plus fallible DataBuffer reads/resizes/writes, avoiding overflow-prone direct buffer indexing."
+
 open_risks:
   - id: no-sustained-fuzzing
     priority: high
