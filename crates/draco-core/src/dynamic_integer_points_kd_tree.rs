@@ -393,10 +393,7 @@ impl<'a> NumbersDecoder<'a> {
     fn decode_least_significant_bits32(&mut self, nbits: u32, value: &mut u32) -> bool {
         match self {
             NumbersDecoder::Direct(d) => d.decode_least_significant_bits32(nbits, value),
-            NumbersDecoder::RAns(d) => {
-                d.decode_least_significant_bits32(nbits as i32, value);
-                true
-            }
+            NumbersDecoder::RAns(d) => d.decode_least_significant_bits32(nbits as i32, value),
             NumbersDecoder::Folded(d) => d.decode_least_significant_bits32(nbits, value),
         }
     }

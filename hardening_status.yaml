@@ -225,6 +225,16 @@ completed:
       - path: "crates/draco-core/src/dynamic_integer_points_kd_tree.rs"
     note: "Folded bit decode now validates requested bit widths and propagates failure through KD-tree number decode instead of indexing folded decoder slots unchecked."
 
+  - id: rans-bit-decoder-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/rans_bit_decoder.rs"
+        tests:
+          - "decode_least_significant_bits32_rejects_invalid_bit_counts"
+          - "decode_least_significant_bits32_rejects_unstarted_decoder"
+      - path: "crates/draco-core/src/dynamic_integer_points_kd_tree.rs"
+    note: "rANS bit decode now rejects invalid requested bit widths and unstarted decoder state, and KD-tree number decode propagates the failure instead of treating rANS bit reads as infallible."
+
 open_risks:
   - id: no-sustained-fuzzing
     priority: high

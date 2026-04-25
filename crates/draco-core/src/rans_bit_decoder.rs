@@ -74,13 +74,18 @@ impl<'a> RAnsBitDecoder<'a> {
         }
     }
 
-    pub fn decode_least_significant_bits32(&mut self, nbits: i32, value: &mut u32) {
+    pub fn decode_least_significant_bits32(&mut self, nbits: i32, value: &mut u32) -> bool {
+        if nbits <= 0 || nbits > 32 || self.ans_decoder.is_none() {
+            return false;
+        }
+
         // Match Draco C++: accumulate bits MSB-first.
         *value = 0;
         for _ in 0..nbits {
             let bit = self.decode_next_bit();
             *value = (*value << 1) + (bit as u32);
         }
+        true
     }
 
     pub fn end_decoding(&mut self) {
@@ -90,5 +95,29 @@ impl<'a> RAnsBitDecoder<'a> {
     fn clear(&mut self) {
         self.ans_decoder = None;
         self.prob_zero = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_least_significant_bits32_rejects_invalid_bit_counts() {
+        let mut decoder = RAnsBitDecoder::new();
+        let mut value = 123;
+
+        assert!(!decoder.decode_least_significant_bits32(0, &mut value));
+        assert!(!decoder.decode_least_significant_bits32(33, &mut value));
+        assert_eq!(value, 123);
+    }
+
+    #[test]
+    fn decode_least_significant_bits32_rejects_unstarted_decoder() {
+        let mut decoder = RAnsBitDecoder::new();
+        let mut value = 123;
+
+        assert!(!decoder.decode_least_significant_bits32(1, &mut value));
+        assert_eq!(value, 123);
     }
 }
