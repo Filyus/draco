@@ -1706,10 +1706,7 @@ impl MeshEdgebreakerEncoder {
                 self.face_to_symbol_id[fi] = self.last_encoded_symbol_id as u32;
 
                 // New corner reached.
-                #[cfg(feature = "edgebreaker_valence_encode")]
-                if let Some(ref mut ve) = valence_encoder {
-                    ve.new_corner_reached(corner_id);
-                }
+                Self::valence_new_corner_reached(valence_encoder, corner_id);
 
                 let vert_id = corner_table.vertex(corner_id);
                 if vert_id == crate::geometry_indices::INVALID_VERTEX_INDEX {
@@ -1735,14 +1732,12 @@ impl MeshEdgebreakerEncoder {
                             && !self.visited_faces[right_face.0 as usize]
                         {
                             self.symbols.push(EdgebreakerSymbol::Center as u32);
-                            #[cfg(feature = "edgebreaker_valence_encode")]
-                            if let Some(ref mut ve) = valence_encoder {
-                                ve.encode_symbol(
-                                    EdgebreakerSymbol::Center,
-                                    corner_table,
-                                    &self.visited_faces,
-                                );
-                            }
+                            Self::encode_valence_symbol(
+                                valence_encoder,
+                                EdgebreakerSymbol::Center,
+                                corner_table,
+                                &self.visited_faces,
+                            );
                             self.symbol_to_encoder_corner.push(corner_id);
                             corner_id = right_corner;
                             *corner_traversal_stack.last_mut().expect("stack non-empty") =
@@ -1784,28 +1779,24 @@ impl MeshEdgebreakerEncoder {
                         }
                         // End reached.
                         self.symbols.push(EdgebreakerSymbol::End as u32);
-                        #[cfg(feature = "edgebreaker_valence_encode")]
-                        if let Some(ref mut ve) = valence_encoder {
-                            ve.encode_symbol(
-                                EdgebreakerSymbol::End,
-                                corner_table,
-                                &self.visited_faces,
-                            );
-                        }
+                        Self::encode_valence_symbol(
+                            valence_encoder,
+                            EdgebreakerSymbol::End,
+                            corner_table,
+                            &self.visited_faces,
+                        );
                         self.symbol_to_encoder_corner.push(corner_id);
                         corner_traversal_stack.pop();
                         break;
                     } else {
                         // Go to left face (matches TOPOLOGY_R in C++ - Right is visited, so move Left)
                         self.symbols.push(EdgebreakerSymbol::Right as u32);
-                        #[cfg(feature = "edgebreaker_valence_encode")]
-                        if let Some(ref mut ve) = valence_encoder {
-                            ve.encode_symbol(
-                                EdgebreakerSymbol::Right,
-                                corner_table,
-                                &self.visited_faces,
-                            );
-                        }
+                        Self::encode_valence_symbol(
+                            valence_encoder,
+                            EdgebreakerSymbol::Right,
+                            corner_table,
+                            &self.visited_faces,
+                        );
                         self.symbol_to_encoder_corner.push(corner_id);
                         corner_id = left_corner_id;
                         *corner_traversal_stack.last_mut().expect("stack non-empty") = corner_id;
@@ -1820,28 +1811,24 @@ impl MeshEdgebreakerEncoder {
                     }
                     // Go to right face (matches TOPOLOGY_L in C++ - Left is visited, so move Right)
                     self.symbols.push(EdgebreakerSymbol::Left as u32);
-                    #[cfg(feature = "edgebreaker_valence_encode")]
-                    if let Some(ref mut ve) = valence_encoder {
-                        ve.encode_symbol(
-                            EdgebreakerSymbol::Left,
-                            corner_table,
-                            &self.visited_faces,
-                        );
-                    }
+                    Self::encode_valence_symbol(
+                        valence_encoder,
+                        EdgebreakerSymbol::Left,
+                        corner_table,
+                        &self.visited_faces,
+                    );
                     self.symbol_to_encoder_corner.push(corner_id);
                     corner_id = right_corner_id;
                     *corner_traversal_stack.last_mut().expect("stack non-empty") = corner_id;
                 } else {
                     // Split the traversal.
                     self.symbols.push(EdgebreakerSymbol::Split as u32);
-                    #[cfg(feature = "edgebreaker_valence_encode")]
-                    if let Some(ref mut ve) = valence_encoder {
-                        ve.encode_symbol(
-                            EdgebreakerSymbol::Split,
-                            corner_table,
-                            &self.visited_faces,
-                        );
-                    }
+                    Self::encode_valence_symbol(
+                        valence_encoder,
+                        EdgebreakerSymbol::Split,
+                        corner_table,
+                        &self.visited_faces,
+                    );
                     self.symbol_to_encoder_corner.push(corner_id);
 
                     // If the tip vertex is on a hole boundary and the hole hasn't been
@@ -1874,6 +1861,44 @@ impl MeshEdgebreakerEncoder {
         }
 
         Ok(())
+    }
+
+    #[cfg(feature = "edgebreaker_valence_encode")]
+    #[inline]
+    fn valence_new_corner_reached(
+        valence_encoder: &mut Option<MeshEdgebreakerTraversalValenceEncoder>,
+        corner: CornerIndex,
+    ) {
+        if let Some(encoder) = valence_encoder {
+            encoder.new_corner_reached(corner);
+        }
+    }
+
+    #[cfg(not(feature = "edgebreaker_valence_encode"))]
+    #[inline]
+    fn valence_new_corner_reached(_valence_encoder: &mut (), _corner: CornerIndex) {}
+
+    #[cfg(feature = "edgebreaker_valence_encode")]
+    #[inline]
+    fn encode_valence_symbol(
+        valence_encoder: &mut Option<MeshEdgebreakerTraversalValenceEncoder>,
+        symbol: EdgebreakerSymbol,
+        corner_table: &CornerTable,
+        visited_faces: &[bool],
+    ) {
+        if let Some(encoder) = valence_encoder {
+            encoder.encode_symbol(symbol, corner_table, visited_faces);
+        }
+    }
+
+    #[cfg(not(feature = "edgebreaker_valence_encode"))]
+    #[inline]
+    fn encode_valence_symbol(
+        _valence_encoder: &mut (),
+        _symbol: EdgebreakerSymbol,
+        _corner_table: &CornerTable,
+        _visited_faces: &[bool],
+    ) {
     }
 
     fn check_and_store_topology_split_event(
