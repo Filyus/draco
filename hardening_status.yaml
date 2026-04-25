@@ -75,6 +75,14 @@ completed:
           - "topology_symbol_that_requires_active_corner_fails_cleanly"
     note: "Active-corner stack access, vertex-hole indexing, and opposite-corner writes use fallible helpers so malformed topology returns controlled errors."
 
+  - id: drc-level-edgebreaker-corruption
+    status: covered
+    evidence:
+      - path: "crates/draco-core/tests/drc_edge_cases_test.rs"
+        tests:
+          - "corrupted_edgebreaker_drc_sections_do_not_panic"
+    note: "Real v2.2 Edgebreaker fixture streams with attribute seams, split symbols, and multiple attribute payloads are truncated and byte-mutated across body sections to assert decode does not panic."
+
   - id: legacy-bitstream-feature-gate
     status: covered
     evidence:
@@ -116,14 +124,6 @@ open_risks:
       - "Add a small fuzz/property entrypoint that asserts decode never panics for arbitrary byte slices."
       - "Seed it with supported fixtures and current malformed edge cases."
       - "Run native and wasm-relevant configurations before making hostile-input claims."
-
-  - id: drc-level-edgebreaker-corruption
-    priority: high
-    summary: "Current Edgebreaker topology/seam hardening has direct helper regressions and explicit predictive traversal rejection, but limited DRC-level malformed topology payloads."
-    why_it_matters: "The most fragile decode surface is cross-section synchronization between topology symbols, split events, start-face bits, seam bitstreams, and prediction side streams."
-    next_steps:
-      - "Add small DRC-level corruptions around Edgebreaker symbol counts, encoded connectivity size, seam bitstreams, and split-event counts."
-      - "Assert controlled failure without panic and keep the cases compact."
 
   - id: resource-policy-boundary
     priority: medium

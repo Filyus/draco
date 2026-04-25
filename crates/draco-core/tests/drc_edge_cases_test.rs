@@ -363,6 +363,63 @@ fn mutated_supported_drc_inputs_do_not_panic() {
 }
 
 #[test]
+fn corrupted_edgebreaker_drc_sections_do_not_panic() {
+    let fixture_names = [
+        // Has attribute seam data.
+        "production_draco/cube_att.mesh_eb.v2.2.pos_norm_uv.drc",
+        // Has split symbols.
+        "production_draco/test_pos_color.mesh_eb.v2.2.pos_color.drc",
+        // Has multiple attribute payloads and seam-style side streams.
+        "production_draco/blender_multi_color.mesh_eb.v2.2.pos_norm_uv_color012.drc",
+    ];
+
+    for fixture in fixture_names {
+        let original = std::fs::read(repo_testdata_dir().join(fixture))
+            .unwrap_or_else(|e| panic!("failed to read {fixture}: {e}"));
+        assert!(
+            decode_malformed_without_panic(DecoderKind::Mesh, &original).is_ok(),
+            "{fixture} should be a valid baseline fixture"
+        );
+
+        let truncation_points = [
+            original.len() / 3,
+            original.len() / 2,
+            original.len() * 2 / 3,
+            original.len().saturating_sub(32),
+            original.len().saturating_sub(16),
+            original.len().saturating_sub(8),
+            original.len().saturating_sub(1),
+        ];
+        for len in truncation_points {
+            let len = len.min(original.len());
+            let _ = decode_malformed_without_panic(DecoderKind::Mesh, &original[..len]);
+        }
+
+        let mutation_offsets = [
+            10,
+            original.len() / 4,
+            original.len() / 3,
+            original.len() / 2,
+            original.len() * 2 / 3,
+            original.len() * 3 / 4,
+            original.len().saturating_sub(24),
+            original.len().saturating_sub(12),
+            original.len().saturating_sub(2),
+        ];
+        for offset in mutation_offsets {
+            if offset >= original.len() {
+                continue;
+            }
+            for mask in [0x01, 0x7F, 0x80, 0xFF] {
+                let mut mutated = original.clone();
+                mutated[offset] ^= mask;
+                let _ = decode_malformed_without_panic(DecoderKind::Mesh, &mutated);
+            }
+        }
+    }
+}
+
+#[test]
 fn synthetic_drc_like_inputs_do_not_panic() {
     let lengths = [
         0usize, 1, 2, 4, 5, 8, 10, 11, 12, 16, 24, 31, 32, 48, 64, 96, 128, 192, 256,
