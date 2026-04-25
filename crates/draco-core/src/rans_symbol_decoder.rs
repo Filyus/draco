@@ -177,8 +177,13 @@ impl<'a> RAnsSymbolDecoder<'a> {
 
     #[inline(always)]
     pub fn decode_symbol(&mut self) -> u32 {
+        self.try_decode_symbol().unwrap_or(0)
+    }
+
+    #[inline(always)]
+    pub fn try_decode_symbol(&mut self) -> Option<u32> {
         if self.num_symbols <= 1 {
-            return 0;
+            return Some(0);
         }
         // Match Draco C++ (ans.h) rans_read(): normalize first, then use
         // bit operations for division/modulo by rans_precision (power of two).
@@ -186,9 +191,45 @@ impl<'a> RAnsSymbolDecoder<'a> {
         self.ans.read_normalize();
         let quo = self.ans.state >> self.rans_precision_bits; // Fast division
         let rem = self.ans.state & self.rans_precision_mask; // Fast modulo
-        let symbol_id = self.lut[rem as usize];
-        let sym = &self.probability_table[symbol_id as usize];
-        self.ans.state = quo * sym.prob + rem - sym.cum_prob;
-        symbol_id
+        let symbol_id = *self.lut.get(rem as usize)?;
+        let sym = self.probability_table.get(symbol_id as usize)?;
+        let state_base = quo.checked_mul(sym.prob)?;
+        let state_offset = rem.checked_sub(sym.cum_prob)?;
+        self.ans.state = state_base.checked_add(state_offset)?;
+        Some(symbol_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RAnsSymbolDecoder;
+    use crate::rans_symbol_coding::RAnsSymbol;
+
+    #[test]
+    fn try_decode_symbol_rejects_invalid_lut_symbol_id() {
+        let mut decoder = RAnsSymbolDecoder::new(1);
+        decoder.num_symbols = 2;
+        decoder.lut = vec![99, 99];
+        decoder.probability_table = vec![RAnsSymbol::default(); 2];
+        decoder.ans.state = decoder.l_rans_base;
+
+        assert_eq!(decoder.try_decode_symbol(), None);
+    }
+
+    #[test]
+    fn try_decode_symbol_rejects_inconsistent_cumulative_probability() {
+        let mut decoder = RAnsSymbolDecoder::new(1);
+        decoder.num_symbols = 2;
+        decoder.lut = vec![0, 0];
+        decoder.probability_table = vec![
+            RAnsSymbol {
+                prob: 1,
+                cum_prob: 1,
+            },
+            RAnsSymbol::default(),
+        ];
+        decoder.ans.state = decoder.l_rans_base;
+
+        assert_eq!(decoder.try_decode_symbol(), None);
     }
 }

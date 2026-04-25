@@ -499,7 +499,10 @@ pub fn decode_raw_symbols(
         return false;
     }
     for i in 0..num_values {
-        symbols[i] = decoder.decode_symbol();
+        let Some(symbol) = decoder.try_decode_symbol() else {
+            return false;
+        };
+        symbols[i] = symbol;
     }
     true
 }
@@ -536,7 +539,9 @@ fn decode_tagged_symbols(
     // Process each chunk
     let mut val_idx = 0;
     for _ in 0..num_chunks {
-        let len = tag_decoder.decode_symbol();
+        let Some(len) = tag_decoder.try_decode_symbol() else {
+            return false;
+        };
         if len == 0 || len > 32 {
             return false;
         }
