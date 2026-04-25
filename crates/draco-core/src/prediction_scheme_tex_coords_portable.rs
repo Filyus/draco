@@ -27,7 +27,7 @@ use crate::prediction_scheme_wrap::PredictionSchemeWrapEncodingTransform;
 use crate::rans_bit_encoder::RAnsBitEncoder;
 
 #[cfg(feature = "decoder")]
-pub struct PredictionSchemeTexCoordsPortableDecoder<'a> {
+pub struct MeshPredictionSchemeTexCoordsPortableDecoder<'a> {
     transform: PredictionSchemeWrapDecodingTransform<i32>,
     mesh_data: Option<MeshPredictionSchemeData<'a>>,
     orientations: Vec<bool>,
@@ -35,7 +35,7 @@ pub struct PredictionSchemeTexCoordsPortableDecoder<'a> {
 }
 
 #[cfg(feature = "decoder")]
-impl<'a> PredictionSchemeTexCoordsPortableDecoder<'a> {
+impl<'a> MeshPredictionSchemeTexCoordsPortableDecoder<'a> {
     pub fn new(transform: PredictionSchemeWrapDecodingTransform<i32>) -> Self {
         Self {
             transform,
@@ -232,7 +232,7 @@ impl<'a> PredictionSchemeTexCoordsPortableDecoder<'a> {
 }
 
 #[cfg(feature = "decoder")]
-impl<'a> PredictionScheme<'a> for PredictionSchemeTexCoordsPortableDecoder<'a> {
+impl<'a> PredictionScheme<'a> for MeshPredictionSchemeTexCoordsPortableDecoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionTexCoordsPortable
     }
@@ -267,7 +267,9 @@ impl<'a> PredictionScheme<'a> for PredictionSchemeTexCoordsPortableDecoder<'a> {
 }
 
 #[cfg(feature = "decoder")]
-impl<'a> PredictionSchemeDecoder<'a, i32, i32> for PredictionSchemeTexCoordsPortableDecoder<'a> {
+impl<'a> PredictionSchemeDecoder<'a, i32, i32>
+    for MeshPredictionSchemeTexCoordsPortableDecoder<'a>
+{
     fn decode_prediction_data(&mut self, buffer: &mut DecoderBuffer) -> bool {
         let num_orientations: i32 = match buffer.decode::<i32>() {
             Ok(val) => val,
@@ -646,7 +648,7 @@ mod tests {
         mesh_data.set(&corner_table, &data_to_corner_map, &vertex_to_data_map);
 
         let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
-        let mut decoder = PredictionSchemeTexCoordsPortableDecoder::new(transform);
+        let mut decoder = MeshPredictionSchemeTexCoordsPortableDecoder::new(transform);
         assert!(decoder.init(&mesh_data));
 
         let mut predicted = [i32::MIN; 2];
@@ -702,7 +704,7 @@ mod tests {
 
         let pos_att = make_position_attribute(&[[0, 1, 0], [0, 0, 0], [100_000, 0, 0]]);
         let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
-        let mut decoder = PredictionSchemeTexCoordsPortableDecoder::new(transform);
+        let mut decoder = MeshPredictionSchemeTexCoordsPortableDecoder::new(transform);
         assert!(decoder.set_parent_attribute(&pos_att));
         assert!(decoder.init(&mesh_data));
 
@@ -769,7 +771,7 @@ impl PredictionSchemeEncodingTransform<i32, i32>
 }
 
 #[cfg(feature = "encoder")]
-pub struct PredictionSchemeTexCoordsPortableEncoder<'a> {
+pub struct MeshPredictionSchemeTexCoordsPortableEncoder<'a> {
     transform: PredictionSchemeTexCoordsPortableEncodingTransform,
     mesh_data: Option<MeshPredictionSchemeData<'a>>,
     orientations: Vec<bool>,
@@ -777,7 +779,7 @@ pub struct PredictionSchemeTexCoordsPortableEncoder<'a> {
 }
 
 #[cfg(feature = "encoder")]
-impl<'a> PredictionSchemeTexCoordsPortableEncoder<'a> {
+impl<'a> MeshPredictionSchemeTexCoordsPortableEncoder<'a> {
     pub fn new(transform: PredictionSchemeTexCoordsPortableEncodingTransform) -> Self {
         Self {
             transform,
@@ -916,7 +918,7 @@ impl<'a> PredictionSchemeTexCoordsPortableEncoder<'a> {
 }
 
 #[cfg(feature = "encoder")]
-impl<'a> PredictionScheme<'a> for PredictionSchemeTexCoordsPortableEncoder<'a> {
+impl<'a> PredictionScheme<'a> for MeshPredictionSchemeTexCoordsPortableEncoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionTexCoordsPortable
     }
@@ -951,7 +953,9 @@ impl<'a> PredictionScheme<'a> for PredictionSchemeTexCoordsPortableEncoder<'a> {
 }
 
 #[cfg(feature = "encoder")]
-impl<'a> PredictionSchemeEncoder<'a, i32, i32> for PredictionSchemeTexCoordsPortableEncoder<'a> {
+impl<'a> PredictionSchemeEncoder<'a, i32, i32>
+    for MeshPredictionSchemeTexCoordsPortableEncoder<'a>
+{
     fn encode_prediction_data(&mut self, buffer: &mut Vec<u8>) -> bool {
         let mut temp_buffer = EncoderBuffer::new();
         let num_orientations = self.orientations.len() as i32;

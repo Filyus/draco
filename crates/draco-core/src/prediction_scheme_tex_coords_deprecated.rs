@@ -9,14 +9,14 @@ use crate::{
     decoder_buffer::DecoderBuffer, draco_types::DataType, rans_bit_decoder::RAnsBitDecoder,
 };
 
-pub struct PredictionSchemeTexCoordsDeprecatedDecoder<'a, Transform> {
+pub struct MeshPredictionSchemeTexCoordsDeprecatedDecoder<'a, Transform> {
     transform: Transform,
     mesh_data: Option<MeshPredictionSchemeData<'a>>,
     orientations: Vec<bool>,
     pos_attribute: Option<&'a PointAttribute>,
 }
 
-impl<'a, Transform> PredictionSchemeTexCoordsDeprecatedDecoder<'a, Transform> {
+impl<'a, Transform> MeshPredictionSchemeTexCoordsDeprecatedDecoder<'a, Transform> {
     pub fn new(transform: Transform) -> Self {
         Self {
             transform,
@@ -180,7 +180,7 @@ impl<'a, Transform> PredictionSchemeTexCoordsDeprecatedDecoder<'a, Transform> {
 }
 
 impl<'a, Transform> PredictionScheme<'a>
-    for PredictionSchemeTexCoordsDeprecatedDecoder<'a, Transform>
+    for MeshPredictionSchemeTexCoordsDeprecatedDecoder<'a, Transform>
 where
     Transform: PredictionSchemeDecodingTransform<i32, i32>,
 {
@@ -214,7 +214,7 @@ where
 }
 
 impl<'a, Transform> PredictionSchemeDecoder<'a, i32, i32>
-    for PredictionSchemeTexCoordsDeprecatedDecoder<'a, Transform>
+    for MeshPredictionSchemeTexCoordsDeprecatedDecoder<'a, Transform>
 where
     Transform: PredictionSchemeDecodingTransform<i32, i32>,
 {
@@ -425,7 +425,7 @@ mod tests {
 
         let mut buffer = DecoderBuffer::new(prediction_data.data());
         buffer.set_version(2, 2);
-        let mut decoder = PredictionSchemeTexCoordsDeprecatedDecoder::new(
+        let mut decoder = MeshPredictionSchemeTexCoordsDeprecatedDecoder::new(
             PredictionSchemeWrapDecodingTransform::<i32>::new(),
         );
         assert!(decoder.init(&mesh_data));

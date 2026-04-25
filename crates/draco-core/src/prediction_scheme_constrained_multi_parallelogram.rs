@@ -26,7 +26,12 @@ use crate::shannon_entropy::ShannonEntropyTracker;
 pub const MAX_NUM_PARALLELOGRAMS: usize = 4;
 
 #[cfg(feature = "encoder")]
-pub struct PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform> {
+pub struct MeshPredictionSchemeConstrainedMultiParallelogramEncoder<
+    'a,
+    DataType,
+    CorrType,
+    Transform,
+> {
     mesh_data: MeshPredictionSchemeData<'a>,
     transform: Transform,
     is_crease_edge: [Vec<bool>; MAX_NUM_PARALLELOGRAMS],
@@ -36,7 +41,7 @@ pub struct PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, Co
 
 #[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform>
-    PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
+    MeshPredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeEncodingTransform<DataType, CorrType>,
 {
@@ -61,7 +66,7 @@ where
 
 #[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform> PredictionScheme<'a>
-    for PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
+    for MeshPredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeEncodingTransform<DataType, CorrType>,
 {
@@ -130,7 +135,7 @@ impl PartialOrd for Error {
 
 #[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform> PredictionSchemeEncoder<'a, DataType, CorrType>
-    for PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
+    for MeshPredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
     DataType: ParallelogramDataType + Into<i64> + Copy + Default + From<i32>,
     CorrType: Copy + Default + From<DataType> + std::ops::Sub<Output = CorrType> + From<i32>,
@@ -685,7 +690,7 @@ where
 
 #[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform>
-    PredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
+    MeshPredictionSchemeConstrainedMultiParallelogramEncoder<'a, DataType, CorrType, Transform>
 {
     /// Computes the total cumulative overhead bits for the entire overhead stream.
     /// This matches C++ ComputeOverheadBits() which returns:
@@ -705,7 +710,12 @@ impl<'a, DataType, CorrType, Transform>
 }
 
 #[cfg(feature = "decoder")]
-pub struct PredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform> {
+pub struct MeshPredictionSchemeConstrainedMultiParallelogramDecoder<
+    'a,
+    DataType,
+    CorrType,
+    Transform,
+> {
     mesh_data: MeshPredictionSchemeData<'a>,
     transform: Transform,
     is_crease_edge: [Vec<bool>; MAX_NUM_PARALLELOGRAMS],
@@ -714,7 +724,7 @@ pub struct PredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, Co
 
 #[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform>
-    PredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
+    MeshPredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeDecodingTransform<DataType, CorrType>,
 {
@@ -730,7 +740,7 @@ where
 
 #[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform> PredictionScheme<'a>
-    for PredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
+    for MeshPredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeDecodingTransform<DataType, CorrType>,
 {
@@ -764,7 +774,7 @@ where
 
 #[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform> PredictionSchemeDecoder<'a, DataType, CorrType>
-    for PredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
+    for MeshPredictionSchemeConstrainedMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
     DataType: ParallelogramDataType + Into<i64> + Copy + Default + From<i32>,
     CorrType: Copy + Default + From<DataType> + std::ops::Sub<Output = CorrType> + From<i32>,

@@ -233,7 +233,7 @@ where
 }
 
 #[cfg(feature = "encoder")]
-pub struct PredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform> {
+pub struct MeshPredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform> {
     #[allow(dead_code)]
     attribute: &'a PointAttribute,
     transform: Transform,
@@ -243,7 +243,7 @@ pub struct PredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transfor
 
 #[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform>
-    PredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform>
+    MeshPredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform>
 {
     pub fn new(
         attribute: &'a PointAttribute,
@@ -261,7 +261,7 @@ impl<'a, DataType, CorrType, Transform>
 
 #[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform> PredictionScheme<'a>
-    for PredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform>
+    for MeshPredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeEncodingTransform<DataType, CorrType>,
 {
@@ -292,7 +292,7 @@ where
 
 #[cfg(feature = "encoder")]
 impl<'a, DataType, CorrType, Transform> PredictionSchemeEncoder<'a, DataType, CorrType>
-    for PredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform>
+    for MeshPredictionSchemeParallelogramEncoder<'a, DataType, CorrType, Transform>
 where
     DataType: ParallelogramDataType + std::fmt::Debug,
     CorrType: Copy + Default + std::fmt::Debug,
@@ -364,7 +364,7 @@ where
 }
 
 #[cfg(feature = "decoder")]
-pub struct PredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform> {
+pub struct MeshPredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform> {
     #[allow(dead_code)]
     attribute: &'a PointAttribute,
     transform: Transform,
@@ -374,7 +374,7 @@ pub struct PredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transfor
 
 #[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform>
-    PredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform>
+    MeshPredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform>
 {
     pub fn new(
         attribute: &'a PointAttribute,
@@ -392,7 +392,7 @@ impl<'a, DataType, CorrType, Transform>
 
 #[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform> PredictionScheme<'a>
-    for PredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform>
+    for MeshPredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeDecodingTransform<DataType, CorrType>,
 {
@@ -423,7 +423,7 @@ where
 
 #[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform> PredictionSchemeDecoder<'a, DataType, CorrType>
-    for PredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform>
+    for MeshPredictionSchemeParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
     DataType: ParallelogramDataType + std::fmt::Debug,
     CorrType: Copy + Default + std::fmt::Debug,

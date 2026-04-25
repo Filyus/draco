@@ -497,7 +497,7 @@ impl PredictionSchemeEncodingTransform<i32, i32>
 }
 
 #[cfg(feature = "encoder")]
-pub struct PredictionSchemeGeometricNormalEncoder<'a> {
+pub struct MeshPredictionSchemeGeometricNormalEncoder<'a> {
     transform: PredictionSchemeGeometricNormalEncodingTransform,
     mesh_data: Option<MeshPredictionSchemeData<'a>>,
     pos_attribute: Option<&'a PointAttribute>,
@@ -506,7 +506,7 @@ pub struct PredictionSchemeGeometricNormalEncoder<'a> {
 }
 
 #[cfg(feature = "encoder")]
-impl<'a> PredictionSchemeGeometricNormalEncoder<'a> {
+impl<'a> MeshPredictionSchemeGeometricNormalEncoder<'a> {
     pub fn new(transform: PredictionSchemeGeometricNormalEncodingTransform) -> Self {
         Self {
             transform,
@@ -627,7 +627,7 @@ impl<'a> PredictionSchemeGeometricNormalEncoder<'a> {
 }
 
 #[cfg(feature = "encoder")]
-impl<'a> PredictionScheme<'a> for PredictionSchemeGeometricNormalEncoder<'a> {
+impl<'a> PredictionScheme<'a> for MeshPredictionSchemeGeometricNormalEncoder<'a> {
     fn get_prediction_method(&self) -> PredictionSchemeMethod {
         PredictionSchemeMethod::MeshPredictionGeometricNormal
     }
@@ -663,7 +663,7 @@ impl<'a> PredictionScheme<'a> for PredictionSchemeGeometricNormalEncoder<'a> {
 }
 
 #[cfg(feature = "encoder")]
-impl<'a> PredictionSchemeEncoder<'a, i32, i32> for PredictionSchemeGeometricNormalEncoder<'a> {
+impl<'a> PredictionSchemeEncoder<'a, i32, i32> for MeshPredictionSchemeGeometricNormalEncoder<'a> {
     fn compute_correction_values(
         &mut self,
         in_data: &[i32],

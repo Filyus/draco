@@ -9,7 +9,7 @@ use draco_core::prediction_scheme::{
     PredictionScheme, PredictionSchemeDecoder, PredictionSchemeEncoder,
 };
 use draco_core::prediction_scheme_tex_coords_portable::{
-    PredictionSchemeTexCoordsPortableDecoder, PredictionSchemeTexCoordsPortableEncoder,
+    MeshPredictionSchemeTexCoordsPortableDecoder, MeshPredictionSchemeTexCoordsPortableEncoder,
     PredictionSchemeTexCoordsPortableEncodingTransform,
 };
 use draco_core::prediction_scheme_wrap::PredictionSchemeWrapDecodingTransform;
@@ -86,7 +86,7 @@ fn test_tex_coords_portable_roundtrip() {
 
     // 5. Encode
     let transform = PredictionSchemeTexCoordsPortableEncodingTransform::new();
-    let mut encoder = PredictionSchemeTexCoordsPortableEncoder::new(transform);
+    let mut encoder = MeshPredictionSchemeTexCoordsPortableEncoder::new(transform);
 
     let pos_att_ref = mesh.attribute(pos_att_id);
     assert!(encoder.set_parent_attribute(pos_att_ref));
@@ -117,7 +117,7 @@ fn test_tex_coords_portable_roundtrip() {
     decoder_buffer.set_version(2, 2);
 
     let transform_dec = PredictionSchemeWrapDecodingTransform::<i32>::new();
-    let mut decoder = PredictionSchemeTexCoordsPortableDecoder::new(transform_dec);
+    let mut decoder = MeshPredictionSchemeTexCoordsPortableDecoder::new(transform_dec);
 
     assert!(decoder.set_parent_attribute(pos_att_ref));
     assert!(decoder.init(&mesh_data));

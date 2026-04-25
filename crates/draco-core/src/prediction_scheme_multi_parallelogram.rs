@@ -15,7 +15,7 @@ use crate::decoder_buffer::DecoderBuffer;
 use crate::prediction_scheme::{PredictionSchemeDecoder, PredictionSchemeDecodingTransform};
 
 #[cfg(feature = "decoder")]
-pub struct PredictionSchemeMultiParallelogramDecoder<'a, DataType, CorrType, Transform> {
+pub struct MeshPredictionSchemeMultiParallelogramDecoder<'a, DataType, CorrType, Transform> {
     transform: Transform,
     mesh_data: MeshPredictionSchemeData<'a>,
     _marker: PhantomData<(DataType, CorrType)>,
@@ -23,7 +23,7 @@ pub struct PredictionSchemeMultiParallelogramDecoder<'a, DataType, CorrType, Tra
 
 #[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform>
-    PredictionSchemeMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
+    MeshPredictionSchemeMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
 {
     pub fn new(transform: Transform, mesh_data: MeshPredictionSchemeData<'a>) -> Self {
         Self {
@@ -36,7 +36,7 @@ impl<'a, DataType, CorrType, Transform>
 
 #[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform> PredictionScheme<'a>
-    for PredictionSchemeMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
+    for MeshPredictionSchemeMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
     Transform: PredictionSchemeDecodingTransform<DataType, CorrType>,
 {
@@ -67,7 +67,7 @@ where
 
 #[cfg(feature = "decoder")]
 impl<'a, DataType, CorrType, Transform> PredictionSchemeDecoder<'a, DataType, CorrType>
-    for PredictionSchemeMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
+    for MeshPredictionSchemeMultiParallelogramDecoder<'a, DataType, CorrType, Transform>
 where
     DataType: ParallelogramDataType + Copy + Default + From<i32> + Into<i64> + std::fmt::Debug,
     CorrType: Copy + Default + std::fmt::Debug,
@@ -227,11 +227,11 @@ mod tests {
         let mut mesh_data = MeshPredictionSchemeData::new();
         mesh_data.set(&table, &data_to_corner_map, &vertex_to_data_map);
 
-        let mut decoder =
-            PredictionSchemeMultiParallelogramDecoder::<i32, i32, IdentityTransform>::new(
-                IdentityTransform,
-                mesh_data,
-            );
+        let mut decoder = MeshPredictionSchemeMultiParallelogramDecoder::<
+            i32,
+            i32,
+            IdentityTransform,
+        >::new(IdentityTransform, mesh_data);
 
         let in_corr = [10, 2, 3];
         let mut out = [0; 3];
@@ -272,11 +272,11 @@ mod tests {
         let mut mesh_data = MeshPredictionSchemeData::new();
         mesh_data.set(&table, &data_to_corner_map, &vertex_to_data_map);
 
-        let mut decoder =
-            PredictionSchemeMultiParallelogramDecoder::<i32, i32, IdentityTransform>::new(
-                IdentityTransform,
-                mesh_data,
-            );
+        let mut decoder = MeshPredictionSchemeMultiParallelogramDecoder::<
+            i32,
+            i32,
+            IdentityTransform,
+        >::new(IdentityTransform, mesh_data);
 
         let in_corr = [10, 20, 20, 5];
         let mut out = [0; 4];

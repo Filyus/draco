@@ -10,15 +10,15 @@ use crate::prediction_scheme::{
     PredictionScheme, PredictionSchemeDecoder, PredictionSchemeMethod,
     PredictionSchemeTransformType,
 };
-use crate::prediction_scheme_constrained_multi_parallelogram::PredictionSchemeConstrainedMultiParallelogramDecoder;
+use crate::prediction_scheme_constrained_multi_parallelogram::MeshPredictionSchemeConstrainedMultiParallelogramDecoder;
 use crate::prediction_scheme_delta::PredictionSchemeDeltaDecoder;
 use crate::prediction_scheme_geometric_normal::MeshPredictionSchemeGeometricNormalDecoder;
-use crate::prediction_scheme_multi_parallelogram::PredictionSchemeMultiParallelogramDecoder;
+use crate::prediction_scheme_multi_parallelogram::MeshPredictionSchemeMultiParallelogramDecoder;
 use crate::prediction_scheme_normal_octahedron_canonicalized_decoding_transform::PredictionSchemeNormalOctahedronCanonicalizedDecodingTransform;
-use crate::prediction_scheme_parallelogram::PredictionSchemeParallelogramDecoder;
+use crate::prediction_scheme_parallelogram::MeshPredictionSchemeParallelogramDecoder;
 #[cfg(feature = "deprecated_tex_coords_prediction")]
-use crate::prediction_scheme_tex_coords_deprecated::PredictionSchemeTexCoordsDeprecatedDecoder;
-use crate::prediction_scheme_tex_coords_portable::PredictionSchemeTexCoordsPortableDecoder;
+use crate::prediction_scheme_tex_coords_deprecated::MeshPredictionSchemeTexCoordsDeprecatedDecoder;
+use crate::prediction_scheme_tex_coords_portable::MeshPredictionSchemeTexCoordsPortableDecoder;
 use crate::prediction_scheme_wrap::PredictionSchemeWrapDecodingTransform;
 use crate::symbol_encoding::{decode_symbols, SymbolEncodingOptions};
 
@@ -157,14 +157,14 @@ impl SequentialIntegerAttributeDecoder {
             >,
         > = None;
         let mut predictor_parallelogram_opt: Option<
-            PredictionSchemeParallelogramDecoder<
+            MeshPredictionSchemeParallelogramDecoder<
                 i32,
                 i32,
                 PredictionSchemeWrapDecodingTransform<i32>,
             >,
         > = None;
         let mut predictor_multi_parallelogram_opt: Option<
-            PredictionSchemeMultiParallelogramDecoder<
+            MeshPredictionSchemeMultiParallelogramDecoder<
                 '_,
                 i32,
                 i32,
@@ -172,7 +172,7 @@ impl SequentialIntegerAttributeDecoder {
             >,
         > = None;
         let mut predictor_constrained_multi_parallelogram_opt: Option<
-            PredictionSchemeConstrainedMultiParallelogramDecoder<
+            MeshPredictionSchemeConstrainedMultiParallelogramDecoder<
                 '_,
                 i32,
                 i32,
@@ -181,12 +181,13 @@ impl SequentialIntegerAttributeDecoder {
         > = None;
         #[cfg(feature = "deprecated_tex_coords_prediction")]
         let mut predictor_tex_coords_deprecated_opt: Option<
-            PredictionSchemeTexCoordsDeprecatedDecoder<
+            MeshPredictionSchemeTexCoordsDeprecatedDecoder<
                 '_,
                 PredictionSchemeWrapDecodingTransform<i32>,
             >,
         > = None;
-        let mut predictor_tex_coords_opt: Option<PredictionSchemeTexCoordsPortableDecoder> = None;
+        let mut predictor_tex_coords_opt: Option<MeshPredictionSchemeTexCoordsPortableDecoder> =
+            None;
         let mut predictor_geometric_normal_opt: Option<MeshPredictionSchemeGeometricNormalDecoder> =
             None;
 
@@ -275,8 +276,9 @@ impl SequentialIntegerAttributeDecoder {
                     mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
 
                     let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
-                    let predictor =
-                        PredictionSchemeParallelogramDecoder::new(attribute, transform, mesh_data);
+                    let predictor = MeshPredictionSchemeParallelogramDecoder::new(
+                        attribute, transform, mesh_data,
+                    );
                     predictor_parallelogram_opt = Some(predictor);
                 } else {
                     eprintln!("Parallelogram prediction requires corner table");
@@ -339,7 +341,7 @@ impl SequentialIntegerAttributeDecoder {
 
                     let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
                     let predictor =
-                        PredictionSchemeMultiParallelogramDecoder::new(transform, mesh_data);
+                        MeshPredictionSchemeMultiParallelogramDecoder::new(transform, mesh_data);
                     predictor_multi_parallelogram_opt = Some(predictor);
                 } else {
                     eprintln!("MultiParallelogram prediction requires corner table");
@@ -408,7 +410,7 @@ impl SequentialIntegerAttributeDecoder {
                     mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
 
                     let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
-                    let predictor = PredictionSchemeConstrainedMultiParallelogramDecoder::new(
+                    let predictor = MeshPredictionSchemeConstrainedMultiParallelogramDecoder::new(
                         transform, mesh_data,
                     );
                     predictor_constrained_multi_parallelogram_opt = Some(predictor);
@@ -473,7 +475,8 @@ impl SequentialIntegerAttributeDecoder {
                     mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
 
                     let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
-                    let mut predictor = PredictionSchemeTexCoordsDeprecatedDecoder::new(transform);
+                    let mut predictor =
+                        MeshPredictionSchemeTexCoordsDeprecatedDecoder::new(transform);
                     predictor.init(&mesh_data);
 
                     let pos_att_id = point_cloud.named_attribute_id(
@@ -563,7 +566,8 @@ impl SequentialIntegerAttributeDecoder {
                     mesh_data.set(corner_table, &data_to_corner_map, &vertex_to_data_map);
 
                     let transform = PredictionSchemeWrapDecodingTransform::<i32>::new();
-                    let mut predictor = PredictionSchemeTexCoordsPortableDecoder::new(transform);
+                    let mut predictor =
+                        MeshPredictionSchemeTexCoordsPortableDecoder::new(transform);
                     predictor.init(&mesh_data);
 
                     // Set parent attribute (Position)

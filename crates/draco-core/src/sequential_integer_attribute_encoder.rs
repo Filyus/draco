@@ -13,15 +13,16 @@ use crate::prediction_scheme::PredictionScheme;
 use crate::prediction_scheme::{
     PredictionSchemeEncoder, PredictionSchemeMethod, PredictionSchemeTransformType,
 };
-use crate::prediction_scheme_constrained_multi_parallelogram::PredictionSchemeConstrainedMultiParallelogramEncoder;
+use crate::prediction_scheme_constrained_multi_parallelogram::MeshPredictionSchemeConstrainedMultiParallelogramEncoder;
 use crate::prediction_scheme_delta::PredictionSchemeDeltaEncoder;
 use crate::prediction_scheme_geometric_normal::{
-    PredictionSchemeGeometricNormalEncoder, PredictionSchemeGeometricNormalEncodingTransform,
+    MeshPredictionSchemeGeometricNormalEncoder, PredictionSchemeGeometricNormalEncodingTransform,
 };
-use crate::prediction_scheme_parallelogram::PredictionSchemeParallelogramEncoder;
+use crate::prediction_scheme_parallelogram::MeshPredictionSchemeParallelogramEncoder;
 use crate::prediction_scheme_selection::select_prediction_method;
 use crate::prediction_scheme_tex_coords_portable::{
-    PredictionSchemeTexCoordsPortableEncoder, PredictionSchemeTexCoordsPortableEncodingTransform,
+    MeshPredictionSchemeTexCoordsPortableEncoder,
+    PredictionSchemeTexCoordsPortableEncodingTransform,
 };
 use crate::prediction_scheme_wrap::PredictionSchemeWrapEncodingTransform;
 use crate::sequential_attribute_encoder::SequentialAttributeEncoder;
@@ -317,7 +318,7 @@ impl SequentialIntegerAttributeEncoder {
                             }
 
                             let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
-                            let mut predictor = PredictionSchemeParallelogramEncoder::new(
+                            let mut predictor = MeshPredictionSchemeParallelogramEncoder::new(
                                 current_attribute,
                                 transform,
                                 mesh_data,
@@ -410,7 +411,7 @@ impl SequentialIntegerAttributeEncoder {
 
                             let transform = PredictionSchemeWrapEncodingTransform::<i32>::new();
                             let mut predictor =
-                                PredictionSchemeConstrainedMultiParallelogramEncoder::new(
+                                MeshPredictionSchemeConstrainedMultiParallelogramEncoder::new(
                                     transform, mesh_data,
                                 );
                             selected_transform_type = predictor.get_transform_type();
@@ -500,7 +501,7 @@ impl SequentialIntegerAttributeEncoder {
                             let transform =
                                 PredictionSchemeTexCoordsPortableEncodingTransform::new();
                             let mut predictor =
-                                PredictionSchemeTexCoordsPortableEncoder::new(transform);
+                                MeshPredictionSchemeTexCoordsPortableEncoder::new(transform);
                             selected_transform_type = predictor.get_transform_type();
 
                             let pos_att = encoder
@@ -608,7 +609,7 @@ impl SequentialIntegerAttributeEncoder {
 
                             let transform = PredictionSchemeGeometricNormalEncodingTransform::new();
                             let mut predictor =
-                                PredictionSchemeGeometricNormalEncoder::new(transform);
+                                MeshPredictionSchemeGeometricNormalEncoder::new(transform);
                             selected_transform_type = predictor.get_transform_type();
 
                             predictor.init(&mesh_data);
