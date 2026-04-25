@@ -387,7 +387,9 @@ impl PointCloudDecoder {
                             let mut skip_fn =
                                 move |buf: &mut crate::decoder_buffer::DecoderBuffer<'_>| -> bool {
                                     if quant_skip_bytes > 0 {
-                                        buf.advance(quant_skip_bytes);
+                                        if buf.try_advance(quant_skip_bytes).is_err() {
+                                            return false;
+                                        }
                                     }
                                     true
                                 };
@@ -467,7 +469,9 @@ impl PointCloudDecoder {
                             let mut skip_fn =
                                 move |buf: &mut crate::decoder_buffer::DecoderBuffer<'_>| -> bool {
                                     if normal_skip_bytes > 0 {
-                                        buf.advance(normal_skip_bytes);
+                                        if buf.try_advance(normal_skip_bytes).is_err() {
+                                            return false;
+                                        }
                                     }
                                     true
                                 };

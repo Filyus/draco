@@ -260,7 +260,7 @@ impl MeshEdgebreakerDecoder {
                     "Invalid topology split decoded byte count".to_string(),
                 ));
             }
-            in_buffer.advance(topology_split_decoded_bytes);
+            in_buffer.try_advance(topology_split_decoded_bytes)?;
         }
 
         Ok(())

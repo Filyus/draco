@@ -121,11 +121,12 @@ completed:
       - path: "crates/draco-core/src/decoder_buffer.rs"
         tests:
           - "bit_decode_respects_declared_byte_size"
+          - "try_advance_rejects_out_of_bounds_skip"
       - path: "crates/draco-core/src/attribute_octahedron_transform.rs"
         tests:
           - "inverse_transform_rejects_truncated_portable_data"
           - "generate_portable_attribute_rejects_truncated_source_data"
-    note: "Fast bit decoding now respects the declared bitstream byte window without unwraps, and octahedron attribute transforms reject truncated source/portable buffers instead of relying on unchecked slices."
+    note: "Fast bit decoding now respects the declared bitstream byte window without unwraps, decoder-facing byte skips use fallible advance guards, and octahedron attribute transforms reject truncated source/portable buffers instead of relying on unchecked slices."
 
 open_risks:
   - id: no-sustained-fuzzing

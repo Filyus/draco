@@ -380,7 +380,30 @@ impl<'a> DecoderBuffer<'a> {
 
     /// Advances the position by `n` bytes without reading.
     pub fn advance(&mut self, n: usize) {
-        self.pos += n;
+        self.pos = self.pos.saturating_add(n).min(self.data.len());
+    }
+
+    /// Advances the position by `n` bytes without reading.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DracoError::BufferError` if the requested advance would move
+    /// beyond the end of the input buffer.
+    pub fn try_advance(&mut self, n: usize) -> Result<(), DracoError> {
+        let new_pos = self
+            .pos
+            .checked_add(n)
+            .ok_or_else(|| DracoError::BufferError("Buffer advance overflow".into()))?;
+        if new_pos > self.data.len() {
+            return Err(DracoError::BufferError(format!(
+                "Cannot advance buffer by {} bytes: need position {}, buffer length {}",
+                n,
+                new_pos,
+                self.data.len()
+            )));
+        }
+        self.pos = new_pos;
+        Ok(())
     }
 
     /// Decodes and returns a slice of the specified size.
@@ -413,5 +436,16 @@ mod tests {
 
         assert_eq!(buffer.start_bit_decoding(true).unwrap(), 1);
         assert!(buffer.decode_least_significant_bits32(16).is_err());
+    }
+
+    #[test]
+    fn try_advance_rejects_out_of_bounds_skip() {
+        let data = [0u8; 4];
+        let mut buffer = DecoderBuffer::new(&data);
+
+        assert!(buffer.try_advance(5).is_err());
+        assert_eq!(buffer.position(), 0);
+        assert!(buffer.try_advance(4).is_ok());
+        assert_eq!(buffer.position(), 4);
     }
 }

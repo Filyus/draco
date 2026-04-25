@@ -153,7 +153,9 @@ impl<'a> RAnsSymbolDecoder<'a> {
         };
         if self.num_symbols <= 1 {
             // Still need to advance the buffer past the encoded bytes.
-            buffer.advance(bytes_to_read);
+            if buffer.try_advance(bytes_to_read).is_err() {
+                return false;
+            }
             return true;
         }
         let data = buffer.remaining_data();
@@ -167,7 +169,9 @@ impl<'a> RAnsSymbolDecoder<'a> {
             return false;
         }
 
-        buffer.advance(bytes_to_read);
+        if buffer.try_advance(bytes_to_read).is_err() {
+            return false;
+        }
         true
     }
 

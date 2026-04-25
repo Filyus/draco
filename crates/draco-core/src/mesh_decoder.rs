@@ -202,7 +202,7 @@ impl MeshDecoder {
                     "Failed to read metadata entry name".to_string(),
                 ));
             }
-            in_buffer.advance(name_len);
+            in_buffer.try_advance(name_len)?;
 
             let data_size = in_buffer.decode_varint().map_err(|_| {
                 DracoError::DracoError("Failed to read metadata entry data size".to_string())
@@ -217,7 +217,7 @@ impl MeshDecoder {
                     "Failed to read metadata entry value".to_string(),
                 ));
             }
-            in_buffer.advance(data_size);
+            in_buffer.try_advance(data_size)?;
         }
 
         let num_sub_metadata = in_buffer
@@ -238,7 +238,7 @@ impl MeshDecoder {
                     "Failed to read sub-metadata name".to_string(),
                 ));
             }
-            in_buffer.advance(name_len);
+            in_buffer.try_advance(name_len)?;
             self.skip_metadata(in_buffer)?;
         }
         Ok(())
@@ -1041,7 +1041,9 @@ impl MeshDecoder {
                         att_decoder.init(&pc_decoder, att_id);
                         let mut skip_hook_fn = move |buf: &mut DecoderBuffer<'_>| -> bool {
                             if quant_skip_bytes > 0 {
-                                buf.advance(quant_skip_bytes);
+                                if buf.try_advance(quant_skip_bytes).is_err() {
+                                    return false;
+                                }
                             }
                             true
                         };
@@ -1140,7 +1142,9 @@ impl MeshDecoder {
                         att_decoder.init(&pc_decoder, att_id);
                         let mut normal_skip_fn = move |buf: &mut DecoderBuffer<'_>| -> bool {
                             if normal_skip_bytes > 0 {
-                                buf.advance(normal_skip_bytes);
+                                if buf.try_advance(normal_skip_bytes).is_err() {
+                                    return false;
+                                }
                             }
                             true
                         };
