@@ -11,7 +11,7 @@ use draco_core::mesh::Mesh;
 use draco_core::mesh_decoder::MeshDecoder;
 use draco_core::mesh_encoder::MeshEncoder;
 use draco_core::EncoderOptions;
-use draco_cpp_ffi;
+use draco_cpp_test_bridge;
 use std::time::Instant;
 
 fn create_grid_mesh_data(grid_size: usize) -> (Vec<f32>, Vec<u32>) {
@@ -102,12 +102,12 @@ fn create_mesh_from_data(positions: &[f32], faces: &[u32]) -> Mesh {
 fn comprehensive_performance_test() {
     common::disable_noisy_debug_env();
 
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
-    let (major, minor, revision) = draco_cpp_ffi::get_version();
+    let (major, minor, revision) = draco_cpp_test_bridge::get_version();
     println!("\n╔═══════════════════════════════════════════════════════════════════════╗");
     println!("║     COMPREHENSIVE DRACO PERFORMANCE TEST (Rust vs C++)               ║");
     println!("╚═══════════════════════════════════════════════════════════════════════╝");
@@ -166,7 +166,7 @@ fn comprehensive_performance_test() {
         let rust_avg_us = (rust_total_us as f64) / (encode_iterations as f64);
 
         // C++ encoding
-        let cpp_result = draco_cpp_ffi::benchmark_cpp_encode(
+        let cpp_result = draco_cpp_test_bridge::benchmark_cpp_encode(
             &positions,
             &faces,
             speed,
@@ -227,7 +227,8 @@ fn comprehensive_performance_test() {
         }
 
         // C++ decoding
-        let cpp_result = draco_cpp_ffi::profile_cpp_decode(&rust_encoded, decode_iterations);
+        let cpp_result =
+            draco_cpp_test_bridge::profile_cpp_decode(&rust_encoded, decode_iterations);
         let (cpp_avg_us, cpp_points, cpp_faces) = match cpp_result {
             Some(r) => (r.decode_time_us as f64, r.num_points, r.num_faces),
             None => {

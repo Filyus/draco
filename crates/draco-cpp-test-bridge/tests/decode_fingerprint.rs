@@ -223,8 +223,8 @@ fn sequential_connectivity_method(data: &[u8]) -> Option<u8> {
 
 #[test]
 fn cpp_and_rust_decode_fingerprints_match_for_mesh_fixtures() {
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
@@ -241,7 +241,8 @@ fn cpp_and_rust_decode_fingerprints_match_for_mesh_fixtures() {
     for case in cases {
         let data = std::fs::read(base.join(case)).expect("failed to read fixture");
         let rust = rust_decode_fingerprint(&data);
-        let cpp = draco_cpp_ffi::decode_cpp_mesh_fingerprint(&data).expect("C++ decode failed");
+        let cpp =
+            draco_cpp_test_bridge::decode_cpp_mesh_fingerprint(&data).expect("C++ decode failed");
 
         assert_eq!(rust.num_points, cpp.num_points, "{case}: num_points");
         assert_eq!(rust.num_faces, cpp.num_faces, "{case}: num_faces");
@@ -263,15 +264,15 @@ fn cpp_and_rust_decode_fingerprints_match_for_mesh_fixtures() {
 
 #[test]
 fn cpp_and_rust_decode_fingerprints_match_for_multi_color_fixture() {
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
     let case = "production_draco/blender_multi_color.mesh_eb.v2.2.pos_norm_uv_color012.drc";
     let data = std::fs::read(testdata_dir().join(case)).expect("failed to read fixture");
     let rust = rust_decode_fingerprint(&data);
-    let cpp = draco_cpp_ffi::decode_cpp_mesh_fingerprint(&data).expect("C++ decode failed");
+    let cpp = draco_cpp_test_bridge::decode_cpp_mesh_fingerprint(&data).expect("C++ decode failed");
 
     assert_eq!(rust.num_points, cpp.num_points, "{case}: num_points");
     assert_eq!(rust.num_faces, cpp.num_faces, "{case}: num_faces");
@@ -292,8 +293,8 @@ fn cpp_and_rust_decode_fingerprints_match_for_multi_color_fixture() {
 
 #[test]
 fn cpp_and_rust_decode_fingerprints_match_for_point_cloud_fixtures() {
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
@@ -308,7 +309,7 @@ fn cpp_and_rust_decode_fingerprints_match_for_point_cloud_fixtures() {
     for case in cases {
         let data = std::fs::read(base.join(case)).expect("failed to read fixture");
         let rust = rust_decode_point_cloud_fingerprint(&data);
-        let cpp = draco_cpp_ffi::decode_cpp_point_cloud_fingerprint(&data)
+        let cpp = draco_cpp_test_bridge::decode_cpp_point_cloud_fingerprint(&data)
             .expect("C++ point-cloud decode failed");
 
         assert_eq!(rust.num_points, cpp.num_points, "{case}: num_points");
@@ -331,8 +332,8 @@ fn cpp_and_rust_decode_fingerprints_match_for_point_cloud_fixtures() {
 
 #[test]
 fn cpp_compressed_sequential_connectivity_matches_rust_decode() {
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
@@ -352,12 +353,13 @@ fn cpp_compressed_sequential_connectivity_matches_rust_decode() {
         0, 5, 3, //
     ];
 
-    let data = draco_cpp_ffi::encode_cpp_mesh_sequential(&positions, &faces, 5, 5, 14, true)
-        .expect("C++ sequential compressed encode failed");
+    let data =
+        draco_cpp_test_bridge::encode_cpp_mesh_sequential(&positions, &faces, 5, 5, 14, true)
+            .expect("C++ sequential compressed encode failed");
     assert_eq!(sequential_connectivity_method(&data), Some(0));
 
     let rust = rust_decode_fingerprint(&data);
-    let cpp = draco_cpp_ffi::decode_cpp_mesh_fingerprint(&data).expect("C++ decode failed");
+    let cpp = draco_cpp_test_bridge::decode_cpp_mesh_fingerprint(&data).expect("C++ decode failed");
 
     assert_eq!(rust.num_points, cpp.num_points);
     assert_eq!(rust.num_faces, cpp.num_faces);

@@ -25,7 +25,7 @@ fn main() {
         );
     }
 
-    match draco_cpp_ffi::profile_cpp_decode(&data, 1) {
+    match draco_cpp_test_bridge::profile_cpp_decode(&data, 1) {
         Some(r) => println!(
             "C++ decode OK: {} pts, {} faces, {} us",
             r.num_points, r.num_faces, r.decode_time_us

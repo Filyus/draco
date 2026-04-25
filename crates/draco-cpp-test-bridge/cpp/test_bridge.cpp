@@ -1,5 +1,5 @@
-// C API wrapper for Draco C++ library for FFI benchmarking
-// This provides a simple C interface to the C++ Draco encoder/decoder
+// Internal C++ test bridge for Rust parity and performance tests.
+// This is not a public C API surface.
 
 #include <cstring>
 #include <cstdint>

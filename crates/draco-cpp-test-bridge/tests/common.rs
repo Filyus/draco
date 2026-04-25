@@ -11,11 +11,11 @@ pub fn disable_noisy_debug_env() {
 }
 
 #[allow(dead_code)]
-pub fn skip_if_ffi_unavailable() -> bool {
-    if draco_cpp_ffi::is_available() {
+pub fn skip_if_cpp_bridge_unavailable() -> bool {
+    if draco_cpp_test_bridge::is_available() {
         false
     } else {
-        eprintln!("SKIPPING: C++ FFI not available");
+        eprintln!("SKIPPING: C++ test bridge not available");
         true
     }
 }

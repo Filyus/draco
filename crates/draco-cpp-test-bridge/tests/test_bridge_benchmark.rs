@@ -1,4 +1,4 @@
-// Performance comparison test using direct C++ FFI bindings
+// Performance comparison test using the C++ test bridge
 // This gives accurate comparison without process startup overhead
 
 mod common;
@@ -10,7 +10,7 @@ use draco_core::geometry_indices::{FaceIndex, PointIndex};
 use draco_core::mesh::Mesh;
 use draco_core::mesh_encoder::MeshEncoder;
 use draco_core::EncoderOptions;
-use draco_cpp_ffi;
+use draco_cpp_test_bridge;
 use std::time::Instant;
 
 fn create_grid_mesh_data(grid_size: usize) -> (Vec<f32>, Vec<u32>) {
@@ -122,16 +122,16 @@ fn benchmark_rust_encoding(mesh: &Mesh, speed: i32, iterations: u32) -> (f64, us
 }
 
 #[test]
-fn test_ffi_performance_comparison() {
+fn test_cpp_test_bridge_performance_comparison() {
     common::disable_noisy_debug_env();
 
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
-    let (major, minor, revision) = draco_cpp_ffi::get_version();
-    println!("\n=== Rust vs C++ Encoding Performance (Direct FFI) ===");
+    let (major, minor, revision) = draco_cpp_test_bridge::get_version();
+    println!("\n=== Rust vs C++ Encoding Performance (C++ test bridge) ===");
     println!("C++ Draco version: {}.{}.{}\n", major, minor, revision);
 
     let grid_sizes = [50, 100];
@@ -160,8 +160,8 @@ fn test_ffi_performance_comparison() {
             // Rust benchmark
             let (rust_time, rust_size) = benchmark_rust_encoding(&mesh, speed, iterations);
 
-            // C++ FFI benchmark
-            let cpp_result = draco_cpp_ffi::benchmark_cpp_encode(
+            // C++ test bridge benchmark
+            let cpp_result = draco_cpp_test_bridge::benchmark_cpp_encode(
                 &positions, &faces, speed, speed, 10, // quantization_bits
                 iterations,
             );
@@ -205,8 +205,8 @@ fn test_ffi_performance_comparison() {
 fn test_encoding_correctness() {
     common::disable_noisy_debug_env();
 
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
@@ -234,7 +234,7 @@ fn test_encoding_correctness() {
             let rust_size = encoder_buffer.data().len();
 
             // C++ encoding
-            let cpp_result = draco_cpp_ffi::benchmark_cpp_encode(
+            let cpp_result = draco_cpp_test_bridge::benchmark_cpp_encode(
                 &positions, &faces, speed, speed, 10, 1, // single iteration
             );
 

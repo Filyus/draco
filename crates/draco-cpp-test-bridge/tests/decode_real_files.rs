@@ -11,7 +11,7 @@ use std::time::Instant;
 use draco_core::decoder_buffer::DecoderBuffer;
 use draco_core::mesh::Mesh;
 use draco_core::mesh_decoder::MeshDecoder;
-use draco_cpp_ffi;
+use draco_cpp_test_bridge;
 
 fn testdata_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -42,9 +42,9 @@ fn bench_rust_decode(data: &[u8], iters: u32) -> Option<(f64, usize, usize)> {
 }
 
 /// Decode `data` with the C++ decoder `iters` times.
-/// Returns `(avg_us, num_points, num_faces)` or `None` when FFI unavailable.
+/// Returns `(avg_us, num_points, num_faces)` or `None` when the C++ test bridge is unavailable.
 fn bench_cpp_decode(data: &[u8], iters: u32) -> Option<(f64, usize, usize)> {
-    let r = draco_cpp_ffi::profile_cpp_decode(data, iters)?;
+    let r = draco_cpp_test_bridge::profile_cpp_decode(data, iters)?;
     Some((
         r.decode_time_us as f64,
         r.num_points as usize,
@@ -62,8 +62,8 @@ struct FileCase {
 fn decode_real_files_comparison() {
     common::disable_noisy_debug_env();
 
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
@@ -177,7 +177,7 @@ fn decode_real_files_comparison() {
                 cpp.map(|c| c.0).unwrap_or(0.0)
             ),
             (_, None) => println!(
-                "│ {:<20} │{:>7} │ {:>9.1} │  FFI FAIL │    -    │    -    │",
+                "│ {:<20} │{:>7} │ {:>9.1} │  BRIDGE FAIL │    -    │    -    │",
                 case.label,
                 data.len(),
                 rust.map(|r| r.0).unwrap_or(0.0)
@@ -240,7 +240,7 @@ fn decode_real_files_comparison() {
                 cpp.map(|c| c.0).unwrap_or(0.0)
             ),
             (_, None) => println!(
-                "│ {:<20} │{:>7} │ {:>9.1} │  FFI FAIL │    -    │    -    │",
+                "│ {:<20} │{:>7} │ {:>9.1} │  BRIDGE FAIL │    -    │    -    │",
                 case.label,
                 data.len(),
                 rust.map(|r| r.0).unwrap_or(0.0)

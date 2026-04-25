@@ -1,9 +1,9 @@
-//! FFI bindings to the C++ Draco library for performance comparison
+//! Internal C++ test bridge for Rust parity and performance tests
 //!
-//! This crate provides direct FFI access to the original C++ Draco encoder
-//! for accurate performance benchmarking against the Rust implementation.
+//! This crate is not a public C API surface. It provides a private bridge to
+//! the original C++ Draco encoder/decoder for Rust parity and performance tests.
 
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 mod ffi {
     use std::os::raw::c_int;
 
@@ -160,7 +160,7 @@ mod ffi {
     }
 }
 
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 pub use ffi::*;
 
 /// Detailed profiling result from C++ encoder
@@ -173,17 +173,17 @@ pub struct CppProfileResult {
     pub output_size: usize,
 }
 
-/// Check if FFI is available
+/// Check if the C++ test bridge is available
 pub fn is_available() -> bool {
-    #[cfg(draco_ffi_disabled)]
+    #[cfg(cpp_test_bridge_disabled)]
     return false;
 
-    #[cfg(not(draco_ffi_disabled))]
+    #[cfg(not(cpp_test_bridge_disabled))]
     return true;
 }
 
 /// Get Draco C++ library version
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 pub fn get_version() -> (i32, i32, i32) {
     let mut major = 0;
     let mut minor = 0;
@@ -194,7 +194,7 @@ pub fn get_version() -> (i32, i32, i32) {
     (major, minor, revision)
 }
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 pub fn get_version() -> (i32, i32, i32) {
     (0, 0, 0)
 }
@@ -216,9 +216,9 @@ pub struct CppBenchmarkResult {
 /// * `iterations` - Number of iterations to average
 ///
 /// # Returns
-/// * `Some(CppBenchmarkResult)` if FFI is available and encoding succeeded
-/// * `None` if FFI is disabled or encoding failed
-#[cfg(not(draco_ffi_disabled))]
+/// * `Some(CppBenchmarkResult)` if the C++ test bridge is available and encoding succeeded
+/// * `None` if the C++ test bridge is disabled or encoding failed
+#[cfg(not(cpp_test_bridge_disabled))]
 pub fn benchmark_cpp_encode(
     positions: &[f32],
     faces: &[u32],
@@ -256,7 +256,7 @@ pub fn benchmark_cpp_encode(
     })
 }
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 pub fn benchmark_cpp_encode(
     _positions: &[f32],
     _faces: &[u32],
@@ -268,7 +268,7 @@ pub fn benchmark_cpp_encode(
     None
 }
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 pub unsafe fn draco_benchmark_encode_mesh(
     _num_points: u32,
     _positions: *const f32,
@@ -284,7 +284,7 @@ pub unsafe fn draco_benchmark_encode_mesh(
 }
 
 /// Encode a mesh using C++ Draco and return the encoded bytes
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 pub fn encode_cpp_mesh(
     positions: &[f32],
     faces: &[u32],
@@ -323,7 +323,7 @@ pub fn encode_cpp_mesh(
     Some(buffer)
 }
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 pub fn encode_cpp_mesh(
     _positions: &[f32],
     _faces: &[u32],
@@ -335,7 +335,7 @@ pub fn encode_cpp_mesh(
 }
 
 /// Encode a mesh using C++ Draco sequential mode.
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 pub fn encode_cpp_mesh_sequential(
     positions: &[f32],
     faces: &[u32],
@@ -373,7 +373,7 @@ pub fn encode_cpp_mesh_sequential(
     Some(buffer)
 }
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 pub fn encode_cpp_mesh_sequential(
     _positions: &[f32],
     _faces: &[u32],
@@ -386,7 +386,7 @@ pub fn encode_cpp_mesh_sequential(
 }
 
 /// Profile C++ encoding with detailed timing breakdown
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 pub fn profile_cpp_encode(
     positions: &[f32],
     faces: &[u32],
@@ -433,7 +433,7 @@ pub fn profile_cpp_encode(
     })
 }
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 pub fn profile_cpp_encode(
     _positions: &[f32],
     _faces: &[u32],
@@ -465,7 +465,7 @@ pub struct CppDecodeFingerprint {
 }
 
 /// Profile C++ decoding
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 pub fn profile_cpp_decode(encoded_data: &[u8], iterations: u32) -> Option<CppDecodeProfileResult> {
     let mut result = ffi::DracoDecodeProfileResult {
         decode_time_us: 0,
@@ -493,7 +493,7 @@ pub fn profile_cpp_decode(encoded_data: &[u8], iterations: u32) -> Option<CppDec
     })
 }
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 pub fn profile_cpp_decode(
     _encoded_data: &[u8],
     _iterations: u32,
@@ -502,7 +502,7 @@ pub fn profile_cpp_decode(
 }
 
 /// Decode a mesh with C++ Draco and return stable fingerprints for comparison.
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 pub fn decode_cpp_mesh_fingerprint(encoded_data: &[u8]) -> Option<CppDecodeFingerprint> {
     let mut result = ffi::DracoDecodeFingerprint {
         num_points: 0,
@@ -531,13 +531,13 @@ pub fn decode_cpp_mesh_fingerprint(encoded_data: &[u8]) -> Option<CppDecodeFinge
     })
 }
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 pub fn decode_cpp_mesh_fingerprint(_encoded_data: &[u8]) -> Option<CppDecodeFingerprint> {
     None
 }
 
 /// Decode a point cloud with C++ Draco and return stable fingerprints for comparison.
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 pub fn decode_cpp_point_cloud_fingerprint(encoded_data: &[u8]) -> Option<CppDecodeFingerprint> {
     let mut result = ffi::DracoDecodeFingerprint {
         num_points: 0,
@@ -570,13 +570,13 @@ pub fn decode_cpp_point_cloud_fingerprint(encoded_data: &[u8]) -> Option<CppDeco
     })
 }
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 pub fn decode_cpp_point_cloud_fingerprint(_encoded_data: &[u8]) -> Option<CppDecodeFingerprint> {
     None
 }
 
 /// Benchmark C++ decoding via the Rust wrapper (returns avg time and output sizes)
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 pub fn benchmark_cpp_decode(encoded_data: &[u8], iterations: u32) -> Option<(i64, u32, u32)> {
     let mut out_num_points = 0u32;
     let mut out_num_faces = 0u32;
@@ -598,20 +598,20 @@ pub fn benchmark_cpp_decode(encoded_data: &[u8], iterations: u32) -> Option<(i64
     }
 }
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 pub fn benchmark_cpp_decode(_encoded_data: &[u8], _iterations: u32) -> Option<(i64, u32, u32)> {
     None
 }
 
 // --- Safe RAII wrappers for C++ handles -------------------------------------------------
 
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 /// RAII wrapper around a C++ Mesh handle
 pub struct CppMesh {
     handle: *mut ::std::ffi::c_void,
 }
 
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 impl CppMesh {
     pub fn new() -> Option<Self> {
         let h = unsafe { draco_create_mesh() };
@@ -642,18 +642,18 @@ impl CppMesh {
     }
 }
 
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 impl Drop for CppMesh {
     fn drop(&mut self) {
         unsafe { draco_free_mesh(self.handle) }
     }
 }
 
-#[cfg(draco_ffi_disabled)]
-/// Stub when FFI is disabled
+#[cfg(cpp_test_bridge_disabled)]
+/// Stub when the C++ test bridge is disabled
 pub struct CppMesh;
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 impl CppMesh {
     pub fn new() -> Option<Self> {
         None
@@ -668,13 +668,13 @@ impl CppMesh {
     }
 }
 
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 /// RAII wrapper around a C++ EncoderBuffer handle
 pub struct CppEncoderBuffer {
     handle: *mut ::std::ffi::c_void,
 }
 
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 impl CppEncoderBuffer {
     pub fn new() -> Option<Self> {
         let h = unsafe { draco_create_encoder_buffer() };
@@ -694,17 +694,17 @@ impl CppEncoderBuffer {
     }
 }
 
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 impl Drop for CppEncoderBuffer {
     fn drop(&mut self) {
         unsafe { draco_free_encoder_buffer(self.handle) }
     }
 }
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 pub struct CppEncoderBuffer;
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 impl CppEncoderBuffer {
     pub fn new() -> Option<Self> {
         None
@@ -716,7 +716,7 @@ impl CppEncoderBuffer {
 }
 
 /// Encode using the C++ handle-based API and return encoded bytes
-#[cfg(not(draco_ffi_disabled))]
+#[cfg(not(cpp_test_bridge_disabled))]
 pub fn encode_with_handles(
     mesh: &CppMesh,
     encoding_speed: i32,
@@ -739,7 +739,7 @@ pub fn encode_with_handles(
     Some(buffer.data().to_vec())
 }
 
-#[cfg(draco_ffi_disabled)]
+#[cfg(cpp_test_bridge_disabled)]
 pub fn encode_with_handles(
     _mesh: &CppMesh,
     _encoding_speed: i32,
@@ -756,12 +756,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_ffi_available() {
+    fn test_cpp_test_bridge_available() {
         if is_available() {
             let (major, minor, revision) = get_version();
             println!("Draco C++ version: {}.{}.{}", major, minor, revision);
         } else {
-            println!("Draco FFI is disabled");
+            println!("C++ test bridge is disabled");
         }
     }
 }

@@ -2,7 +2,7 @@
 members = [
     "draco-core",
     "draco-io",
-    "draco-cpp-ffi",
+    "draco-cpp-test-bridge",
 ]
 resolver = "2"
 
@@ -22,10 +22,10 @@ opt-level = 2
 opt-level = 2
 
 # Also optimize the FFI test crate so the benchmark loops themselves are fast.
-[profile.dev.package.draco-cpp-ffi]
+[profile.dev.package.draco-cpp-test-bridge]
 opt-level = 2
 
-[profile.test.package.draco-cpp-ffi]
+[profile.test.package.draco-cpp-test-bridge]
 opt-level = 2
 
 # Note: LTO is intentionally NOT enabled for tests. `lto = "thin"` disables

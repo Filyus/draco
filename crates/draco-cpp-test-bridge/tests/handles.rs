@@ -1,9 +1,9 @@
-use draco_cpp_ffi::{encode_cpp_mesh, encode_with_handles, is_available, CppMesh};
+use draco_cpp_test_bridge::{encode_cpp_mesh, encode_with_handles, is_available, CppMesh};
 
 #[test]
 fn test_handle_encode_matches_single() {
     if !is_available() {
-        println!("FFI disabled; skipping test");
+        println!("C++ test bridge disabled; skipping test");
         return;
     }
 

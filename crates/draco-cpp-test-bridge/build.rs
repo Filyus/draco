@@ -7,9 +7,9 @@ fn main() {
         return;
     }
 
-    // Inform cargo's cfg checker about our conditional `draco_ffi_disabled` cfg so
+    // Inform cargo's cfg checker about our conditional `cpp_test_bridge_disabled` cfg so
     // the `check-cfg` lint does not warn about it being unexpected.
-    println!("cargo:rustc-check-cfg=cfg(draco_ffi_disabled)");
+    println!("cargo:rustc-check-cfg=cfg(cpp_test_bridge_disabled)");
 
     // Path to the original Draco source
     let draco_src = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
@@ -31,18 +31,18 @@ fn main() {
     let lib_path = draco_build.join("src/draco/Release");
     if !lib_path.exists() {
         println!(
-            "cargo:warning=C++ Draco library not found at {:?}. FFI features will be disabled.",
+            "cargo:warning=C++ Draco library not found at {:?}. C++ test bridge will be disabled.",
             lib_path
         );
-        println!("cargo:rustc-cfg=draco_ffi_disabled");
+        println!("cargo:rustc-cfg=cpp_test_bridge_disabled");
         return;
     }
 
-    // Compile our FFI wrapper
+    // Compile the private C++ test bridge.
     let mut build = cc::Build::new();
     build
         .cpp(true)
-        .file("cpp/draco_ffi.cpp")
+        .file("cpp/test_bridge.cpp")
         .include(&draco_src)
         // The build dir has draco_features.h at build-original/draco/draco_features.h
         // but headers include it as "draco/draco_features.h", so we include the parent
@@ -56,9 +56,9 @@ fn main() {
         build.flag("/EHsc");
     }
 
-    build.compile("draco_ffi_wrapper");
+    build.compile("cpp_test_bridge_wrapper");
     // Ensure the compiled wrapper is linked into all test binaries
-    println!("cargo:rustc-link-lib=static=draco_ffi_wrapper");
+    println!("cargo:rustc-link-lib=static=cpp_test_bridge_wrapper");
 
     // Link to the pre-built Draco library
     println!("cargo:rustc-link-search=native={}", lib_path.display());
@@ -109,5 +109,5 @@ fn main() {
         println!("cargo:rustc-link-lib=stdc++");
     }
 
-    println!("cargo:rerun-if-changed=cpp/draco_ffi.cpp");
+    println!("cargo:rerun-if-changed=cpp/test_bridge.cpp");
 }

@@ -37,13 +37,13 @@ fn create_test_mesh_data(grid_size: usize) -> (Vec<f32>, Vec<u32>) {
     (positions, faces)
 }
 
-// Use the FFI function re-exported by the crate (safer and ensures linking through the crate)
-// Note: function is declared in the crate via `pub use ffi::*;` and can be called as `draco_cpp_ffi::draco_benchmark_decode_mesh`.
+// Use the bridge function re-exported by the crate (safer and ensures linking through the crate)
+// Note: function is declared in the crate via `pub use ffi::*;` and can be called as `draco_cpp_test_bridge::draco_benchmark_decode_mesh`.
 
 #[test]
 fn bench_decode_comparison() {
     common::disable_noisy_debug_env();
-    if common::skip_if_ffi_unavailable() {
+    if common::skip_if_cpp_bridge_unavailable() {
         return;
     }
 
@@ -59,8 +59,9 @@ fn bench_decode_comparison() {
         let num_faces = (grid_size - 1) * (grid_size - 1) * 2;
 
         for speed in [0, 1, 5, 10] {
-            let encoded_data = draco_cpp_ffi::encode_cpp_mesh(&positions, &faces, speed, speed, 10)
-                .expect("C++ encode failed");
+            let encoded_data =
+                draco_cpp_test_bridge::encode_cpp_mesh(&positions, &faces, speed, speed, 10)
+                    .expect("C++ encode failed");
 
             for _ in 0..iterations.min(5) {
                 let mut decoder_buffer = DecoderBuffer::new(&encoded_data);
@@ -80,7 +81,7 @@ fn bench_decode_comparison() {
             let rust_avg_us = rust_elapsed.as_micros() / iterations as u128;
 
             let (cpp_avg_us_raw, _num_points, _num_faces) =
-                draco_cpp_ffi::benchmark_cpp_decode(&encoded_data, iterations as u32)
+                draco_cpp_test_bridge::benchmark_cpp_decode(&encoded_data, iterations as u32)
                     .expect("C++ benchmark decode failed");
             let cpp_avg_us = cpp_avg_us_raw as u128;
 

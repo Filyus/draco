@@ -27,7 +27,7 @@ parity_verifications:
     note: "Verified decoder_type controls whether non-position Edgebreaker attribute data uses attribute-specific connectivity. MESH_VERTEX_ATTRIBUTE marks is_connectivity_used=false even when boundary seam corners exist; no-interior-seam split groups reuse the base corner table/order and keep C++ parallelogram prediction enabled."
 
 files:
-  - path: "crates/draco-cpp-ffi/src/lib.rs"
+  - path: "crates/draco-cpp-test-bridge/src/lib.rs"
     structures:
       - name: "CppMesh"
         type: "struct"
@@ -2156,7 +2156,7 @@ files:
       - name: "generated_legacy_cube_attributes_match_cpp_decoder"
         progress: "added"
         note: "C++-oracle regression for generated Draco 1.0.0/1.1.0 cube_att mesh fixtures in both sequential and Edgebreaker modes. Runs the matching legacy draco_decoder.exe, parses the decoded OBJ, and compares Rust face-corner POSITION/TEX_COORD/NORMAL records against C++ output with tolerances."
-  - path: "crates/draco-cpp-ffi/tests/decode_fingerprint.rs"
+  - path: "crates/draco-cpp-test-bridge/tests/decode_fingerprint.rs"
     functions:
       - name: "cpp_and_rust_decode_fingerprints_match_for_multi_color_fixture"
         progress: "added"

@@ -1,8 +1,8 @@
 [package]
-name = "draco-cpp-ffi"
+name = "draco-cpp-test-bridge"
 version = "0.1.0"
 edition = "2021"
-description = "FFI bindings to C++ Draco library for performance comparison"
+description = "Internal C++ test bridge for Rust parity and performance tests"
 
 [dependencies]
 

@@ -9,7 +9,7 @@ use draco_core::geometry_indices::{FaceIndex, PointIndex};
 use draco_core::mesh::Mesh;
 use draco_core::mesh_encoder::MeshEncoder;
 use draco_core::EncoderOptions;
-use draco_cpp_ffi;
+use draco_cpp_test_bridge;
 
 fn create_simple_mesh_data() -> (Vec<f32>, Vec<u32>) {
     // Simple cube
@@ -160,8 +160,8 @@ fn print_bytes_around(data: &[u8], center: usize, context: usize, label: &str) {
 fn test_byte_comparison_speed_10_simple() {
     common::disable_noisy_debug_env();
 
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
@@ -171,7 +171,7 @@ fn test_byte_comparison_speed_10_simple() {
     let mesh = create_rust_mesh(&positions, &faces);
 
     let rust_bytes = encode_rust(&mesh, 10, 10);
-    let cpp_bytes = draco_cpp_ffi::encode_cpp_mesh(&positions, &faces, 10, 10, 10)
+    let cpp_bytes = draco_cpp_test_bridge::encode_cpp_mesh(&positions, &faces, 10, 10, 10)
         .expect("C++ encoding failed");
 
     println!("Rust size: {} bytes", rust_bytes.len());
@@ -224,8 +224,8 @@ fn test_byte_comparison_speed_10_simple() {
 fn test_byte_comparison_speed_10_grid() {
     common::disable_noisy_debug_env();
 
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
@@ -235,7 +235,7 @@ fn test_byte_comparison_speed_10_grid() {
     let mesh = create_rust_mesh(&positions, &faces);
 
     let rust_bytes = encode_rust(&mesh, 10, 10);
-    let cpp_bytes = draco_cpp_ffi::encode_cpp_mesh(&positions, &faces, 10, 10, 10)
+    let cpp_bytes = draco_cpp_test_bridge::encode_cpp_mesh(&positions, &faces, 10, 10, 10)
         .expect("C++ encoding failed");
 
     println!("Rust size: {} bytes", rust_bytes.len());
@@ -272,8 +272,8 @@ fn test_byte_comparison_speed_10_grid() {
 fn test_byte_comparison_all_speeds() {
     common::disable_noisy_debug_env();
 
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
@@ -286,8 +286,9 @@ fn test_byte_comparison_all_speeds() {
 
     for speed in speeds {
         let rust_bytes = encode_rust(&mesh, speed, 10);
-        let cpp_bytes = draco_cpp_ffi::encode_cpp_mesh(&positions, &faces, speed, speed, 10)
-            .expect("C++ encoding failed");
+        let cpp_bytes =
+            draco_cpp_test_bridge::encode_cpp_mesh(&positions, &faces, speed, speed, 10)
+                .expect("C++ encoding failed");
 
         let status = if rust_bytes == cpp_bytes {
             "✓ MATCH"

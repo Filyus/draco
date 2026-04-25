@@ -91,7 +91,7 @@ fn create_grid_mesh(grid_size: usize) -> (Mesh, Vec<f32>, Vec<u32>) {
 #[test]
 fn profile_sequential_encoding() {
     common::disable_noisy_debug_env();
-    if common::skip_if_ffi_unavailable() {
+    if common::skip_if_cpp_bridge_unavailable() {
         return;
     }
 
@@ -151,7 +151,7 @@ fn profile_sequential_encoding() {
         // C++ comparison
         let cpp_time = unsafe {
             let mut output_size = 0usize;
-            draco_cpp_ffi::draco_benchmark_encode_mesh(
+            draco_cpp_test_bridge::draco_benchmark_encode_mesh(
                 num_points as u32,
                 positions.as_ptr(),
                 num_faces as u32,
@@ -177,7 +177,7 @@ fn profile_sequential_encoding() {
 #[test]
 fn profile_detailed_breakdown() {
     common::disable_noisy_debug_env();
-    if common::skip_if_ffi_unavailable() {
+    if common::skip_if_cpp_bridge_unavailable() {
         return;
     }
 
@@ -284,7 +284,7 @@ fn profile_detailed_breakdown() {
     // C++ comparison
     let cpp_time = unsafe {
         let mut output_size = 0usize;
-        draco_cpp_ffi::draco_benchmark_encode_mesh(
+        draco_cpp_test_bridge::draco_benchmark_encode_mesh(
             num_points as u32,
             positions.as_ptr(),
             num_faces as u32,
@@ -983,7 +983,7 @@ fn profile_rans_loop_micro() {
 #[test]
 fn profile_full_encode_breakdown() {
     common::disable_noisy_debug_env();
-    if common::skip_if_ffi_unavailable() {
+    if common::skip_if_cpp_bridge_unavailable() {
         return;
     }
 
@@ -1048,7 +1048,7 @@ fn profile_full_encode_breakdown() {
     // Stage 4: C++ encode for comparison
     let cpp_avg = unsafe {
         let mut output_size = 0usize;
-        draco_cpp_ffi::draco_benchmark_encode_mesh(
+        draco_cpp_test_bridge::draco_benchmark_encode_mesh(
             num_points as u32,
             positions.as_ptr(),
             num_faces as u32,
@@ -1150,8 +1150,8 @@ fn profile_point_ids_creation() {
 fn profile_rust_vs_cpp_breakdown() {
     common::disable_noisy_debug_env();
 
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
@@ -1172,9 +1172,10 @@ fn profile_rust_vs_cpp_breakdown() {
         println!("=== Speed {} ===\n", speed);
 
         // C++ Profile
-        let cpp_profile =
-            draco_cpp_ffi::profile_cpp_encode(&positions, &faces, speed, speed, 10, iterations)
-                .expect("C++ profile failed");
+        let cpp_profile = draco_cpp_test_bridge::profile_cpp_encode(
+            &positions, &faces, speed, speed, 10, iterations,
+        )
+        .expect("C++ profile failed");
 
         println!("C++ Breakdown:");
         println!(
@@ -1318,8 +1319,8 @@ fn profile_decode_rust_vs_cpp() {
 
     common::disable_noisy_debug_env();
 
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
@@ -1356,7 +1357,7 @@ fn profile_decode_rust_vs_cpp() {
         println!("Encoded size: {} bytes\n", encoded_data.len());
 
         // C++ Decode
-        let cpp_result = draco_cpp_ffi::profile_cpp_decode(&encoded_data, iterations)
+        let cpp_result = draco_cpp_test_bridge::profile_cpp_decode(&encoded_data, iterations)
             .expect("C++ decode failed");
 
         println!("C++ Decode:");
@@ -1447,8 +1448,8 @@ fn profile_decode_sequential_breakdown() {
 
     common::disable_noisy_debug_env();
 
-    if !draco_cpp_ffi::is_available() {
-        eprintln!("SKIPPING: C++ FFI not available");
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
         return;
     }
 
@@ -1482,8 +1483,8 @@ fn profile_decode_sequential_breakdown() {
     println!("Encoded size: {} bytes\n", encoded_data.len());
 
     // C++ Decode
-    let cpp_result =
-        draco_cpp_ffi::profile_cpp_decode(&encoded_data, iterations).expect("C++ decode failed");
+    let cpp_result = draco_cpp_test_bridge::profile_cpp_decode(&encoded_data, iterations)
+        .expect("C++ decode failed");
 
     println!("C++ Decode:   {:7.1} µs", cpp_result.decode_time_us as f64);
 
