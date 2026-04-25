@@ -252,6 +252,15 @@ completed:
       - path: "crates/draco-core/src/mesh_decoder.rs"
     note: "Point attribute explicit map writes now have a fallible setter, and mesh decode uses it when reconstructing point-to-attribute mappings from bitstream-controlled ids."
 
+  - id: sequential-generic-attribute-allocation
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/sequential_generic_attribute_decoder.rs"
+      - path: "crates/draco-core/src/data_buffer.rs"
+        tests:
+          - "try_resize_rejects_impossible_size"
+    note: "Generic sequential attribute decode now uses fallible DataBuffer resizing before copying decoded bytes, so allocation failure is reported as a decode error instead of panicking during Vec resize."
+
 open_risks:
   - id: no-sustained-fuzzing
     priority: high

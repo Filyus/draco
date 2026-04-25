@@ -137,4 +137,12 @@ mod tests {
         assert_eq!(bytes, [1, 2]);
         assert!(!buffer.try_read(3, &mut bytes));
     }
+
+    #[test]
+    fn try_resize_rejects_impossible_size() {
+        let mut buffer = DataBuffer::new();
+
+        assert!(buffer.try_resize(usize::MAX).is_err());
+        assert_eq!(buffer.data_size(), 0);
+    }
 }
