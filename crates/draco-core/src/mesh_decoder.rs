@@ -123,18 +123,27 @@ impl MeshDecoder {
             self.decode_metadata(in_buffer)?;
         }
 
-        // Point cloud files (geometry_type == 0) have no connectivity.
-        // Delegate to PointCloudDecoder which reads num_points + attributes
-        // directly into the Mesh's underlying PointCloud.
         if self.geometry_type == EncodedGeometryType::PointCloud {
-            let mut pc_decoder = crate::point_cloud_decoder::PointCloudDecoder::new();
-            return pc_decoder.decode_after_header(
-                self.version_major,
-                self.version_minor,
-                self.method,
-                in_buffer,
-                &mut *out_mesh,
-            );
+            #[cfg(feature = "point_cloud_decode")]
+            {
+                // Point cloud files (geometry_type == 0) have no connectivity.
+                // Delegate to PointCloudDecoder which reads num_points + attributes
+                // directly into the Mesh's underlying PointCloud.
+                let mut pc_decoder = crate::point_cloud_decoder::PointCloudDecoder::new();
+                return pc_decoder.decode_after_header(
+                    self.version_major,
+                    self.version_minor,
+                    self.method,
+                    in_buffer,
+                    &mut *out_mesh,
+                );
+            }
+            #[cfg(not(feature = "point_cloud_decode"))]
+            {
+                return Err(DracoError::DracoError(
+                    "Point cloud decode support is disabled".to_string(),
+                ));
+            }
         }
 
         // 3. Decode Connectivity

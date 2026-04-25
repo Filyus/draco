@@ -12,9 +12,15 @@ serde_json = "1.0.148"
 miniz_oxide = { version = "0.6", optional = true }
 
 [features]
-default = ["encoder", "decoder", "compression"]
+default = [
+    "encoder",
+    "decoder",
+    "compression",
+    "point_cloud_decode",
+]
 encoder = ["draco-core/encoder"]
 decoder = ["draco-core/decoder"]
+point_cloud_decode = ["decoder", "draco-core/point_cloud_decode"]
 compression = ["miniz_oxide"]
 
 [dev-dependencies]

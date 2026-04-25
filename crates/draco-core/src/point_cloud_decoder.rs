@@ -1,17 +1,27 @@
 use crate::compression_config::EncodedGeometryType;
 use crate::corner_table::CornerTable;
+#[cfg(feature = "point_cloud_decode")]
 use crate::decoder_buffer::DecoderBuffer;
+#[cfg(feature = "point_cloud_decode")]
 use crate::draco_types::DataType;
+#[cfg(feature = "point_cloud_decode")]
 use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
+#[cfg(feature = "point_cloud_decode")]
 use crate::geometry_indices::PointIndex;
+#[cfg(feature = "point_cloud_decode")]
 use crate::kd_tree_attributes_decoder::KdTreeAttributesDecoder;
 use crate::mesh::Mesh;
 use crate::point_cloud::PointCloud;
+#[cfg(feature = "point_cloud_decode")]
 use crate::sequential_integer_attribute_decoder::SequentialIntegerAttributeDecoder;
+#[cfg(feature = "point_cloud_decode")]
 use crate::status::{DracoError, Status};
 
+#[cfg(feature = "point_cloud_decode")]
 use crate::attribute_octahedron_transform::AttributeOctahedronTransform;
+#[cfg(feature = "point_cloud_decode")]
 use crate::attribute_quantization_transform::AttributeQuantizationTransform;
+#[cfg(feature = "point_cloud_decode")]
 use crate::attribute_transform::AttributeTransform;
 
 pub trait GeometryDecoder {
@@ -26,8 +36,11 @@ pub trait GeometryDecoder {
 
 pub struct PointCloudDecoder {
     geometry_type: EncodedGeometryType,
+    #[cfg(feature = "point_cloud_decode")]
     method: u8,
+    #[cfg(feature = "point_cloud_decode")]
     version_major: u8,
+    #[cfg(feature = "point_cloud_decode")]
     version_minor: u8,
 }
 
@@ -59,6 +72,7 @@ impl Default for PointCloudDecoder {
     }
 }
 
+#[cfg(feature = "point_cloud_decode")]
 fn make_point_ids(num_points: usize) -> Result<Vec<PointIndex>, DracoError> {
     let mut point_ids = Vec::new();
     point_ids
@@ -70,6 +84,7 @@ fn make_point_ids(num_points: usize) -> Result<Vec<PointIndex>, DracoError> {
     Ok(point_ids)
 }
 
+#[cfg(feature = "point_cloud_decode")]
 fn validate_num_attributes_in_decoder(
     num_attributes_in_decoder: usize,
     remaining_bytes: usize,
@@ -88,6 +103,7 @@ fn validate_num_attributes_in_decoder(
     Ok(())
 }
 
+#[cfg(feature = "point_cloud_decode")]
 fn validate_num_components(num_components: u8) -> Result<(), DracoError> {
     if num_components == 0 {
         return Err(DracoError::DracoError(
@@ -101,12 +117,16 @@ impl PointCloudDecoder {
     pub fn new() -> Self {
         Self {
             geometry_type: EncodedGeometryType::PointCloud,
+            #[cfg(feature = "point_cloud_decode")]
             method: 0,
+            #[cfg(feature = "point_cloud_decode")]
             version_major: 0,
+            #[cfg(feature = "point_cloud_decode")]
             version_minor: 0,
         }
     }
 
+    #[cfg(feature = "point_cloud_decode")]
     pub fn decode(&mut self, in_buffer: &mut DecoderBuffer, out_pc: &mut PointCloud) -> Status {
         // 1. Decode Header
         self.decode_header(in_buffer)?;
@@ -117,6 +137,7 @@ impl PointCloudDecoder {
 
     /// Decode point cloud data when header + metadata have already been parsed.
     /// Used by MeshDecoder to delegate point cloud streams.
+    #[cfg(feature = "point_cloud_decode")]
     pub fn decode_after_header(
         &mut self,
         version_major: u8,
@@ -132,6 +153,7 @@ impl PointCloudDecoder {
         self.decode_geometry_data(buffer, out_pc)
     }
 
+    #[cfg(feature = "point_cloud_decode")]
     fn decode_header(&mut self, buffer: &mut DecoderBuffer) -> Status {
         let mut magic = [0u8; 5];
         buffer.decode_bytes(&mut magic)?;
@@ -160,6 +182,7 @@ impl PointCloudDecoder {
         Ok(())
     }
 
+    #[cfg(feature = "point_cloud_decode")]
     fn decode_geometry_data(&mut self, buffer: &mut DecoderBuffer, pc: &mut PointCloud) -> Status {
         let bitstream_version: u16 =
             ((self.version_major as u16) << 8) | (self.version_minor as u16);

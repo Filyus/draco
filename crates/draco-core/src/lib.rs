@@ -69,7 +69,7 @@ pub mod version;
 pub mod decoder_buffer;
 #[cfg(feature = "decoder")]
 pub mod direct_bit_decoder;
-#[cfg(feature = "decoder")]
+#[cfg(all(feature = "decoder", feature = "point_cloud_decode"))]
 pub mod kd_tree_attributes_decoder;
 #[cfg(feature = "decoder")]
 pub mod mesh_decoder;

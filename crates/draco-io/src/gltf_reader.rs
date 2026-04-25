@@ -34,7 +34,9 @@ use draco_core::draco_types::DataType;
 use draco_core::geometry_attribute::{GeometryAttributeType, PointAttribute};
 use draco_core::mesh::Mesh;
 use draco_core::mesh_decoder::MeshDecoder;
+#[cfg(feature = "point_cloud_decode")]
 use draco_core::point_cloud::PointCloud;
+#[cfg(feature = "point_cloud_decode")]
 use draco_core::point_cloud_decoder::PointCloudDecoder;
 use serde::Deserialize;
 use thiserror::Error;
@@ -585,6 +587,7 @@ impl GltfReader {
     }
 
     /// Decode a Draco-compressed primitive as a PointCloud.
+    #[cfg(feature = "point_cloud_decode")]
     pub fn decode_draco_point_cloud(&self, info: &DracoPrimitiveInfo) -> Result<PointCloud> {
         let data = self.get_draco_data(info)?;
         let mut decoder_buffer = DecoderBuffer::new(data);
