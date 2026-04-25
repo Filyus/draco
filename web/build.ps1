@@ -59,6 +59,8 @@ foreach ($module in $modules) {
         # Build with wasm-pack. Debug builds use --dev; release builds use --release and run wasm-opt by default.
         # Remove -wasm suffix and convert remaining dashes to underscores
         $outputName = ($module -replace '-wasm$', '') -replace '-', '_'
+        Get-ChildItem $outputDir -Filter ($outputName + "*_bg.wasm") -ErrorAction SilentlyContinue |
+            Remove-Item -Force
 
         $wasmPackArgs = @('build')
         if ($Debug) { $wasmPackArgs += '--dev' } else { $wasmPackArgs += '--release'; $wasmPackArgs += '--no-opt' }
@@ -111,6 +113,9 @@ foreach ($module in $modules) {
                 Move-Item -Path $wasmFile -Destination $cleanWasmFile -Force
                 Write-Host "  Renamed to $(Split-Path $cleanWasmFile -Leaf)" -ForegroundColor Gray
             }
+
+            Get-ChildItem $outputDir -Filter ($outputName + "*_bg.wasm") -ErrorAction SilentlyContinue |
+                Remove-Item -Force
             
             # Update the .js file to reference the new filename
             $jsFile = Join-Path $outputDir ($outputName + ".js")
