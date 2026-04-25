@@ -28,7 +28,7 @@ use crate::geometry_indices::{
 };
 use crate::mesh::Mesh;
 use crate::mesh_edgebreaker_shared::{EdgeFaceName, EdgebreakerSymbol, TopologySplitEventData};
-#[cfg(feature = "encoder")]
+#[cfg(feature = "edgebreaker_valence_encode")]
 use crate::mesh_edgebreaker_traversal_valence_encoder::MeshEdgebreakerTraversalValenceEncoder;
 use crate::rans_bit_encoder::RAnsBitEncoder;
 use crate::status::DracoError;
@@ -139,7 +139,7 @@ pub struct MeshEdgebreakerEncoder {
     #[cfg(feature = "debug_logs")]
     verbose_logging: bool,
 
-    #[cfg(feature = "encoder")]
+    #[cfg(feature = "edgebreaker_valence_encode")]
     valence_encoder: Option<MeshEdgebreakerTraversalValenceEncoder>,
 }
 
@@ -176,7 +176,7 @@ impl MeshEdgebreakerEncoder {
             encoding_speed: 5, // Default
             #[cfg(feature = "debug_logs")]
             verbose_logging: crate::debug_env_enabled("DRACO_VERBOSE"),
-            #[cfg(feature = "encoder")]
+            #[cfg(feature = "edgebreaker_valence_encode")]
             valence_encoder: None,
         }
     }
@@ -263,19 +263,18 @@ impl MeshEdgebreakerEncoder {
         // See mesh_edgebreaker_encoder.cc: const bool is_tiny_mesh = mesh()->num_faces() < 1000;
         let is_tiny_mesh = mesh.num_faces() < 1000;
 
-        #[cfg(feature = "edgebreaker_valence")]
+        #[cfg(feature = "edgebreaker_valence_encode")]
         if speed < 5 && !is_tiny_mesh {
             let mut ve = MeshEdgebreakerTraversalValenceEncoder::new();
             ve.init(corner_table);
             self.valence_encoder = Some(ve);
         }
-        #[cfg(not(feature = "edgebreaker_valence"))]
+        #[cfg(not(feature = "edgebreaker_valence_encode"))]
         {
             let _ = speed;
             let _ = is_tiny_mesh;
-            self.valence_encoder = None;
         }
-        #[cfg(feature = "edgebreaker_valence")]
+        #[cfg(feature = "edgebreaker_valence_encode")]
         if speed >= 5 || is_tiny_mesh {
             self.valence_encoder = None;
         }
@@ -290,7 +289,10 @@ impl MeshEdgebreakerEncoder {
         // Traverse the surface starting from each unvisited corner (Draco C++ behavior).
         // For interior components, the init face is not represented by symbols; the
         // decoder reconstructs it from the start-face configuration stream.
+        #[cfg(feature = "edgebreaker_valence_encode")]
         let mut valence_encoder = self.valence_encoder.take();
+        #[cfg(not(feature = "edgebreaker_valence_encode"))]
+        let mut valence_encoder = ();
 
         for c_id in 0..corner_table.num_corners() {
             let corner_index = CornerIndex(c_id as u32);
@@ -353,11 +355,17 @@ impl MeshEdgebreakerEncoder {
             }
         }
 
-        // Restore valence encoder ownership
-        self.valence_encoder = valence_encoder;
+        // Restore valence encoder ownership.
+        #[cfg(feature = "edgebreaker_valence_encode")]
+        {
+            self.valence_encoder = valence_encoder;
+        }
 
-        // Write traversal decoder type (Standard = 0, Valence = 2)
+        // Write traversal decoder type (Standard = 0, Valence = 2).
+        #[cfg(feature = "edgebreaker_valence_encode")]
         let traversal_decoder_type = if self.valence_encoder.is_some() { 2 } else { 0 };
+        #[cfg(not(feature = "edgebreaker_valence_encode"))]
+        let traversal_decoder_type = 0;
         out_buffer.encode_u8(traversal_decoder_type);
 
         // Write header (C++ format)
@@ -1267,8 +1275,6 @@ impl MeshEdgebreakerEncoder {
         attribute_connectivity: &[EdgebreakerAttributeConnectivity],
         out_buffer: &mut EncoderBuffer,
     ) -> Result<(), DracoError> {
-        let mut traversal_buffer = EncoderBuffer::new();
-        traversal_buffer.set_version(2, 2);
         let verbose = self.verbose_logging();
 
         // DEBUG: Print symbols before encoding
@@ -1313,21 +1319,10 @@ impl MeshEdgebreakerEncoder {
             println!("DEBUG: Encoder symbol faces (forward): {:?}", faces);
         }
 
-        // Encode traversal symbols as topology bit patterns in reverse order.
-        // Draco guarantees <= 3 bits per face.
-
-        // Encode traversal symbols as topology bit patterns in reverse order.
-        // Draco guarantees <= 3 bits per face.
-
-        #[cfg(feature = "encoder")]
-        if let Some(ref valence_encoder) = self.valence_encoder {
-            // Valence encoding order: StartFaces -> Seams -> Symbols (Contexts)
-            // EVERYTHING writes directly to out_buffer in this mode?
-            // C++ Valence Done() writes StartFaces to helper traversal_buffer_, then Seams, then calls EncodeVarint/EncodeSymbols to helper buffer.
-            // But MeshEdgebreakerEncoderImpl::EncodeTraversalBuffer copies traversal_buffer_ to out_buffer.
-            // So essentially they are sequential in the final stream.
-
-            // 1. Start Faces
+        #[cfg(feature = "edgebreaker_valence_encode")]
+        if let Some(valence_encoder) = self.valence_encoder.as_ref() {
+            // Valence encoding order: StartFaces -> Seams -> Symbols (Contexts).
+            // This mirrors C++ MeshEdgebreakerTraversalValenceEncoder::Done().
             let mut start_face_encoder = RAnsBitEncoder::new();
             start_face_encoder.start_encoding();
             if verbose {
@@ -1341,56 +1336,49 @@ impl MeshEdgebreakerEncoder {
             }
             start_face_encoder.end_encoding(out_buffer);
 
-            // 2. Attribute seams
             self.encode_attribute_seams(corner_table, attribute_connectivity, out_buffer);
 
-            // 3. Valence Symbols
             // C++ implementation passes nullptr for options in Done(), which uses the
             // default compression level of 7 (kDefaultSymbolCodingCompressionLevel).
             let compression_level = 7;
             valence_encoder.done(out_buffer, compression_level);
-        } else {
-            // Standard encoding order: Symbols -> StartFaces -> Seams
-            // All written to traversal_buffer then copied to out_buffer.
-
-            // 1. Symbols
-            traversal_buffer.start_bit_encoding(mesh.num_faces() * 3, true);
-            for &sym_id in self.symbols.iter().rev() {
-                let (pattern_bits, pattern_value) = match EdgebreakerSymbol::from(sym_id) {
-                    EdgebreakerSymbol::Center => (1u32, 0u32), // TOPOLOGY_C
-                    EdgebreakerSymbol::Split => (3u32, 1u32),  // TOPOLOGY_S
-                    EdgebreakerSymbol::Left => (3u32, 3u32),   // TOPOLOGY_L
-                    EdgebreakerSymbol::Right => (3u32, 5u32),  // TOPOLOGY_R
-                    EdgebreakerSymbol::End => (3u32, 7u32),    // TOPOLOGY_E
-                    EdgebreakerSymbol::Hole => (3u32, 7u32),
-                };
-                traversal_buffer.encode_least_significant_bits32(pattern_bits, pattern_value);
-            }
-            traversal_buffer.end_bit_encoding();
-
-            // 2. Start Faces
-            let mut start_face_encoder = RAnsBitEncoder::new();
-            start_face_encoder.start_encoding();
-            if verbose {
-                println!(
-                    "DEBUG: Encoder InitFace Configs: {:?}",
-                    self.init_face_configurations
-                );
-            }
-            for &is_interior in &self.init_face_configurations {
-                start_face_encoder.encode_bit(is_interior);
-            }
-            start_face_encoder.end_encoding(&mut traversal_buffer);
-
-            // 3. Attribute Seams
-            self.encode_attribute_seams(
-                corner_table,
-                attribute_connectivity,
-                &mut traversal_buffer,
-            );
-
-            out_buffer.encode_data(traversal_buffer.data());
+            return Ok(());
         }
+
+        // Standard encoding order: Symbols -> StartFaces -> Seams.
+        let mut traversal_buffer = EncoderBuffer::new();
+        traversal_buffer.set_version(2, 2);
+
+        traversal_buffer.start_bit_encoding(mesh.num_faces() * 3, true);
+        for &sym_id in self.symbols.iter().rev() {
+            let (pattern_bits, pattern_value) = match EdgebreakerSymbol::from(sym_id) {
+                EdgebreakerSymbol::Center => (1u32, 0u32), // TOPOLOGY_C
+                EdgebreakerSymbol::Split => (3u32, 1u32),  // TOPOLOGY_S
+                EdgebreakerSymbol::Left => (3u32, 3u32),   // TOPOLOGY_L
+                EdgebreakerSymbol::Right => (3u32, 5u32),  // TOPOLOGY_R
+                EdgebreakerSymbol::End => (3u32, 7u32),    // TOPOLOGY_E
+                EdgebreakerSymbol::Hole => (3u32, 7u32),
+            };
+            traversal_buffer.encode_least_significant_bits32(pattern_bits, pattern_value);
+        }
+        traversal_buffer.end_bit_encoding();
+
+        let mut start_face_encoder = RAnsBitEncoder::new();
+        start_face_encoder.start_encoding();
+        if verbose {
+            println!(
+                "DEBUG: Encoder InitFace Configs: {:?}",
+                self.init_face_configurations
+            );
+        }
+        for &is_interior in &self.init_face_configurations {
+            start_face_encoder.encode_bit(is_interior);
+        }
+        start_face_encoder.end_encoding(&mut traversal_buffer);
+
+        self.encode_attribute_seams(corner_table, attribute_connectivity, &mut traversal_buffer);
+
+        out_buffer.encode_data(traversal_buffer.data());
         Ok(())
     }
 
@@ -1675,7 +1663,10 @@ impl MeshEdgebreakerEncoder {
         &mut self,
         corner_table: &CornerTable,
         start_corner: CornerIndex,
-        valence_encoder: &mut Option<MeshEdgebreakerTraversalValenceEncoder>,
+        #[cfg(feature = "edgebreaker_valence_encode")] valence_encoder: &mut Option<
+            MeshEdgebreakerTraversalValenceEncoder,
+        >,
+        #[cfg(not(feature = "edgebreaker_valence_encode"))] _valence_encoder: &mut (),
     ) -> Result<(), DracoError> {
         let mut corner_traversal_stack: Vec<CornerIndex> = vec![start_corner];
 
@@ -1715,7 +1706,7 @@ impl MeshEdgebreakerEncoder {
                 self.face_to_symbol_id[fi] = self.last_encoded_symbol_id as u32;
 
                 // New corner reached.
-                #[cfg(feature = "encoder")]
+                #[cfg(feature = "edgebreaker_valence_encode")]
                 if let Some(ref mut ve) = valence_encoder {
                     ve.new_corner_reached(corner_id);
                 }
@@ -1744,7 +1735,7 @@ impl MeshEdgebreakerEncoder {
                             && !self.visited_faces[right_face.0 as usize]
                         {
                             self.symbols.push(EdgebreakerSymbol::Center as u32);
-                            #[cfg(feature = "encoder")]
+                            #[cfg(feature = "edgebreaker_valence_encode")]
                             if let Some(ref mut ve) = valence_encoder {
                                 ve.encode_symbol(
                                     EdgebreakerSymbol::Center,
@@ -1793,7 +1784,7 @@ impl MeshEdgebreakerEncoder {
                         }
                         // End reached.
                         self.symbols.push(EdgebreakerSymbol::End as u32);
-                        #[cfg(feature = "encoder")]
+                        #[cfg(feature = "edgebreaker_valence_encode")]
                         if let Some(ref mut ve) = valence_encoder {
                             ve.encode_symbol(
                                 EdgebreakerSymbol::End,
@@ -1807,7 +1798,7 @@ impl MeshEdgebreakerEncoder {
                     } else {
                         // Go to left face (matches TOPOLOGY_R in C++ - Right is visited, so move Left)
                         self.symbols.push(EdgebreakerSymbol::Right as u32);
-                        #[cfg(feature = "encoder")]
+                        #[cfg(feature = "edgebreaker_valence_encode")]
                         if let Some(ref mut ve) = valence_encoder {
                             ve.encode_symbol(
                                 EdgebreakerSymbol::Right,
@@ -1829,7 +1820,7 @@ impl MeshEdgebreakerEncoder {
                     }
                     // Go to right face (matches TOPOLOGY_L in C++ - Left is visited, so move Right)
                     self.symbols.push(EdgebreakerSymbol::Left as u32);
-                    #[cfg(feature = "encoder")]
+                    #[cfg(feature = "edgebreaker_valence_encode")]
                     if let Some(ref mut ve) = valence_encoder {
                         ve.encode_symbol(
                             EdgebreakerSymbol::Left,
@@ -1843,7 +1834,7 @@ impl MeshEdgebreakerEncoder {
                 } else {
                     // Split the traversal.
                     self.symbols.push(EdgebreakerSymbol::Split as u32);
-                    #[cfg(feature = "encoder")]
+                    #[cfg(feature = "edgebreaker_valence_encode")]
                     if let Some(ref mut ve) = valence_encoder {
                         ve.encode_symbol(
                             EdgebreakerSymbol::Split,

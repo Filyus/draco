@@ -75,7 +75,7 @@ pub mod kd_tree_attributes_decoder;
 pub mod mesh_decoder;
 #[cfg(feature = "decoder")]
 pub mod mesh_edgebreaker_decoder;
-#[cfg(all(feature = "decoder", feature = "edgebreaker_valence"))]
+#[cfg(all(feature = "decoder", feature = "edgebreaker_valence_decode"))]
 pub mod mesh_edgebreaker_traversal_valence_decoder;
 #[cfg(feature = "decoder")]
 pub mod point_cloud_decoder;
@@ -108,7 +108,7 @@ pub mod encoder_options;
 pub mod kd_tree_attributes_encoder;
 #[cfg(feature = "encoder")]
 pub mod mesh_edgebreaker_encoder;
-#[cfg(feature = "encoder")]
+#[cfg(all(feature = "encoder", feature = "edgebreaker_valence_encode"))]
 pub mod mesh_edgebreaker_traversal_valence_encoder;
 #[cfg(feature = "encoder")]
 pub mod mesh_encoder;
