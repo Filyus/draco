@@ -873,16 +873,15 @@ impl SequentialIntegerAttributeDecoder {
         match selected_method {
             _ if self.prediction_scheme.is_some() => {
                 let scheme = self.prediction_scheme.as_mut().unwrap();
-                let entry_to_point_id_map: Vec<u32> = point_ids.iter().map(|p| p.0).collect();
                 let map_opt = match selected_method {
                     PredictionSchemeMethod::MeshPredictionParallelogram
                     | PredictionSchemeMethod::MeshPredictionMultiParallelogram
                     | PredictionSchemeMethod::MeshPredictionConstrainedMultiParallelogram
                     | PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated
                     | PredictionSchemeMethod::MeshPredictionTexCoordsPortable
-                    | PredictionSchemeMethod::MeshPredictionGeometricNormal => {
-                        Some(entry_to_point_id_map.as_slice())
-                    }
+                    | PredictionSchemeMethod::MeshPredictionGeometricNormal => Some(
+                        crate::prediction_scheme::EntryToPointIdMap::from_point_indices(point_ids),
+                    ),
                     _ => None,
                 };
                 if !scheme.compute_original_values(
@@ -983,13 +982,14 @@ impl SequentialIntegerAttributeDecoder {
             }
             PredictionSchemeMethod::MeshPredictionTexCoordsDeprecated => {
                 let predictor = predictor_tex_coords_deprecated_opt.as_mut().unwrap();
-                let entry_to_point_id_map: Vec<u32> = point_ids.iter().map(|p| p.0).collect();
                 if !predictor.compute_original_values(
                     &corrections,
                     &mut values,
                     num_values,
                     num_components,
-                    Some(&entry_to_point_id_map),
+                    Some(
+                        crate::prediction_scheme::EntryToPointIdMap::from_point_indices(point_ids),
+                    ),
                 ) {
                     eprintln!(
                         "Failed to compute original values (att_id={}, method={:?}, transform={:?})",
@@ -1000,13 +1000,14 @@ impl SequentialIntegerAttributeDecoder {
             }
             PredictionSchemeMethod::MeshPredictionTexCoordsPortable => {
                 let predictor = predictor_tex_coords_opt.as_mut().unwrap();
-                let entry_to_point_id_map: Vec<u32> = point_ids.iter().map(|p| p.0).collect();
                 if !predictor.compute_original_values(
                     &corrections,
                     &mut values,
                     num_values,
                     num_components,
-                    Some(&entry_to_point_id_map),
+                    Some(
+                        crate::prediction_scheme::EntryToPointIdMap::from_point_indices(point_ids),
+                    ),
                 ) {
                     eprintln!(
                         "Failed to compute original values (att_id={}, method={:?}, transform={:?})",
@@ -1017,13 +1018,14 @@ impl SequentialIntegerAttributeDecoder {
             }
             PredictionSchemeMethod::MeshPredictionGeometricNormal => {
                 let predictor = predictor_geometric_normal_opt.as_mut().unwrap();
-                let entry_to_point_id_map: Vec<u32> = point_ids.iter().map(|p| p.0).collect();
                 if !predictor.compute_original_values(
                     &corrections,
                     &mut values,
                     num_values,
                     num_components,
-                    Some(&entry_to_point_id_map),
+                    Some(
+                        crate::prediction_scheme::EntryToPointIdMap::from_point_indices(point_ids),
+                    ),
                 ) {
                     eprintln!(
                         "Failed to compute original values (att_id={}, method={:?}, transform={:?})",

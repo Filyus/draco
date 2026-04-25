@@ -34,9 +34,9 @@ impl<'a, Transform> PredictionSchemeTexCoordsDeprecatedDecoder<'a, Transform> {
     fn get_position_for_entry_id(
         &self,
         entry_id: i32,
-        entry_to_point_id_map: &[u32],
+        entry_to_point_id_map: crate::prediction_scheme::EntryToPointIdMap<'_>,
     ) -> Option<[f32; 3]> {
-        let point_id = *entry_to_point_id_map.get(usize::try_from(entry_id).ok()?)?;
+        let point_id = entry_to_point_id_map.get(usize::try_from(entry_id).ok()?)?;
         let att = self.pos_attribute?;
         let val_index = att.mapped_index(PointIndex(point_id));
         if val_index == INVALID_ATTRIBUTE_VALUE_INDEX {
@@ -60,7 +60,7 @@ impl<'a, Transform> PredictionSchemeTexCoordsDeprecatedDecoder<'a, Transform> {
         corner_id: CornerIndex,
         data: &[i32],
         data_id: i32,
-        entry_to_point_id_map: &[u32],
+        entry_to_point_id_map: crate::prediction_scheme::EntryToPointIdMap<'_>,
         predicted_value: &mut [i32; 2],
     ) -> bool {
         let mesh_data = self.mesh_data.as_ref().unwrap();
@@ -271,7 +271,7 @@ where
         out_data: &mut [i32],
         _size: usize,
         num_components: usize,
-        entry_to_point_id_map: Option<&[u32]>,
+        entry_to_point_id_map: Option<crate::prediction_scheme::EntryToPointIdMap<'_>>,
     ) -> bool {
         if num_components != 2 || self.mesh_data.is_none() || self.pos_attribute.is_none() {
             return false;
@@ -434,7 +434,15 @@ mod tests {
 
         let in_corr = [0, 0, 10, 0, 0, 0];
         let mut out = [0; 6];
-        assert!(decoder.compute_original_values(&in_corr, &mut out, 6, 2, Some(&[1, 2, 0])));
+        assert!(decoder.compute_original_values(
+            &in_corr,
+            &mut out,
+            6,
+            2,
+            Some(crate::prediction_scheme::EntryToPointIdMap::from_u32_slice(
+                &[1, 2, 0],
+            )),
+        ));
         assert_eq!(out, [0, 0, 10, 0, 5, 5]);
     }
 }

@@ -100,7 +100,11 @@ fn test_tex_coords_portable_roundtrip() {
         &mut out_corr,
         4,
         2,
-        Some(&entry_to_point_id_map)
+        Some(
+            draco_core::prediction_scheme::EntryToPointIdMap::from_u32_slice(
+                &entry_to_point_id_map
+            )
+        )
     ));
 
     let mut buffer = Vec::new();
@@ -127,7 +131,11 @@ fn test_tex_coords_portable_roundtrip() {
         &mut out_values,
         4,
         2,
-        Some(&entry_to_point_id_map)
+        Some(
+            draco_core::prediction_scheme::EntryToPointIdMap::from_u32_slice(
+                &entry_to_point_id_map
+            )
+        )
     ));
 
     // 7. Verify

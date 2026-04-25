@@ -525,7 +525,9 @@ impl SequentialIntegerAttributeEncoder {
                                 &mut corrections,
                                 num_values,
                                 num_components,
-                                Some(&entry_to_point_id_map),
+                                Some(crate::prediction_scheme::EntryToPointIdMap::from_u32_slice(
+                                    &entry_to_point_id_map,
+                                )),
                             ) {
                                 return false;
                             }
@@ -619,7 +621,9 @@ impl SequentialIntegerAttributeEncoder {
                                 &mut corrections,
                                 num_values,
                                 num_components,
-                                Some(&entry_to_point_id_map),
+                                Some(crate::prediction_scheme::EntryToPointIdMap::from_u32_slice(
+                                    &entry_to_point_id_map,
+                                )),
                             ) {
                                 return false;
                             }

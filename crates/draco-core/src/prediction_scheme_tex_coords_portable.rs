@@ -53,10 +53,10 @@ impl<'a> PredictionSchemeTexCoordsPortableDecoder<'a> {
     fn get_position_for_entry_id(
         &self,
         entry_id: i32,
-        entry_to_point_id_map: &[u32],
+        entry_to_point_id_map: crate::prediction_scheme::EntryToPointIdMap<'_>,
     ) -> Option<[i64; 3]> {
         let entry_id = usize::try_from(entry_id).ok()?;
-        let point_id = *entry_to_point_id_map.get(entry_id)?;
+        let point_id = entry_to_point_id_map.get(entry_id)?;
         let att = self.pos_attribute.unwrap();
         let mut pos = [0i64; 3];
         let val_index = att.mapped_index(PointIndex(point_id));
@@ -81,7 +81,7 @@ impl<'a> PredictionSchemeTexCoordsPortableDecoder<'a> {
         corner_id: CornerIndex,
         data: &[i32],
         data_id: i32,
-        entry_to_point_id_map: &[u32],
+        entry_to_point_id_map: crate::prediction_scheme::EntryToPointIdMap<'_>,
         predicted_value: &mut [i32; 2],
     ) -> bool {
         let mesh_data = self.mesh_data.as_ref().unwrap();
@@ -308,7 +308,7 @@ impl<'a> PredictionSchemeDecoder<'a, i32, i32> for PredictionSchemeTexCoordsPort
         out_data: &mut [i32],
         _size: usize,
         num_components: usize,
-        entry_to_point_id_map: Option<&[u32]>,
+        entry_to_point_id_map: Option<crate::prediction_scheme::EntryToPointIdMap<'_>>,
     ) -> bool {
         if num_components != 2 {
             return false;
@@ -654,7 +654,7 @@ mod tests {
             CornerIndex(0),
             data,
             data_id,
-            &[0, 1, 2],
+            crate::prediction_scheme::EntryToPointIdMap::from_u32_slice(&[0, 1, 2]),
             &mut predicted,
         ) {
             Some(predicted)
@@ -712,7 +712,7 @@ mod tests {
             CornerIndex(0),
             &data,
             2,
-            &[0, 1, 2],
+            crate::prediction_scheme::EntryToPointIdMap::from_u32_slice(&[0, 1, 2]),
             &mut predicted,
         ));
     }
@@ -792,8 +792,14 @@ impl<'a> PredictionSchemeTexCoordsPortableEncoder<'a> {
         true
     }
 
-    fn get_position_for_entry_id(&self, entry_id: i32, entry_to_point_id_map: &[u32]) -> [i64; 3] {
-        let point_id = entry_to_point_id_map[entry_id as usize];
+    fn get_position_for_entry_id(
+        &self,
+        entry_id: i32,
+        entry_to_point_id_map: crate::prediction_scheme::EntryToPointIdMap<'_>,
+    ) -> [i64; 3] {
+        let Some(point_id) = entry_to_point_id_map.get(entry_id as usize) else {
+            return [0, 0, 0];
+        };
         let att = self.pos_attribute.unwrap();
         let mut pos = [0i64; 3];
         let val_index = att.mapped_index(PointIndex(point_id));
@@ -811,7 +817,7 @@ impl<'a> PredictionSchemeTexCoordsPortableEncoder<'a> {
         corner_id: CornerIndex,
         data: &[i32],
         data_id: i32,
-        entry_to_point_id_map: &[u32],
+        entry_to_point_id_map: crate::prediction_scheme::EntryToPointIdMap<'_>,
         predicted_value: &mut [i32; 2],
     ) -> bool {
         let mesh_data = self.mesh_data.as_ref().unwrap();
@@ -973,7 +979,7 @@ impl<'a> PredictionSchemeEncoder<'a, i32, i32> for PredictionSchemeTexCoordsPort
         out_corr: &mut [i32],
         _size: usize,
         num_components: usize,
-        entry_to_point_id_map: Option<&[u32]>,
+        entry_to_point_id_map: Option<crate::prediction_scheme::EntryToPointIdMap<'_>>,
     ) -> bool {
         if num_components != 2 {
             return false;

@@ -120,7 +120,11 @@ fn test_geometric_normal_roundtrip() {
         &mut out_corr,
         4,
         2,
-        Some(&entry_to_point_id_map),
+        Some(
+            draco_core::prediction_scheme::EntryToPointIdMap::from_u32_slice(
+                &entry_to_point_id_map,
+            ),
+        ),
     );
     assert!(res, "Compute correction values failed");
 
@@ -149,7 +153,11 @@ fn test_geometric_normal_roundtrip() {
         &mut out_original,
         4,
         2,
-        Some(&entry_to_point_id_map),
+        Some(
+            draco_core::prediction_scheme::EntryToPointIdMap::from_u32_slice(
+                &entry_to_point_id_map,
+            ),
+        ),
     );
     assert!(res, "Compute original values failed");
 

@@ -1,4 +1,5 @@
 use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
+use crate::geometry_indices::PointIndex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PredictionSchemeMethod {
@@ -44,6 +45,40 @@ pub enum PredictionSchemeTransformType {
     GeometricNormal = 6,
     MultiParallelogram = 7,
     ConstrainedMultiParallelogram = 8,
+}
+
+#[derive(Clone, Copy)]
+pub enum EntryToPointIdMap<'a> {
+    PointIndices(&'a [PointIndex]),
+    U32(&'a [u32]),
+}
+
+impl<'a> EntryToPointIdMap<'a> {
+    #[inline]
+    pub fn from_point_indices(point_ids: &'a [PointIndex]) -> Self {
+        Self::PointIndices(point_ids)
+    }
+
+    #[inline]
+    pub fn from_u32_slice(point_ids: &'a [u32]) -> Self {
+        Self::U32(point_ids)
+    }
+
+    #[inline]
+    pub fn len(self) -> usize {
+        match self {
+            Self::PointIndices(point_ids) => point_ids.len(),
+            Self::U32(point_ids) => point_ids.len(),
+        }
+    }
+
+    #[inline]
+    pub fn get(self, index: usize) -> Option<u32> {
+        match self {
+            Self::PointIndices(point_ids) => point_ids.get(index).map(|p| p.0),
+            Self::U32(point_ids) => point_ids.get(index).copied(),
+        }
+    }
 }
 
 impl TryFrom<u8> for PredictionSchemeTransformType {
@@ -123,7 +158,7 @@ pub trait PredictionSchemeEncoder<'a, DataType, CorrType>: PredictionScheme<'a> 
         out_corr: &mut [CorrType],
         size: usize,
         num_components: usize,
-        entry_to_point_id_map: Option<&[u32]>,
+        entry_to_point_id_map: Option<EntryToPointIdMap<'_>>,
     ) -> bool;
 
     fn encode_prediction_data(&mut self, buffer: &mut Vec<u8>) -> bool;
@@ -137,7 +172,7 @@ pub trait PredictionSchemeDecoder<'a, DataType, CorrType>: PredictionScheme<'a> 
         out_data: &mut [DataType],
         size: usize,
         num_components: usize,
-        entry_to_point_id_map: Option<&[u32]>,
+        entry_to_point_id_map: Option<EntryToPointIdMap<'_>>,
     ) -> bool;
 
     fn decode_prediction_data(&mut self, buffer: &mut crate::decoder_buffer::DecoderBuffer)

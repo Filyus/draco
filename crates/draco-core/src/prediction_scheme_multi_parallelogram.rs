@@ -83,7 +83,7 @@ where
         out_data: &mut [DataType],
         _size: usize,
         num_components: usize,
-        _entry_to_point_id_map: Option<&[u32]>,
+        _entry_to_point_id_map: Option<crate::prediction_scheme::EntryToPointIdMap<'_>>,
     ) -> bool {
         if num_components == 0 {
             return false;

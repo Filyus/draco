@@ -304,7 +304,7 @@ where
         out_corr: &mut [CorrType],
         size: usize,
         num_components: usize,
-        _entry_to_point_id_map: Option<&[u32]>,
+        _entry_to_point_id_map: Option<crate::prediction_scheme::EntryToPointIdMap<'_>>,
     ) -> bool {
         self.transform.init(in_data, size, num_components);
 
@@ -435,7 +435,7 @@ where
         out_data: &mut [DataType],
         _size: usize,
         num_components: usize,
-        _entry_to_point_id_map: Option<&[u32]>,
+        _entry_to_point_id_map: Option<crate::prediction_scheme::EntryToPointIdMap<'_>>,
     ) -> bool {
         self.transform.init(num_components);
 
