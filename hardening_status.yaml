@@ -9,7 +9,7 @@
 #   behavior still belongs in implementation_state.yaml.
 
 version: 1
-last_reviewed: "2026-04-24"
+last_reviewed: "2026-04-25"
 
 scope:
   crate: "draco-core"
@@ -72,6 +72,27 @@ completed:
           - "topology_symbol_that_requires_active_corner_fails_cleanly"
     note: "Active-corner stack access, vertex-hole indexing, and opposite-corner writes use fallible helpers so malformed topology returns controlled errors."
 
+  - id: legacy-bitstream-feature-gate
+    status: covered
+    evidence:
+      - path: "crates/draco-core/Cargo.toml"
+      - path: "crates/draco-core/src/decoder_buffer.rs"
+      - path: "crates/draco-core/src/rans_bit_decoder.rs"
+      - path: "crates/draco-core/src/rans_symbol_decoder.rs"
+      - path: "crates/draco-core/src/mesh_decoder.rs"
+      - path: "crates/draco-core/src/mesh_edgebreaker_decoder.rs"
+      - path: "crates/draco-core/src/sequential_integer_attribute_decoder.rs"
+      - path: "crates/draco-core/src/prediction_scheme_geometric_normal.rs"
+    note: "Backwards-compatibility decode paths are grouped under legacy_bitstream_decode. Default draco-core keeps compatibility, while no-default decoder/web profiles compile without legacy bitstream layouts and deprecated prediction decoders."
+
+  - id: predictive-edgebreaker-explicit-reject
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/mesh_edgebreaker_decoder.rs"
+        tests:
+          - "predictive_traversal_type_is_rejected_explicitly"
+    note: "Deprecated Edgebreaker predictive traversal type 1 is rejected with UnsupportedFeature instead of being decoded through the non-valence/standard path."
+
 open_risks:
   - id: no-sustained-fuzzing
     priority: high
@@ -84,7 +105,7 @@ open_risks:
 
   - id: drc-level-edgebreaker-corruption
     priority: high
-    summary: "Current Edgebreaker topology/seam hardening has direct helper regressions, but limited DRC-level malformed topology payloads."
+    summary: "Current Edgebreaker topology/seam hardening has direct helper regressions and explicit predictive traversal rejection, but limited DRC-level malformed topology payloads."
     why_it_matters: "The most fragile decode surface is cross-section synchronization between topology symbols, split events, start-face bits, seam bitstreams, and prediction side streams."
     next_steps:
       - "Add small DRC-level corruptions around Edgebreaker symbol counts, encoded connectivity size, seam bitstreams, and split-event counts."
