@@ -240,7 +240,7 @@ impl KdTreeAttributesDecoder {
             }
             portable.set_identity_mapping();
 
-            write_u32_components_from_decoded(
+            if !write_u32_components_from_decoded(
                 &decoded,
                 total_dimensionality,
                 offset,
@@ -248,7 +248,9 @@ impl KdTreeAttributesDecoder {
                 num_expected_points,
                 &mut portable,
                 DataType::Uint32,
-            );
+            ) {
+                return false;
+            }
 
             self.quantized_portable_attributes.push(portable);
         }
@@ -259,7 +261,7 @@ impl KdTreeAttributesDecoder {
                 DataType::Uint32 | DataType::Uint16 | DataType::Uint8
             ) {
                 let att = point_cloud.attribute_mut(spec.att_id);
-                write_u32_components_from_decoded(
+                if !write_u32_components_from_decoded(
                     &decoded,
                     total_dimensionality,
                     spec.offset,
@@ -267,7 +269,9 @@ impl KdTreeAttributesDecoder {
                     num_expected_points,
                     att,
                     spec.data_type,
-                );
+                ) {
+                    return false;
+                }
             }
         }
 
@@ -369,17 +373,38 @@ impl KdTreeAttributesDecoder {
 
             for p in 0..num_points {
                 let avi = att.mapped_index(PointIndex(p as u32));
-                let base = avi.0 as usize * stride;
+                let Some(base) = (avi.0 as usize).checked_mul(stride) else {
+                    return false;
+                };
                 for c in 0..spec.num_components {
-                    let unsigned =
-                        cached.decoded[p * cached.total_dimensionality + spec.offset + c];
-                    let signed = unsigned as i64 + self.min_signed_values[min_index + c] as i64;
-                    write_signed_component(
+                    let Some(decoded_index) = p
+                        .checked_mul(cached.total_dimensionality)
+                        .and_then(|v| v.checked_add(spec.offset))
+                        .and_then(|v| v.checked_add(c))
+                    else {
+                        return false;
+                    };
+                    let Some(&unsigned) = cached.decoded.get(decoded_index) else {
+                        return false;
+                    };
+                    let Some(&min_value) = self.min_signed_values.get(min_index + c) else {
+                        return false;
+                    };
+                    let signed = unsigned as i64 + min_value as i64;
+                    let Some(component_delta) = c.checked_mul(component_size) else {
+                        return false;
+                    };
+                    let Some(component_offset) = base.checked_add(component_delta) else {
+                        return false;
+                    };
+                    if !write_signed_component(
                         att.buffer_mut(),
-                        base + c * component_size,
+                        component_offset,
                         spec.data_type,
                         signed,
-                    );
+                    ) {
+                        return false;
+                    }
                 }
             }
             min_index += spec.num_components;
@@ -402,22 +427,42 @@ fn write_u32_components_from_decoded(
     num_points: usize,
     target_attribute: &mut PointAttribute,
     target_type: DataType,
-) {
+) -> bool {
     let stride = target_attribute.byte_stride() as usize;
     let component_size = target_type.byte_length();
     for p in 0..num_points {
         let avi = target_attribute.mapped_index(PointIndex(p as u32));
-        let base = avi.0 as usize * stride;
+        let Some(base) = (avi.0 as usize).checked_mul(stride) else {
+            return false;
+        };
         for c in 0..num_components {
-            let v = decoded[p * total_dimensionality + offset + c];
-            write_unsigned_component(
+            let Some(decoded_index) = p
+                .checked_mul(total_dimensionality)
+                .and_then(|v| v.checked_add(offset))
+                .and_then(|v| v.checked_add(c))
+            else {
+                return false;
+            };
+            let Some(&v) = decoded.get(decoded_index) else {
+                return false;
+            };
+            let Some(component_delta) = c.checked_mul(component_size) else {
+                return false;
+            };
+            let Some(component_offset) = base.checked_add(component_delta) else {
+                return false;
+            };
+            if !write_unsigned_component(
                 target_attribute.buffer_mut(),
-                base + c * component_size,
+                component_offset,
                 target_type,
                 v,
-            );
+            ) {
+                return false;
+            }
         }
     }
+    true
 }
 
 fn write_unsigned_component(
@@ -425,18 +470,12 @@ fn write_unsigned_component(
     offset: usize,
     data_type: DataType,
     value: u32,
-) {
+) -> bool {
     match data_type {
-        DataType::Uint8 => {
-            buffer.write(offset, &[value as u8]);
-        }
-        DataType::Uint16 => {
-            buffer.write(offset, &(value as u16).to_le_bytes());
-        }
-        DataType::Uint32 => {
-            buffer.write(offset, &value.to_le_bytes());
-        }
-        _ => {}
+        DataType::Uint8 => buffer.try_write(offset, &[value as u8]),
+        DataType::Uint16 => buffer.try_write(offset, &(value as u16).to_le_bytes()),
+        DataType::Uint32 => buffer.try_write(offset, &value.to_le_bytes()),
+        _ => true,
     }
 }
 
@@ -445,17 +484,54 @@ fn write_signed_component(
     offset: usize,
     data_type: DataType,
     value: i64,
-) {
+) -> bool {
     match data_type {
-        DataType::Int8 => {
-            buffer.write(offset, &[(value as i8) as u8]);
-        }
-        DataType::Int16 => {
-            buffer.write(offset, &(value as i16).to_le_bytes());
-        }
-        DataType::Int32 => {
-            buffer.write(offset, &(value as i32).to_le_bytes());
-        }
-        _ => {}
+        DataType::Int8 => buffer.try_write(offset, &[(value as i8) as u8]),
+        DataType::Int16 => buffer.try_write(offset, &(value as i16).to_le_bytes()),
+        DataType::Int32 => buffer.try_write(offset, &(value as i32).to_le_bytes()),
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{write_u32_components_from_decoded, write_unsigned_component};
+    use crate::data_buffer::DataBuffer;
+    use crate::draco_types::DataType;
+    use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
+
+    #[test]
+    fn kd_tree_component_write_rejects_out_of_bounds_buffer() {
+        let mut buffer = DataBuffer::new();
+        buffer.resize(1);
+
+        assert!(!write_unsigned_component(
+            &mut buffer,
+            0,
+            DataType::Uint32,
+            7
+        ));
+    }
+
+    #[test]
+    fn kd_tree_decoded_component_write_rejects_short_decoded_stream() {
+        let mut attribute = PointAttribute::new();
+        attribute.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Uint32,
+            false,
+            1,
+        );
+
+        assert!(!write_u32_components_from_decoded(
+            &[1, 2],
+            3,
+            0,
+            3,
+            1,
+            &mut attribute,
+            DataType::Uint32,
+        ));
     }
 }

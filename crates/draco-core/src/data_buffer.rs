@@ -50,9 +50,31 @@ impl DataBuffer {
         out_data.copy_from_slice(&self.data[byte_pos..byte_pos + len]);
     }
 
+    pub fn try_read(&self, byte_pos: usize, out_data: &mut [u8]) -> bool {
+        let Some(end) = byte_pos.checked_add(out_data.len()) else {
+            return false;
+        };
+        let Some(src) = self.data.get(byte_pos..end) else {
+            return false;
+        };
+        out_data.copy_from_slice(src);
+        true
+    }
+
     pub fn write(&mut self, byte_pos: usize, in_data: &[u8]) {
         let len = in_data.len();
         self.data[byte_pos..byte_pos + len].copy_from_slice(in_data);
+    }
+
+    pub fn try_write(&mut self, byte_pos: usize, in_data: &[u8]) -> bool {
+        let Some(end) = byte_pos.checked_add(in_data.len()) else {
+            return false;
+        };
+        let Some(dst) = self.data.get_mut(byte_pos..end) else {
+            return false;
+        };
+        dst.copy_from_slice(in_data);
+        true
     }
 
     pub fn copy(
@@ -95,5 +117,24 @@ impl DataBuffer {
 
     pub fn set_buffer_id(&mut self, buffer_id: i64) {
         self.descriptor.buffer_id = buffer_id;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DataBuffer;
+
+    #[test]
+    fn try_read_write_reject_out_of_bounds_ranges() {
+        let mut buffer = DataBuffer::new();
+        buffer.resize(4);
+
+        assert!(buffer.try_write(1, &[1, 2, 3]));
+        assert!(!buffer.try_write(2, &[1, 2, 3]));
+
+        let mut bytes = [0u8; 2];
+        assert!(buffer.try_read(1, &mut bytes));
+        assert_eq!(bytes, [1, 2]);
+        assert!(!buffer.try_read(3, &mut bytes));
     }
 }
