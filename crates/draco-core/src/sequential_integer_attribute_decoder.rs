@@ -764,8 +764,14 @@ impl SequentialIntegerAttributeDecoder {
             raw_corrections
         };
 
-        // Initialize values array that will be computed by prediction schemes
-        let mut values = vec![0i32; num_values];
+        // Initialize values array only when a prediction scheme needs to write
+        // reconstructed values. With no prediction, corrections already are
+        // the decoded values and can be stored directly.
+        let mut values = if selected_method == PredictionSchemeMethod::None {
+            Vec::new()
+        } else {
+            vec![0i32; num_values]
+        };
 
         // 3. Decode prediction scheme data (if any).
         match selected_method {
@@ -1033,7 +1039,7 @@ impl SequentialIntegerAttributeDecoder {
                 }
             }
             PredictionSchemeMethod::None => {
-                values.copy_from_slice(&corrections);
+                values = corrections;
             }
             _ => {
                 eprintln!("Unsupported prediction method: {:?}", selected_method);
