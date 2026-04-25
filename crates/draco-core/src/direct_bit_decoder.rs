@@ -60,30 +60,62 @@ impl DirectBitDecoder {
     }
 
     pub fn decode_least_significant_bits32(&mut self, nbits: u32, value: &mut u32) -> bool {
-        assert!(nbits > 0 && nbits <= 32);
+        if nbits == 0 || nbits > 32 {
+            return false;
+        }
         let remaining = 32 - self.num_used_bits;
         if nbits <= remaining {
-            if self.pos >= self.bits.len() {
+            let Some(&word) = self.bits.get(self.pos) else {
                 return false;
-            }
-            *value = (self.bits[self.pos] << self.num_used_bits) >> (32 - nbits);
+            };
+            *value = (word << self.num_used_bits) >> (32 - nbits);
             self.num_used_bits += nbits;
             if self.num_used_bits == 32 {
                 self.pos += 1;
                 self.num_used_bits = 0;
             }
         } else {
-            if self.pos + 1 >= self.bits.len() {
+            let Some(next_pos) = self.pos.checked_add(1) else {
                 return false;
-            }
-            let value_l = self.bits[self.pos] << self.num_used_bits;
+            };
+            let (Some(&word_l), Some(&word_r)) = (self.bits.get(self.pos), self.bits.get(next_pos))
+            else {
+                return false;
+            };
+            let value_l = word_l << self.num_used_bits;
             self.num_used_bits = nbits - remaining;
-            self.pos += 1;
-            let value_r = self.bits[self.pos] >> (32 - self.num_used_bits);
+            self.pos = next_pos;
+            let value_r = word_r >> (32 - self.num_used_bits);
             *value = (value_l >> (32 - self.num_used_bits - remaining)) | value_r;
         }
         true
     }
 
     pub fn end_decoding(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_least_significant_bits32_rejects_invalid_bit_counts() {
+        let mut decoder = DirectBitDecoder::new();
+        decoder.bits.push(0xffff_ffff);
+        let mut value = 123;
+
+        assert!(!decoder.decode_least_significant_bits32(0, &mut value));
+        assert!(!decoder.decode_least_significant_bits32(33, &mut value));
+        assert_eq!(value, 123);
+    }
+
+    #[test]
+    fn decode_least_significant_bits32_rejects_missing_second_word() {
+        let mut decoder = DirectBitDecoder::new();
+        decoder.bits.push(0xffff_ffff);
+        decoder.num_used_bits = 31;
+        let mut value = 0;
+
+        assert!(!decoder.decode_least_significant_bits32(2, &mut value));
+    }
 }
