@@ -9,12 +9,14 @@ default = [
     "decoder",
     "point_cloud_decode",
     "edgebreaker_valence",
+    "deprecated_multi_parallelogram_decode",
     "deprecated_tex_coords_prediction",
 ]
 encoder = []
 decoder = []
 point_cloud_decode = ["decoder"]
 edgebreaker_valence = []
+deprecated_multi_parallelogram_decode = ["decoder"]
 deprecated_tex_coords_prediction = ["decoder"]
 debug_logs = []
 force_sequential_seeds = []
