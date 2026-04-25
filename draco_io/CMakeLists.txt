@@ -5,21 +5,18 @@ cmake_minimum_required(VERSION 3.12)
 project(draco_io)
 
 set(DRACO_EIGEN_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/eigen")
-if(NOT EXISTS "${DRACO_EIGEN_INCLUDE_DIR}/Eigen/Core")
-  set(DRACO_EIGEN_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../draco_core/third_party/eigen")
-endif()
+set(DRACO_TINYGLTF_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/tinygltf")
+set(DRACO_FILESYSTEM_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/filesystem/include")
 
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tinygltf
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ghc
+    ${DRACO_TINYGLTF_INCLUDE_DIR}
+    ${DRACO_FILESYSTEM_INCLUDE_DIR}
     # Prefer original src/draco include paths if available (kept alongside refactored draco_core)
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/draco
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/draco/third_party
     ${CMAKE_CURRENT_SOURCE_DIR}/../draco_core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../draco_core/third_party
     ${DRACO_EIGEN_INCLUDE_DIR}
 ) 
 
@@ -174,8 +171,8 @@ target_compile_features(annulus_test PRIVATE cxx_std_11)
 # target_compile_features(enhanced_io_test PRIVATE cxx_std_11)
 # target_compile_definitions(enhanced_io_test PRIVATE DRACO_TRANSCODER_SUPPORTED=1)
 # target_include_directories(enhanced_io_test PRIVATE
-#     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tinygltf
-#     ${CMAKE_CURRENT_SOURCE_DIR}/../draco_core/third_party/eigen)
+#     ${DRACO_TINYGLTF_INCLUDE_DIR}
+#     ${DRACO_EIGEN_INCLUDE_DIR})
 
 # Debug test for file reading issues
 add_executable(debug_test examples/debug_test.cpp)

@@ -19,6 +19,7 @@
 #include "draco/animation/node_animation_data.h"
 #include "draco/core/status.h"
 #include "draco/core/vector_d.h"
+#include "draco/mesh/mesh.h"
 #include "tiny_gltf.h"
 
 namespace draco {
@@ -224,6 +225,14 @@ void TinyGltfUtils::SetDataImpl(float value, int index,
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define TINYGLTF_ENABLE_DRACO
 #define TINYGLTF_IMPLEMENTATION
+
+namespace draco {
+
+static int operator*(FaceIndex lhs, int rhs) {
+  return lhs.value() * rhs;
+}
+
+}  // namespace draco
 
 #include "tiny_gltf.h"
 
