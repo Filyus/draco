@@ -320,18 +320,20 @@ where
 
 fn read_component_as_f32(att: &PointAttribute, index: usize, component: usize) -> Option<f32> {
     let buffer = att.buffer();
-    let byte_offset =
-        index * att.byte_stride() as usize + component * att.data_type().byte_length();
+    let byte_stride = usize::try_from(att.byte_stride()).ok()?;
+    let byte_offset = index
+        .checked_mul(byte_stride)?
+        .checked_add(component.checked_mul(att.data_type().byte_length())?)?;
 
     match att.data_type() {
-        DataType::Int8 => Some(i8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)) as f32),
-        DataType::Uint8 => Some(u8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)) as f32),
-        DataType::Int16 => Some(i16::from_le_bytes(read_bytes::<2>(buffer, byte_offset)) as f32),
-        DataType::Uint16 => Some(u16::from_le_bytes(read_bytes::<2>(buffer, byte_offset)) as f32),
-        DataType::Int32 => Some(i32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)) as f32),
-        DataType::Uint32 => Some(u32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)) as f32),
-        DataType::Float32 => Some(f32::from_le_bytes(read_bytes::<4>(buffer, byte_offset))),
-        DataType::Float64 => Some(f64::from_le_bytes(read_bytes::<8>(buffer, byte_offset)) as f32),
+        DataType::Int8 => Some(i8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)?) as f32),
+        DataType::Uint8 => Some(u8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)?) as f32),
+        DataType::Int16 => Some(i16::from_le_bytes(read_bytes::<2>(buffer, byte_offset)?) as f32),
+        DataType::Uint16 => Some(u16::from_le_bytes(read_bytes::<2>(buffer, byte_offset)?) as f32),
+        DataType::Int32 => Some(i32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)?) as f32),
+        DataType::Uint32 => Some(u32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)?) as f32),
+        DataType::Float32 => Some(f32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)?)),
+        DataType::Float64 => Some(f64::from_le_bytes(read_bytes::<8>(buffer, byte_offset)?) as f32),
         _ => None,
     }
 }
@@ -339,10 +341,12 @@ fn read_component_as_f32(att: &PointAttribute, index: usize, component: usize) -
 fn read_bytes<const N: usize>(
     buffer: &crate::data_buffer::DataBuffer,
     byte_offset: usize,
-) -> [u8; N] {
+) -> Option<[u8; N]> {
     let mut bytes = [0u8; N];
-    buffer.read(byte_offset, &mut bytes);
-    bytes
+    if !buffer.try_read(byte_offset, &mut bytes) {
+        return None;
+    }
+    Some(bytes)
 }
 
 fn f32_to_i32_deprecated(value: f32, round: bool) -> i32 {
@@ -384,6 +388,23 @@ mod tests {
     use crate::prediction_scheme::PredictionSchemeDecoder;
     use crate::prediction_scheme_wrap::PredictionSchemeWrapDecodingTransform;
     use crate::rans_bit_encoder::RAnsBitEncoder;
+
+    #[test]
+    fn deprecated_tex_coords_rejects_truncated_position_buffer() {
+        let mut pos = PointAttribute::new();
+        pos.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Float32,
+            false,
+            1,
+        );
+        pos.buffer_mut().write(0, &1.0f32.to_le_bytes());
+        pos.buffer_mut().write(4, &2.0f32.to_le_bytes());
+        pos.buffer_mut().resize(8);
+
+        assert_eq!(read_component_as_f32(&pos, 0, 2), None);
+    }
 
     #[test]
     fn deprecated_tex_coords_decodes_orientation_prediction() {

@@ -393,25 +393,29 @@ fn read_vector3(att: &PointAttribute, index: usize, out: &mut [i64; 3]) -> bool 
 fn read_component_as_i64(att: &PointAttribute, index: usize, component: usize) -> Option<i64> {
     use crate::draco_types::DataType;
     let buffer = att.buffer();
-    let byte_offset =
-        index * att.byte_stride() as usize + component * att.data_type().byte_length();
+    let byte_stride = usize::try_from(att.byte_stride()).ok()?;
+    let byte_offset = index
+        .checked_mul(byte_stride)?
+        .checked_add(component.checked_mul(att.data_type().byte_length())?)?;
 
     match att.data_type() {
-        DataType::Int8 => Some(i8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)) as i64),
-        DataType::Uint8 => Some(u8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)) as i64),
-        DataType::Int16 => Some(i16::from_le_bytes(read_bytes::<2>(buffer, byte_offset)) as i64),
-        DataType::Uint16 => Some(u16::from_le_bytes(read_bytes::<2>(buffer, byte_offset)) as i64),
-        DataType::Int32 => Some(i32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)) as i64),
-        DataType::Uint32 => Some(u32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)) as i64),
-        DataType::Int64 => Some(i64::from_le_bytes(read_bytes::<8>(buffer, byte_offset))),
+        DataType::Int8 => Some(i8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)?) as i64),
+        DataType::Uint8 => Some(u8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)?) as i64),
+        DataType::Int16 => Some(i16::from_le_bytes(read_bytes::<2>(buffer, byte_offset)?) as i64),
+        DataType::Uint16 => Some(u16::from_le_bytes(read_bytes::<2>(buffer, byte_offset)?) as i64),
+        DataType::Int32 => Some(i32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)?) as i64),
+        DataType::Uint32 => Some(u32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)?) as i64),
+        DataType::Int64 => Some(i64::from_le_bytes(read_bytes::<8>(buffer, byte_offset)?)),
         DataType::Uint64 => {
-            i64::try_from(u64::from_le_bytes(read_bytes::<8>(buffer, byte_offset))).ok()
+            i64::try_from(u64::from_le_bytes(read_bytes::<8>(buffer, byte_offset)?)).ok()
         }
         DataType::Float32 => {
-            float_to_i64(f32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)) as f64)
+            float_to_i64(f32::from_le_bytes(read_bytes::<4>(buffer, byte_offset)?) as f64)
         }
-        DataType::Float64 => float_to_i64(f64::from_le_bytes(read_bytes::<8>(buffer, byte_offset))),
-        DataType::Bool => Some(u8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)) as i64),
+        DataType::Float64 => {
+            float_to_i64(f64::from_le_bytes(read_bytes::<8>(buffer, byte_offset)?))
+        }
+        DataType::Bool => Some(u8::from_le_bytes(read_bytes::<1>(buffer, byte_offset)?) as i64),
         _ => None,
     }
 }
@@ -419,10 +423,12 @@ fn read_component_as_i64(att: &PointAttribute, index: usize, component: usize) -
 fn read_bytes<const N: usize>(
     buffer: &crate::data_buffer::DataBuffer,
     byte_offset: usize,
-) -> [u8; N] {
+) -> Option<[u8; N]> {
     let mut bytes = [0u8; N];
-    buffer.read(byte_offset, &mut bytes);
-    bytes
+    if !buffer.try_read(byte_offset, &mut bytes) {
+        return None;
+    }
+    Some(bytes)
 }
 
 fn float_to_i64(value: f64) -> Option<i64> {
@@ -616,6 +622,25 @@ mod tests {
         let mut out = [0i64; 3];
         assert!(read_vector3(&att, 0, &mut out));
         assert_eq!(out, [123, -7, 99]);
+    }
+
+    #[test]
+    fn test_read_component_as_i64_rejects_truncated_buffer() {
+        let mut att = PointAttribute::new();
+        att.init(
+            GeometryAttributeType::Position,
+            3,
+            DataType::Int32,
+            false,
+            1,
+        );
+        att.buffer_mut().write(0, &123i32.to_le_bytes());
+        att.buffer_mut().write(4, &(-7i32).to_le_bytes());
+        att.buffer_mut().resize(8);
+
+        let mut out = [0i64; 3];
+        assert_eq!(read_component_as_i64(&att, 0, 2), None);
+        assert!(!read_vector3(&att, 0, &mut out));
     }
 
     #[cfg(feature = "decoder")]
