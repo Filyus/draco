@@ -454,6 +454,9 @@ pub fn decode_symbols(
     if num_values == 0 {
         return true;
     }
+    if num_components == 0 || symbols.len() < num_values || num_values % num_components != 0 {
+        return false;
+    }
 
     let scheme = match in_buffer.decode_u8() {
         Ok(v) => v,
@@ -475,6 +478,10 @@ pub fn decode_raw_symbols(
     in_buffer: &mut DecoderBuffer,
     symbols: &mut [u32],
 ) -> bool {
+    if symbols.len() < num_values {
+        return false;
+    }
+
     // Read serialized symbol-bit-length header (written by encoder)
     let symbols_bit_length = match in_buffer.decode_u8() {
         Ok(v) => v as u32,
@@ -514,6 +521,10 @@ fn decode_tagged_symbols(
     in_buffer: &mut DecoderBuffer,
     symbols: &mut [u32],
 ) -> bool {
+    if num_components == 0 || symbols.len() < num_values || num_values % num_components != 0 {
+        return false;
+    }
+
     // C++ uses RAnsSymbolDecoder<5> where 5 is unique_symbols_bit_length.
     // This maps to precision_bits = 12 via ComputeRAnsPrecisionFromUniqueSymbolsBitLength.
     let mut tag_decoder = RAnsSymbolDecoder::new(12);
@@ -558,4 +569,34 @@ fn decode_tagged_symbols(
     in_buffer.end_bit_decoding();
 
     true
+}
+
+#[cfg(all(test, feature = "decoder"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_raw_symbols_rejects_short_output() {
+        let bytes = [0u8]; // zero bit length would otherwise fill the output slice.
+        let mut buffer = DecoderBuffer::new(&bytes);
+        let mut symbols = [];
+
+        assert!(!decode_raw_symbols(1, &mut buffer, &mut symbols));
+    }
+
+    #[test]
+    fn decode_tagged_symbols_rejects_zero_components() {
+        let mut buffer = DecoderBuffer::new(&[]);
+        let mut symbols = [0u32; 1];
+
+        assert!(!decode_tagged_symbols(1, 0, &mut buffer, &mut symbols));
+    }
+
+    #[test]
+    fn decode_tagged_symbols_rejects_partial_component_chunk() {
+        let mut buffer = DecoderBuffer::new(&[]);
+        let mut symbols = [0u32; 5];
+
+        assert!(!decode_tagged_symbols(5, 2, &mut buffer, &mut symbols));
+    }
 }

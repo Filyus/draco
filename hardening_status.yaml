@@ -205,6 +205,10 @@ completed:
           - "try_decode_symbol_rejects_invalid_lut_symbol_id"
           - "try_decode_symbol_rejects_inconsistent_cumulative_probability"
       - path: "crates/draco-core/src/symbol_encoding.rs"
+        tests:
+          - "decode_raw_symbols_rejects_short_output"
+          - "decode_tagged_symbols_rejects_zero_components"
+          - "decode_tagged_symbols_rejects_partial_component_chunk"
     note: "Symbol entropy decode now uses a fallible RAnsSymbolDecoder path for raw/tagged symbol streams, checking LUT/table accesses and rANS state arithmetic before returning decoded symbols."
 
   - id: direct-bit-decoder-bounds
