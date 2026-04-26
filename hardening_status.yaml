@@ -311,6 +311,15 @@ completed:
           - "decode_raw_attribute_values_rejects_truncated_input"
     note: "Raw point-cloud attribute decode now uses checked byte-size/offset arithmetic and returns decode errors for truncated raw payloads."
 
+  - id: normal-attribute-quantization-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/sequential_normal_attribute_decoder.rs"
+        tests:
+          - "decode_portable_transform_rejects_invalid_normal_quantization_bits"
+          - "decode_portable_transform_accepts_valid_normal_quantization_bits"
+    note: "Sequential normal attribute decode now rejects invalid octahedral quantization bits at parameter decode time instead of carrying an invalid transform until inverse reconstruction fails later."
+
   - id: fuzz-decode-entrypoint
     status: covered
     evidence:

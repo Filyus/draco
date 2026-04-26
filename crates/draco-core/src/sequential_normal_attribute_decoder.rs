@@ -12,6 +12,15 @@ use crate::status::{DracoError, Status};
 
 use crate::prediction_scheme_delta::PredictionSchemeDeltaDecoder;
 
+fn validate_normal_quantization_bits(quantization_bits: u8) -> Status {
+    if !(2..=30).contains(&quantization_bits) {
+        return Err(DracoError::DracoError(
+            "Invalid normal quantization bits".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub struct SequentialNormalAttributeDecoder {
     base: SequentialIntegerAttributeDecoder,
     attribute_octahedron_transform: AttributeOctahedronTransform,
@@ -62,6 +71,7 @@ impl SequentialNormalAttributeDecoder {
         } else {
             return Err(DracoError::BitstreamVersionUnsupported);
         }
+        validate_normal_quantization_bits(quantization_bits)?;
         self.attribute_octahedron_transform
             .set_parameters(quantization_bits as i32);
         Ok(())
@@ -85,6 +95,7 @@ impl SequentialNormalAttributeDecoder {
                     ))
                 }
             };
+            validate_normal_quantization_bits(quantization_bits)?;
             self.attribute_octahedron_transform
                 .set_parameters(quantization_bits as i32);
         }
@@ -137,5 +148,38 @@ impl SequentialNormalAttributeDecoder {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::point_cloud::PointCloud;
+
+    #[test]
+    fn decode_portable_transform_rejects_invalid_normal_quantization_bits() {
+        let mut decoder = SequentialNormalAttributeDecoder::new();
+        let mut point_cloud = PointCloud::new();
+
+        let mut zero_bits = DecoderBuffer::new(&[0]);
+        assert!(decoder
+            .decode_data_needed_by_portable_transform(&mut point_cloud, &mut zero_bits)
+            .is_err());
+
+        let mut too_many_bits = DecoderBuffer::new(&[31]);
+        assert!(decoder
+            .decode_data_needed_by_portable_transform(&mut point_cloud, &mut too_many_bits)
+            .is_err());
+    }
+
+    #[test]
+    fn decode_portable_transform_accepts_valid_normal_quantization_bits() {
+        let mut decoder = SequentialNormalAttributeDecoder::new();
+        let mut point_cloud = PointCloud::new();
+        let mut buffer = DecoderBuffer::new(&[10]);
+
+        assert!(decoder
+            .decode_data_needed_by_portable_transform(&mut point_cloud, &mut buffer)
+            .is_ok());
     }
 }
