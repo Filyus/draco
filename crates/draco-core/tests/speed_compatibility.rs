@@ -10,6 +10,14 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+fn print_speed_table_header() {
+    println!(
+        "{:>5} {:>5} {:>11} {:>11} {:>12}",
+        "Speed", "cl", "C++ bytes", "Rust bytes", "Status"
+    );
+    println!("{}", "-".repeat(52));
+}
+
 fn get_cpp_tools_path() -> Option<PathBuf> {
     // Corrected path based on previous exploration
     let path = Path::new("../../build-original/src/draco/Release");
@@ -134,9 +142,10 @@ fn test_speed_compatibility() {
     let mut obj_reader = draco_io::ObjReader::open(obj_path).expect("Failed to open obj");
     let mesh = obj_reader.read_mesh().expect("Failed to read obj back");
 
-    for speed in 0..=10 {
-        println!("Testing Rust Encoding Speed {}", speed);
+    println!("\n=== C++ vs Rust Speed Compatibility ===");
+    print_speed_table_header();
 
+    for speed in 0..=10 {
         // Rust Encode
         let mut options = EncoderOptions::new();
         options.set_global_int("encoding_speed", speed);
@@ -220,23 +229,19 @@ fn test_speed_compatibility() {
                 file.read_to_end(&mut cpp_data)
                     .expect("Failed to read cpp drc");
 
-                println!(
-                    "Speed {}: Rust Size: {}, C++ Size: {} (cl={})",
-                    speed,
-                    rust_data.len(),
-                    cpp_data.len(),
-                    cpp_cl
-                );
-                if rust_data == cpp_data {
-                    println!("Speed {}: Binary MATCH", speed);
+                let status = if rust_data == cpp_data {
+                    "MATCH"
                 } else {
-                    println!(
-                        "Speed {}: Binary MISMATCH (Rust: {}, C++: {})",
-                        speed,
-                        rust_data.len(),
-                        cpp_data.len()
-                    );
-                }
+                    "MISMATCH"
+                };
+                println!(
+                    "{:>5} {:>5} {:>11} {:>11} {:>12}",
+                    speed,
+                    cpp_cl,
+                    cpp_data.len(),
+                    rust_data.len(),
+                    status
+                );
                 // let _ = std::fs::remove_file(&cpp_drc_path); // Keep for debugging
             } else {
                 if speed == 0 {

@@ -12,7 +12,7 @@ use draco_core::mesh_decoder::MeshDecoder;
 use draco_core::mesh_encoder::MeshEncoder;
 use draco_core::EncoderOptions;
 use draco_cpp_test_bridge;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 fn create_grid_mesh_data(grid_size: usize) -> (Vec<f32>, Vec<u32>) {
     let num_points = grid_size * grid_size;
@@ -109,7 +109,7 @@ fn comprehensive_performance_test() {
 
     let (major, minor, revision) = draco_cpp_test_bridge::get_version();
     println!("\n╔═══════════════════════════════════════════════════════════════════════╗");
-    println!("║     COMPREHENSIVE DRACO PERFORMANCE TEST (Rust vs C++)               ║");
+    println!("║     COMPREHENSIVE DRACO PERFORMANCE TEST (C++ vs Rust)               ║");
     println!("╚═══════════════════════════════════════════════════════════════════════╝");
     println!("C++ Draco version: {}.{}.{}", major, minor, revision);
     println!("Rust implementation: draco-core v0.1.0\n");
@@ -134,7 +134,7 @@ fn comprehensive_performance_test() {
     println!("┌───────────────────────────────────────────────────────────────────────┐");
     println!("│                        ENCODING PERFORMANCE                           │");
     println!("├───────┬──────────┬──────────┬──────────┬─────────┬──────────┬─────────┤");
-    println!("│ Speed │   Size   │ Rust (µs)│ C++ (µs) │ Speedup │  Winner  │  Match  │");
+    println!("│ Speed │   Size   │ C++ (µs) │ Rust (µs)│ Speedup │  Winner  │  Match  │");
     println!("├───────┼──────────┼──────────┼──────────┼─────────┼──────────┼─────────┤");
 
     let mut encode_results = Vec::new();
@@ -146,7 +146,7 @@ fn comprehensive_performance_test() {
         options.set_global_int("decoding_speed", speed);
         options.set_attribute_int(0, "quantization_bits", 10);
 
-        let mut rust_total_us = 0u128;
+        let mut rust_total_us = 0.0;
         let mut rust_data = Vec::new();
 
         for _ in 0..encode_iterations {
@@ -159,11 +159,11 @@ fn comprehensive_performance_test() {
             encoder
                 .encode(&options, &mut encoder_buffer)
                 .expect("Rust encode failed");
-            rust_total_us += start.elapsed().as_micros();
+            rust_total_us += start.elapsed().as_secs_f64() * 1_000_000.0;
 
             rust_data = encoder_buffer.data().to_vec();
         }
-        let rust_avg_us = (rust_total_us as f64) / (encode_iterations as f64);
+        let rust_avg_us = rust_total_us / f64::from(encode_iterations);
 
         // C++ encoding
         let cpp_result = draco_cpp_test_bridge::benchmark_cpp_encode(
@@ -179,7 +179,7 @@ fn comprehensive_performance_test() {
             Some(r) => (r.avg_time_us as f64, r.output_size, true),
             None => {
                 println!(
-                    "│ {:>5} │ {:>8} │ {:>8.1} │   FAILED │    -    │    -     │    -    │",
+                    "│ {:>5} │ {:>8} │   FAILED │ {:>8.1} │    -    │    -     │    -    │",
                     speed,
                     rust_data.len(),
                     rust_avg_us
@@ -197,8 +197,8 @@ fn comprehensive_performance_test() {
             "│ {:>5} │ {:>8} │ {:>8.1} │ {:>8.1} │ {:>7.2}x │ {:>8} │ {:>7} │",
             speed,
             rust_data.len(),
-            rust_avg_us,
             cpp_avg_us,
+            rust_avg_us,
             speedup,
             winner,
             match_str
@@ -212,7 +212,7 @@ fn comprehensive_performance_test() {
     println!("\n┌───────────────────────────────────────────────────────────────────────┐");
     println!("│                        DECODING PERFORMANCE                           │");
     println!("├───────┬──────────┬──────────┬──────────┬─────────┬──────────┬─────────┤");
-    println!("│ Speed │   Size   │ Rust (µs)│ C++ (µs) │ Speedup │  Winner  │ Correct │");
+    println!("│ Speed │   Size   │ C++ (µs) │ Rust (µs)│ Speedup │  Winner  │ Correct │");
     println!("├───────┼──────────┼──────────┼──────────┼─────────┼──────────┼─────────┤");
 
     for (speed, rust_encoded, _encode_ratio, size_match) in encode_results {
@@ -233,7 +233,7 @@ fn comprehensive_performance_test() {
             Some(r) => (r.decode_time_us as f64, r.num_points, r.num_faces),
             None => {
                 println!(
-                    "│ {:>5} │ {:>8} │    -     │   FAILED │    -    │    -     │    -    │",
+                    "│ {:>5} │ {:>8} │   FAILED │    -     │    -    │    -     │    -    │",
                     speed,
                     rust_encoded.len()
                 );
@@ -242,7 +242,7 @@ fn comprehensive_performance_test() {
         };
 
         // Rust decoding
-        let mut rust_total_us = 0u128;
+        let mut rust_total = Duration::ZERO;
         let mut rust_points = 0;
         let mut rust_faces = 0;
         let mut rust_success = true;
@@ -255,7 +255,7 @@ fn comprehensive_performance_test() {
             let start = Instant::now();
             match decoder.decode(&mut decoder_buffer, &mut out_mesh) {
                 Ok(_) => {
-                    rust_total_us += start.elapsed().as_micros();
+                    rust_total += start.elapsed();
                     rust_points = out_mesh.num_points();
                     rust_faces = out_mesh.num_faces();
                 }
@@ -268,7 +268,7 @@ fn comprehensive_performance_test() {
 
         if !rust_success {
             println!(
-                "│ {:>5} │ {:>8} │   FAILED │ {:>8.1} │    -    │    -     │    -    │",
+                "│ {:>5} │ {:>8} │ {:>8.1} │   FAILED │    -    │    -     │    -    │",
                 speed,
                 rust_encoded.len(),
                 cpp_avg_us
@@ -276,7 +276,7 @@ fn comprehensive_performance_test() {
             continue;
         }
 
-        let rust_avg_us = (rust_total_us as f64) / (decode_iterations as f64);
+        let rust_avg_us = rust_total.as_secs_f64() * 1_000_000.0 / f64::from(decode_iterations);
         let speedup = cpp_avg_us / rust_avg_us;
         let winner = if speedup >= 1.0 { "Rust" } else { "C++" };
         let correct = rust_points == cpp_points as usize && rust_faces == cpp_faces as usize;
@@ -286,8 +286,8 @@ fn comprehensive_performance_test() {
             "│ {:>5} │ {:>8} │ {:>8.1} │ {:>8.1} │ {:>7.2}x │ {:>8} │ {:>7} │",
             speed,
             rust_encoded.len(),
-            rust_avg_us,
             cpp_avg_us,
+            rust_avg_us,
             speedup,
             winner,
             correct_str

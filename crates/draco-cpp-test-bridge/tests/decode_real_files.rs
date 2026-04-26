@@ -6,7 +6,7 @@
 mod common;
 
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use draco_core::decoder_buffer::DecoderBuffer;
 use draco_core::mesh::Mesh;
@@ -25,7 +25,7 @@ fn testdata_dir() -> PathBuf {
 /// Decode `data` with the Rust decoder `iters` times.
 /// Returns `(avg_us, num_points, num_faces)` or `None` on failure.
 fn bench_rust_decode(data: &[u8], iters: u32) -> Option<(f64, usize, usize)> {
-    let mut total_us = 0u128;
+    let mut total = Duration::ZERO;
     let mut pts = 0;
     let mut faces = 0;
     for _ in 0..iters {
@@ -34,11 +34,15 @@ fn bench_rust_decode(data: &[u8], iters: u32) -> Option<(f64, usize, usize)> {
         let mut dec = MeshDecoder::new();
         let start = Instant::now();
         dec.decode(&mut buf, &mut mesh).ok()?;
-        total_us += start.elapsed().as_micros();
+        total += start.elapsed();
         pts = mesh.num_points();
         faces = mesh.num_faces();
     }
-    Some((total_us as f64 / iters as f64, pts, faces))
+    Some((
+        total.as_secs_f64() * 1_000_000.0 / f64::from(iters),
+        pts,
+        faces,
+    ))
 }
 
 /// Decode `data` with the C++ decoder `iters` times.
@@ -120,7 +124,7 @@ fn decode_real_files_comparison() {
 
     println!();
     println!("╔══════════════════════════════════════════════════════════════════════════════╗");
-    println!("║   DECODE PERFORMANCE — C++ encoded files decoded by Rust vs C++            ║");
+    println!("║   DECODE PERFORMANCE — C++ encoded files decoded by C++ vs Rust            ║");
     println!("╚══════════════════════════════════════════════════════════════════════════════╝");
     println!("(Both decoders receive identical bytes produced by the C++ reference encoder)");
     println!();
@@ -128,7 +132,7 @@ fn decode_real_files_comparison() {
     // ── Reference files (synthetic, all speeds) ──────────────────────────────
     println!("── Synthetic reference files (C++ encoder output, speeds 0–10) ─────────────");
     println!("┌──────────────────────┬────────┬───────────┬───────────┬─────────┬─────────┐");
-    println!("│ File                 │ Bytes  │ Rust (µs) │ C++ (µs)  │ Speedup │ Winner  │");
+    println!("│ File                 │ Bytes  │ C++ (µs)  │ Rust (µs) │ Speedup │ Winner  │");
     println!("├──────────────────────┼────────┼───────────┼───────────┼─────────┼─────────┤");
 
     for case in &reference_files {
@@ -163,21 +167,21 @@ fn decode_real_files_comparison() {
                     "│ {:<20} │{:>7} │ {:>9.1} │ {:>9.1} │ {:>6.2}x{} │ {:>7} │",
                     case.label,
                     data.len(),
-                    r_us,
                     c_us,
+                    r_us,
                     speedup,
                     ok,
                     winner
                 );
             }
             (None, _) => println!(
-                "│ {:<20} │{:>7} │ RUST FAIL │ {:>9.1} │    -    │    -    │",
+                "│ {:<20} │{:>7} │ {:>9.1} │ RUST FAIL │    -    │    -    │",
                 case.label,
                 data.len(),
                 cpp.map(|c| c.0).unwrap_or(0.0)
             ),
             (_, None) => println!(
-                "│ {:<20} │{:>7} │ {:>9.1} │  BRIDGE FAIL │    -    │    -    │",
+                "│ {:<20} │{:>7} │  BRIDGE FAIL │ {:>9.1} │    -    │    -    │",
                 case.label,
                 data.len(),
                 rust.map(|r| r.0).unwrap_or(0.0)
@@ -191,7 +195,7 @@ fn decode_real_files_comparison() {
     println!();
     println!("── Real-world .drc files ─────────────────────────────────────────────────────");
     println!("┌──────────────────────┬────────┬───────────┬───────────┬─────────┬─────────┐");
-    println!("│ File                 │ Bytes  │ Rust (µs) │ C++ (µs)  │ Speedup │ Winner  │");
+    println!("│ File                 │ Bytes  │ C++ (µs)  │ Rust (µs) │ Speedup │ Winner  │");
     println!("├──────────────────────┼────────┼───────────┼───────────┼─────────┼─────────┤");
 
     for case in real_files {
@@ -226,21 +230,21 @@ fn decode_real_files_comparison() {
                     "│ {:<20} │{:>7} │ {:>9.1} │ {:>9.1} │ {:>6.2}x{} │ {:>7} │",
                     case.label,
                     data.len(),
-                    r_us,
                     c_us,
+                    r_us,
                     speedup,
                     ok,
                     winner
                 );
             }
             (None, _) => println!(
-                "│ {:<20} │{:>7} │ RUST FAIL │ {:>9.1} │    -    │    -    │",
+                "│ {:<20} │{:>7} │ {:>9.1} │ RUST FAIL │    -    │    -    │",
                 case.label,
                 data.len(),
                 cpp.map(|c| c.0).unwrap_or(0.0)
             ),
             (_, None) => println!(
-                "│ {:<20} │{:>7} │ {:>9.1} │  BRIDGE FAIL │    -    │    -    │",
+                "│ {:<20} │{:>7} │  BRIDGE FAIL │ {:>9.1} │    -    │    -    │",
                 case.label,
                 data.len(),
                 rust.map(|r| r.0).unwrap_or(0.0)

@@ -9,7 +9,18 @@ use draco_core::geometry_indices::{FaceIndex, PointIndex};
 use draco_core::mesh::Mesh;
 use draco_core::mesh_encoder::MeshEncoder;
 use draco_core::EncoderOptions;
-use std::time::Instant;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
+
+fn duration_to_us(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1_000_000.0
+}
+
+fn avg_duration_us(duration: Duration, iterations: u32) -> f64 {
+    duration_to_us(duration) / f64::from(iterations)
+}
 
 fn create_grid_mesh(grid_size: usize) -> (Mesh, Vec<f32>, Vec<u32>) {
     let num_points = grid_size * grid_size;
@@ -90,6 +101,7 @@ fn create_grid_mesh(grid_size: usize) -> (Mesh, Vec<f32>, Vec<u32>) {
 
 #[test]
 fn profile_sequential_encoding() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
     if common::skip_if_cpp_bridge_unavailable() {
         return;
@@ -130,13 +142,14 @@ fn profile_sequential_encoding() {
             options.set_global_int("decoding_speed", 10);
             options.set_attribute_int(0, "quantization_bits", 10);
 
-            let start = Instant::now();
             let mut encoder = MeshEncoder::new();
             encoder.set_mesh(mesh.clone());
             let mut encoder_buffer = EncoderBuffer::new();
+
+            let start = Instant::now();
             let _ = encoder.encode(&options, &mut encoder_buffer);
             let elapsed = start.elapsed();
-            times.push(elapsed.as_micros() as f64 / 1000.0);
+            times.push(duration_to_us(elapsed) / 1000.0);
         }
 
         let avg: f64 = times.iter().sum::<f64>() / times.len() as f64;
@@ -176,6 +189,7 @@ fn profile_sequential_encoding() {
 
 #[test]
 fn profile_detailed_breakdown() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
     if common::skip_if_cpp_bridge_unavailable() {
         return;
@@ -216,7 +230,7 @@ fn profile_detailed_breakdown() {
     for _ in 0..iterations {
         let _cloned = mesh.clone();
     }
-    let mesh_clone_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let mesh_clone_us = avg_duration_us(start.elapsed(), iterations);
 
     // 2. Options setup
     let start = Instant::now();
@@ -227,7 +241,7 @@ fn profile_detailed_breakdown() {
         options.set_attribute_int(0, "quantization_bits", 10);
         std::hint::black_box(&options);
     }
-    let options_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let options_us = avg_duration_us(start.elapsed(), iterations);
 
     // 3. Encoder creation + set_mesh
     let start = Instant::now();
@@ -236,7 +250,7 @@ fn profile_detailed_breakdown() {
         encoder.set_mesh(mesh.clone());
         std::hint::black_box(&encoder);
     }
-    let encoder_setup_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let encoder_setup_us = avg_duration_us(start.elapsed(), iterations);
 
     // 4. Full encode
     let start = Instant::now();
@@ -251,7 +265,7 @@ fn profile_detailed_breakdown() {
         let mut encoder_buffer = EncoderBuffer::new();
         let _ = encoder.encode(&options, &mut encoder_buffer);
     }
-    let total_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let total_us = avg_duration_us(start.elapsed(), iterations);
 
     // Estimate time spent in actual encoding (exclude clone/setup)
     let encoding_core_us = total_us - mesh_clone_us - options_us;
@@ -318,6 +332,7 @@ use draco_core::symbol_encoding::{encode_symbols, SymbolEncodingOptions};
 
 #[test]
 fn profile_encoding_stages() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
     println!("\n=== Profiling Individual Encoding Stages (Speed 10) ===\n");
@@ -345,7 +360,7 @@ fn profile_encoding_stages() {
         q_transform.compute_parameters(pos_att, 10);
         std::hint::black_box(&q_transform);
     }
-    let quant_compute_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let quant_compute_us = avg_duration_us(start.elapsed(), iterations);
 
     // Stage 2: Quantization transform application
     let mut q_transform = AttributeQuantizationTransform::new();
@@ -357,7 +372,7 @@ fn profile_encoding_stages() {
         q_transform.transform_attribute(pos_att, &point_ids, &mut portable);
         std::hint::black_box(&portable);
     }
-    let quant_apply_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let quant_apply_us = avg_duration_us(start.elapsed(), iterations);
 
     // Get quantized values for symbol encoding test
     let mut portable = PointAttribute::default();
@@ -395,7 +410,7 @@ fn profile_encoding_stages() {
         }
         std::hint::black_box(&values);
     }
-    let gather_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let gather_us = avg_duration_us(start.elapsed(), iterations);
 
     // Stage 4: Delta prediction + wrap transform (simulating what happens)
     let mut values: Vec<i32> = Vec::with_capacity(num_points * 3);
@@ -498,7 +513,7 @@ fn profile_encoding_stages() {
 
         std::hint::black_box(&corrections);
     }
-    let delta_wrap_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let delta_wrap_us = avg_duration_us(start.elapsed(), iterations);
 
     // Stage 5: Zigzag encoding (convert signed to unsigned)
     let start = Instant::now();
@@ -514,7 +529,7 @@ fn profile_encoding_stages() {
         }
         std::hint::black_box(&symbols);
     }
-    let zigzag_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let zigzag_us = avg_duration_us(start.elapsed(), iterations);
 
     // Stage 6: Symbol encoding (the entropy coding stage)
     // Prepare symbols (zigzag encoded)
@@ -538,7 +553,7 @@ fn profile_encoding_stages() {
         encode_symbols(&symbols, 3, &options, &mut buffer);
         std::hint::black_box(&buffer);
     }
-    let symbol_encode_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let symbol_encode_us = avg_duration_us(start.elapsed(), iterations);
 
     // Print results
     let total_staged = quant_compute_us
@@ -588,6 +603,7 @@ fn profile_encoding_stages() {
 
 #[test]
 fn profile_symbol_encoding_details() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
     println!("\n=== Symbol Encoding Breakdown ===\n");
@@ -633,7 +649,7 @@ fn profile_symbol_encoding_details() {
         }
         std::hint::black_box(&bit_lengths);
     }
-    let bit_lengths_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let bit_lengths_us = avg_duration_us(start.elapsed(), iterations);
 
     // Prepare bit_lengths for reuse
     let _bit_lengths: Vec<u32> = symbols
@@ -663,7 +679,7 @@ fn profile_symbol_encoding_details() {
         }
         std::hint::black_box((frequencies, num_unique));
     }
-    let freq_count_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let freq_count_us = avg_duration_us(start.elapsed(), iterations);
 
     // Prepare frequencies
     let mut frequencies = vec![0u64; (max_value + 1) as usize];
@@ -693,7 +709,7 @@ fn profile_symbol_encoding_details() {
         }
         std::hint::black_box((probs, total_rans_prob));
     }
-    let table_create_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let table_create_us = avg_duration_us(start.elapsed(), iterations);
 
     // Stage D: Full rANS encoding loop (the hot path)
     // Build actual probability table
@@ -749,7 +765,7 @@ fn profile_symbol_encoding_details() {
 
         std::hint::black_box((buf, state));
     }
-    let rans_loop_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let rans_loop_us = avg_duration_us(start.elapsed(), iterations);
 
     // Now profile the actual encode_symbols call for comparison
     let start = Instant::now();
@@ -761,7 +777,7 @@ fn profile_symbol_encoding_details() {
         encode_symbols(&symbols, num_components, &options, &mut buffer);
         std::hint::black_box(&buffer);
     }
-    let full_encode_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let full_encode_us = avg_duration_us(start.elapsed(), iterations);
 
     let total_measured = bit_lengths_us + freq_count_us + table_create_us + rans_loop_us;
 
@@ -803,6 +819,7 @@ fn profile_symbol_encoding_details() {
 
 #[test]
 fn profile_rans_loop_micro() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
     println!("\n=== rANS Loop Micro-benchmark ===\n");
@@ -880,7 +897,7 @@ fn profile_rans_loop_micro() {
         }
         std::hint::black_box((buf, state));
     }
-    let vec_push_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let vec_push_us = avg_duration_us(start.elapsed(), iterations);
 
     // Approach 2: Pre-allocated buffer with index
     let start = Instant::now();
@@ -906,7 +923,7 @@ fn profile_rans_loop_micro() {
         }
         std::hint::black_box((buf, state, buf_offset));
     }
-    let prealloc_idx_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let prealloc_idx_us = avg_duration_us(start.elapsed(), iterations);
 
     // Approach 3: Unchecked index access
     let start = Instant::now();
@@ -934,7 +951,7 @@ fn profile_rans_loop_micro() {
         }
         std::hint::black_box((buf, state, buf_offset));
     }
-    let unchecked_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let unchecked_us = avg_duration_us(start.elapsed(), iterations);
 
     // Approach 4: Compute renorm_bound outside with /4 factor
     // l_rans_base / rans_precision = 4, so renorm_bound = 4 * 256 * p = 1024 * p
@@ -963,7 +980,7 @@ fn profile_rans_loop_micro() {
         }
         std::hint::black_box((buf, state, buf_offset));
     }
-    let simplified_bound_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let simplified_bound_us = avg_duration_us(start.elapsed(), iterations);
 
     println!(
         "rANS loop approaches ({} symbols, {} iterations):",
@@ -982,6 +999,7 @@ fn profile_rans_loop_micro() {
 
 #[test]
 fn profile_full_encode_breakdown() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
     if common::skip_if_cpp_bridge_unavailable() {
         return;
@@ -1003,7 +1021,7 @@ fn profile_full_encode_breakdown() {
         let cloned = mesh.clone();
         std::hint::black_box(cloned);
     }
-    let mesh_clone_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let mesh_clone_us = avg_duration_us(start.elapsed(), iterations);
 
     // Stage 2: CornerTable init (connectivity processing)
     use draco_core::corner_table::CornerTable;
@@ -1027,7 +1045,7 @@ fn profile_full_encode_breakdown() {
         ct.init(&face_data);
         std::hint::black_box(&ct);
     }
-    let corner_table_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let corner_table_us = avg_duration_us(start.elapsed(), iterations);
 
     // Stage 3: Full Rust encoding
     let start = Instant::now();
@@ -1043,7 +1061,7 @@ fn profile_full_encode_breakdown() {
         let _ = encoder.encode(&options, &mut encoder_buffer);
         std::hint::black_box(encoder_buffer);
     }
-    let full_encode_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let full_encode_us = avg_duration_us(start.elapsed(), iterations);
 
     // Stage 4: C++ encode for comparison
     let cpp_avg = unsafe {
@@ -1096,7 +1114,7 @@ fn profile_full_encode_breakdown() {
         }
         std::hint::black_box(&corner_to_vertex);
     }
-    let init_map_us = start.elapsed().as_micros() as f64 / iterations as f64;
+    let init_map_us = avg_duration_us(start.elapsed(), iterations);
     println!("  A. Init corner_to_vertex: {:7.1} µs", init_map_us);
     println!(
         "  B. Rest of init:          {:7.1} µs ({:.1}%)",
@@ -1107,6 +1125,7 @@ fn profile_full_encode_breakdown() {
 
 #[test]
 fn profile_mesh_clone_overhead() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
     println!("\n=== Profiling Mesh Clone Overhead ===\n");
@@ -1120,13 +1139,14 @@ fn profile_mesh_clone_overhead() {
         let _cloned = mesh.clone();
     }
     let elapsed = start.elapsed();
-    let avg_clone = elapsed.as_micros() as f64 / iterations as f64 / 1000.0;
+    let avg_clone = avg_duration_us(elapsed, iterations) / 1000.0;
 
     println!("Mesh clone (200x200): {:.3}ms", avg_clone);
 }
 
 #[test]
 fn profile_point_ids_creation() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
     println!("\n=== Profiling point_ids creation ===\n");
@@ -1140,7 +1160,7 @@ fn profile_point_ids_creation() {
             std::hint::black_box(&point_ids);
         }
         let elapsed = start.elapsed();
-        let avg = elapsed.as_micros() as f64 / iterations as f64 / 1000.0;
+        let avg = avg_duration_us(elapsed, iterations) / 1000.0;
 
         println!("point_ids creation ({} points): {:.4}ms", num_points, avg);
     }
@@ -1148,6 +1168,7 @@ fn profile_point_ids_creation() {
 
 #[test]
 fn profile_rust_vs_cpp_breakdown() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
     if !draco_cpp_test_bridge::is_available() {
@@ -1155,7 +1176,7 @@ fn profile_rust_vs_cpp_breakdown() {
         return;
     }
 
-    println!("\n=== Detailed Rust vs C++ Profile Breakdown ===\n");
+    println!("\n=== Detailed C++ vs Rust Profile Breakdown ===\n");
 
     let grid_size = 100;
     let (mesh, positions, faces) = create_grid_mesh(grid_size);
@@ -1199,10 +1220,10 @@ fn profile_rust_vs_cpp_breakdown() {
         );
 
         // Rust Profile
-        let mut rust_mesh_setup_us = 0u128;
-        let mut rust_encoder_setup_us = 0u128;
-        let mut rust_encode_us = 0u128;
-        let mut rust_total_us = 0u128;
+        let mut rust_mesh_setup_us = 0.0;
+        let mut rust_encoder_setup_us = 0.0;
+        let mut rust_encode_us = 0.0;
+        let mut rust_total_us = 0.0;
         let mut rust_output_size = 0;
 
         for _ in 0..iterations {
@@ -1234,17 +1255,17 @@ fn profile_rust_vs_cpp_breakdown() {
 
             let total_elapsed = total_start.elapsed();
 
-            rust_mesh_setup_us += mesh_elapsed.as_micros();
-            rust_encoder_setup_us += encoder_elapsed.as_micros();
-            rust_encode_us += encode_elapsed.as_micros();
-            rust_total_us += total_elapsed.as_micros();
+            rust_mesh_setup_us += duration_to_us(mesh_elapsed);
+            rust_encoder_setup_us += duration_to_us(encoder_elapsed);
+            rust_encode_us += duration_to_us(encode_elapsed);
+            rust_total_us += duration_to_us(total_elapsed);
             rust_output_size = encoder_buffer.data().len();
         }
 
-        let rust_mesh_setup = rust_mesh_setup_us as f64 / iterations as f64;
-        let rust_encoder_setup = rust_encoder_setup_us as f64 / iterations as f64;
-        let rust_encode = rust_encode_us as f64 / iterations as f64;
-        let rust_total = rust_total_us as f64 / iterations as f64;
+        let rust_mesh_setup = rust_mesh_setup_us / f64::from(iterations);
+        let rust_encoder_setup = rust_encoder_setup_us / f64::from(iterations);
+        let rust_encode = rust_encode_us / f64::from(iterations);
+        let rust_total = rust_total_us / f64::from(iterations);
 
         println!("Rust Breakdown:");
         println!(
@@ -1266,11 +1287,11 @@ fn profile_rust_vs_cpp_breakdown() {
 
         // Comparison
         println!("Comparison (encode only):");
-        println!("  Rust encode:  {:7.1} µs", rust_encode);
         println!(
             "  C++ encode:   {:7.1} µs",
             cpp_profile.encode_time_us as f64
         );
+        println!("  Rust encode:  {:7.1} µs", rust_encode);
         println!(
             "  Speedup:      {:.2}x {}",
             cpp_profile.encode_time_us as f64 / rust_encode,
@@ -1282,11 +1303,11 @@ fn profile_rust_vs_cpp_breakdown() {
         );
 
         println!("\nComparison (total with mesh setup):");
-        println!("  Rust total:   {:7.1} µs", rust_total);
         println!(
             "  C++ total:    {:7.1} µs",
             cpp_profile.total_time_us as f64
         );
+        println!("  Rust total:   {:7.1} µs", rust_total);
         println!(
             "  Speedup:      {:.2}x {}",
             cpp_profile.total_time_us as f64 / rust_total,
@@ -1298,9 +1319,9 @@ fn profile_rust_vs_cpp_breakdown() {
         );
 
         println!(
-            "\nOutput sizes: Rust={} C++={} {}\n",
-            rust_output_size,
+            "\nOutput sizes: C++={} Rust={} {}\n",
             cpp_profile.output_size,
+            rust_output_size,
             if rust_output_size == cpp_profile.output_size {
                 "✓"
             } else {
@@ -1313,6 +1334,7 @@ fn profile_rust_vs_cpp_breakdown() {
 
 #[test]
 fn profile_decode_rust_vs_cpp() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     use draco_core::decoder_buffer::DecoderBuffer;
     use draco_core::mesh::Mesh;
     use draco_core::mesh_decoder::MeshDecoder;
@@ -1324,7 +1346,7 @@ fn profile_decode_rust_vs_cpp() {
         return;
     }
 
-    println!("\n=== Decode Performance: Rust vs C++ ===\n");
+    println!("\n=== Decode Performance: C++ vs Rust ===\n");
 
     let grid_size = 100;
     let (mesh, positions, faces) = create_grid_mesh(grid_size);
@@ -1366,7 +1388,7 @@ fn profile_decode_rust_vs_cpp() {
         println!("  Faces:      {}\n", cpp_result.num_faces);
 
         // Rust Decode
-        let mut rust_decode_us = 0u128;
+        let mut rust_decode_us = 0.0;
         let mut rust_num_points = 0;
         let mut rust_num_faces = 0;
         let mut rust_decode_success = true;
@@ -1380,7 +1402,7 @@ fn profile_decode_rust_vs_cpp() {
             let start = Instant::now();
             match decoder.decode(&mut decoder_buffer, &mut out_mesh) {
                 Ok(_) => {
-                    rust_decode_us += start.elapsed().as_micros();
+                    rust_decode_us += duration_to_us(start.elapsed());
                     rust_num_points = out_mesh.num_points();
                     rust_num_faces = out_mesh.num_faces();
                 }
@@ -1399,7 +1421,7 @@ fn profile_decode_rust_vs_cpp() {
             continue;
         }
 
-        let rust_avg = rust_decode_us as f64 / iterations as f64;
+        let rust_avg = rust_decode_us / f64::from(iterations);
 
         println!("Rust Decode:");
         println!("  Time:       {:7.1} µs", rust_avg);
@@ -1409,8 +1431,8 @@ fn profile_decode_rust_vs_cpp() {
         // Comparison
         let speedup = cpp_result.decode_time_us as f64 / rust_avg;
         println!("Comparison:");
-        println!("  Rust:       {:7.1} µs", rust_avg);
         println!("  C++:        {:7.1} µs", cpp_result.decode_time_us as f64);
+        println!("  Rust:       {:7.1} µs", rust_avg);
         println!(
             "  Speedup:    {:.2}x {}",
             speedup,
@@ -1425,14 +1447,14 @@ fn profile_decode_rust_vs_cpp() {
         let faces_match = rust_num_faces == cpp_result.num_faces as usize;
         println!(
             "  Points:     {} vs {} {}",
-            rust_num_points,
             cpp_result.num_points,
+            rust_num_points,
             if points_match { "✓" } else { "✗" }
         );
         println!(
             "  Faces:      {} vs {} {}",
-            rust_num_faces,
             cpp_result.num_faces,
+            rust_num_faces,
             if faces_match { "✓" } else { "✗" }
         );
 
@@ -1442,6 +1464,7 @@ fn profile_decode_rust_vs_cpp() {
 
 #[test]
 fn profile_decode_sequential_breakdown() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     use draco_core::decoder_buffer::DecoderBuffer;
     use draco_core::mesh::Mesh;
     use draco_core::mesh_decoder::MeshDecoder;

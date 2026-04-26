@@ -17,6 +17,10 @@
 
 extern "C" {
 
+static int64_t rounded_ns_to_us(int64_t ns) {
+    return (ns + 500) / 1000;
+}
+
 // Opaque handle types
 typedef void* DracoMeshHandle;
 typedef void* DracoEncoderBufferHandle;
@@ -105,16 +109,16 @@ int64_t draco_encode_mesh(
     encoder.SetAttributeQuantization(draco::GeometryAttribute::POSITION, quantization_bits);
     // Don't set encoding method - let C++ use default (sequential at speed 10, edgebreaker otherwise)
     
-    auto start = std::chrono::high_resolution_clock::now();
+    auto start = std::chrono::steady_clock::now();
     draco::Status status = encoder.EncodeMeshToBuffer(*mesh, buffer);
-    auto end = std::chrono::high_resolution_clock::now();
+    auto end = std::chrono::steady_clock::now();
     
     if (!status.ok()) {
         return -1;
     }
     
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    return duration.count();
+    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+    return rounded_ns_to_us(duration.count());
 }
 
 // Benchmark encoding: runs encoding multiple times and returns average time in microseconds
@@ -130,7 +134,11 @@ int64_t draco_benchmark_encode_mesh(
     uint32_t iterations,
     size_t* output_size  // Output: encoded size in bytes
 ) {
-    int64_t total_time = 0;
+    if (iterations == 0) {
+        return -1;
+    }
+
+    int64_t total_time_ns = 0;
     *output_size = 0;
     
     for (uint32_t iter = 0; iter < iterations; ++iter) {
@@ -170,20 +178,20 @@ int64_t draco_benchmark_encode_mesh(
         draco::EncoderBuffer buffer;
         
         // Time just the encoding
-        auto start = std::chrono::high_resolution_clock::now();
+        auto start = std::chrono::steady_clock::now();
         draco::Status status = encoder.EncodeMeshToBuffer(mesh, &buffer);
-        auto end = std::chrono::high_resolution_clock::now();
+        auto end = std::chrono::steady_clock::now();
         
         if (!status.ok()) {
             return -1;
         }
         
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-        total_time += duration.count();
+        auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+        total_time_ns += duration.count();
         *output_size = buffer.size();
     }
     
-    return total_time / iterations;
+    return rounded_ns_to_us(total_time_ns / iterations);
 }
 
 // Get version info for verification
@@ -216,16 +224,20 @@ int draco_profile_encode(
     uint32_t iterations,
     DracoProfileResult* result
 ) {
-    int64_t total_mesh_setup = 0;
-    int64_t total_encoder_setup = 0;
-    int64_t total_encode = 0;
-    int64_t total_all = 0;
+    if (iterations == 0) {
+        return -1;
+    }
+
+    int64_t total_mesh_setup_ns = 0;
+    int64_t total_encoder_setup_ns = 0;
+    int64_t total_encode_ns = 0;
+    int64_t total_all_ns = 0;
     
     for (uint32_t iter = 0; iter < iterations; ++iter) {
-        auto all_start = std::chrono::high_resolution_clock::now();
+        auto all_start = std::chrono::steady_clock::now();
         
         // === MESH SETUP ===
-        auto mesh_start = std::chrono::high_resolution_clock::now();
+        auto mesh_start = std::chrono::steady_clock::now();
         
         draco::Mesh mesh;
         mesh.set_num_points(num_points);
@@ -250,41 +262,41 @@ int draco_profile_encode(
             mesh.SetFace(draco::FaceIndex(i), face);
         }
         
-        auto mesh_end = std::chrono::high_resolution_clock::now();
+        auto mesh_end = std::chrono::steady_clock::now();
         
         // === ENCODER SETUP ===
-        auto encoder_start = std::chrono::high_resolution_clock::now();
+        auto encoder_start = std::chrono::steady_clock::now();
         
         draco::Encoder encoder;
         encoder.SetSpeedOptions(encoding_speed, decoding_speed);
         encoder.SetAttributeQuantization(draco::GeometryAttribute::POSITION, quantization_bits);
         draco::EncoderBuffer buffer;
         
-        auto encoder_end = std::chrono::high_resolution_clock::now();
+        auto encoder_end = std::chrono::steady_clock::now();
         
         // === ENCODING ===
-        auto encode_start = std::chrono::high_resolution_clock::now();
+        auto encode_start = std::chrono::steady_clock::now();
         draco::Status status = encoder.EncodeMeshToBuffer(mesh, &buffer);
-        auto encode_end = std::chrono::high_resolution_clock::now();
+        auto encode_end = std::chrono::steady_clock::now();
         
         if (!status.ok()) {
             return -1;
         }
         
-        auto all_end = std::chrono::high_resolution_clock::now();
+        auto all_end = std::chrono::steady_clock::now();
         
-        total_mesh_setup += std::chrono::duration_cast<std::chrono::microseconds>(mesh_end - mesh_start).count();
-        total_encoder_setup += std::chrono::duration_cast<std::chrono::microseconds>(encoder_end - encoder_start).count();
-        total_encode += std::chrono::duration_cast<std::chrono::microseconds>(encode_end - encode_start).count();
-        total_all += std::chrono::duration_cast<std::chrono::microseconds>(all_end - all_start).count();
+        total_mesh_setup_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(mesh_end - mesh_start).count();
+        total_encoder_setup_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(encoder_end - encoder_start).count();
+        total_encode_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(encode_end - encode_start).count();
+        total_all_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(all_end - all_start).count();
         
         result->output_size = buffer.size();
     }
     
-    result->mesh_setup_us = total_mesh_setup / iterations;
-    result->encoder_setup_us = total_encoder_setup / iterations;
-    result->encode_time_us = total_encode / iterations;
-    result->total_time_us = total_all / iterations;
+    result->mesh_setup_us = rounded_ns_to_us(total_mesh_setup_ns / iterations);
+    result->encoder_setup_us = rounded_ns_to_us(total_encoder_setup_ns / iterations);
+    result->encode_time_us = rounded_ns_to_us(total_encode_ns / iterations);
+    result->total_time_us = rounded_ns_to_us(total_all_ns / iterations);
     
     return 0;
 }
@@ -570,7 +582,9 @@ static uint64_t hash_mesh_canonical_corners(const draco::Mesh& mesh) {
     return hash;
 }
 
-// Benchmark decoding: runs decoding multiple times and returns average time in microseconds
+// Benchmark decoding: runs decoding multiple times and returns the median
+// per-iteration decode time in nanoseconds. The setup mirrors the Rust harness:
+// DecoderBuffer and Decoder construction are outside the timed region.
 int64_t draco_benchmark_decode_mesh(
     const uint8_t* encoded_data,
     size_t encoded_size,
@@ -578,31 +592,59 @@ int64_t draco_benchmark_decode_mesh(
     uint32_t* out_num_points,
     uint32_t* out_num_faces
 ) {
-    int64_t total_time = 0;
-    
-    for (uint32_t iter = 0; iter < iterations; ++iter) {
+    if (iterations == 0) {
+        return -1;
+    }
+
+    const uint32_t warmup_iterations = std::min(std::max(iterations, 10u), 50u);
+    for (uint32_t iter = 0; iter < warmup_iterations; ++iter) {
         draco::DecoderBuffer buffer;
         buffer.Init(reinterpret_cast<const char*>(encoded_data), encoded_size);
-        
+
         draco::Decoder decoder;
-        
-        auto start = std::chrono::high_resolution_clock::now();
         auto result = decoder.DecodeMeshFromBuffer(&buffer);
-        auto end = std::chrono::high_resolution_clock::now();
-        
         if (!result.ok()) {
             return -1;
         }
-        
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-        total_time += duration.count();
-        
+
         auto mesh = std::move(result).value();
         *out_num_points = mesh->num_points();
         *out_num_faces = mesh->num_faces();
     }
-    
-    return total_time / iterations;
+
+    constexpr int kBatches = 9;
+    std::vector<int64_t> batch_ns;
+    batch_ns.reserve(kBatches);
+
+    for (int batch = 0; batch < kBatches; ++batch) {
+        int64_t total_ns = 0;
+
+        for (uint32_t iter = 0; iter < iterations; ++iter) {
+            draco::DecoderBuffer buffer;
+            buffer.Init(reinterpret_cast<const char*>(encoded_data), encoded_size);
+
+            draco::Decoder decoder;
+
+            auto start = std::chrono::steady_clock::now();
+            auto result = decoder.DecodeMeshFromBuffer(&buffer);
+            auto end = std::chrono::steady_clock::now();
+
+            if (!result.ok()) {
+                return -1;
+            }
+
+            total_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+
+            auto mesh = std::move(result).value();
+            *out_num_points = mesh->num_points();
+            *out_num_faces = mesh->num_faces();
+        }
+
+        batch_ns.push_back(total_ns / iterations);
+    }
+
+    std::sort(batch_ns.begin(), batch_ns.end());
+    return batch_ns[kBatches / 2];
 }
 
 // Profile decoding with detailed timing
@@ -612,7 +654,11 @@ int draco_profile_decode(
     uint32_t iterations,
     DracoDecodeProfileResult* result
 ) {
-    int64_t total_decode = 0;
+    if (iterations == 0) {
+        return -1;
+    }
+
+    int64_t total_decode_ns = 0;
     
     for (uint32_t iter = 0; iter < iterations; ++iter) {
         draco::DecoderBuffer buffer;
@@ -620,22 +666,23 @@ int draco_profile_decode(
         
         draco::Decoder decoder;
         
-        auto start = std::chrono::high_resolution_clock::now();
+        auto start = std::chrono::steady_clock::now();
         auto decode_result = decoder.DecodeMeshFromBuffer(&buffer);
-        auto end = std::chrono::high_resolution_clock::now();
+        auto end = std::chrono::steady_clock::now();
         
         if (!decode_result.ok()) {
             return -1;
         }
         
-        total_decode += std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        total_decode_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
         
         auto mesh = std::move(decode_result).value();
         result->num_points = mesh->num_points();
         result->num_faces = mesh->num_faces();
     }
     
-    result->decode_time_us = total_decode / iterations;
+    const int64_t avg_decode_ns = total_decode_ns / iterations;
+    result->decode_time_us = (avg_decode_ns + 500) / 1000;
     return 0;
 }
 

@@ -11,6 +11,29 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
+
+static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
+
+fn print_size_table_header(title: &str) {
+    println!("\n=== {title} ===");
+    println!(
+        "{:<28} {:>11} {:>11} {:>10}",
+        "Case", "C++ bytes", "Rust bytes", "Status"
+    );
+    println!("{}", "-".repeat(66));
+}
+
+fn print_size_row(case: impl std::fmt::Display, cpp_size: usize, rust_size: usize, status: &str) {
+    println!(
+        "{:<28} {:>11} {:>11} {:>10}",
+        case, cpp_size, rust_size, status
+    );
+}
+
+fn print_case_status(case: impl std::fmt::Display, status: &str) {
+    println!("{:<28} {:>11} {:>11} {:>10}", case, "-", "-", status);
+}
 
 fn get_cpp_tools_path() -> Option<PathBuf> {
     let path = Path::new("../../build-original/src/draco/Release");
@@ -100,6 +123,7 @@ fn create_mesh_with_attributes() -> Mesh {
 /// Test different quantization bits for position attribute
 #[test]
 fn test_quantization_bits_compatibility() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     let tools_path = match get_cpp_tools_path() {
         Some(p) => p,
         None => {
@@ -129,7 +153,7 @@ fn test_quantization_bits_compatibility() {
     // Test different quantization bits: 8, 10, 11 (default), 12, 14, 16
     let quantization_values = [8, 10, 11, 12, 14, 16];
 
-    println!("\n=== Testing Quantization Bits Compatibility ===");
+    print_size_table_header("C++ vs Rust Quantization Bits Compatibility");
 
     let mut all_passed = true;
 
@@ -181,12 +205,11 @@ fn test_quantization_bits_compatibility() {
                 if rust_data != cpp_data {
                     all_passed = false;
                 }
-                println!(
-                    "qp={:2}: Rust={:5} bytes, C++={:5} bytes -> {}",
-                    qp,
-                    rust_data.len(),
+                print_size_row(
+                    format!("qp={qp:2}"),
                     cpp_data.len(),
-                    status
+                    rust_data.len(),
+                    status,
                 );
 
                 let _ = std::fs::remove_file(&cpp_drc_path);
@@ -227,6 +250,7 @@ fn test_quantization_bits_compatibility() {
 /// Test all compression levels (0-10) at a specific quantization
 #[test]
 fn test_compression_levels_compatibility() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     let tools_path = match get_cpp_tools_path() {
         Some(p) => p,
         None => {
@@ -252,8 +276,8 @@ fn test_compression_levels_compatibility() {
     let mut obj_reader = draco_io::ObjReader::open(obj_path).expect("Failed to open obj");
     let mesh = obj_reader.read_mesh().expect("Failed to read obj");
 
-    println!("\n=== Testing Compression Levels (cl) Compatibility ===");
-    println!("Note: Rust speed = 10 - cpp_cl");
+    print_size_table_header("C++ vs Rust Compression Levels Compatibility");
+    println!("Note: Rust speed = 10 - cpp_cl\n");
 
     let mut all_passed = true;
 
@@ -310,13 +334,11 @@ fn test_compression_levels_compatibility() {
                 if rust_data != cpp_data {
                     all_passed = false;
                 }
-                println!(
-                    "cl={:2} (speed={:2}): Rust={:5} bytes, C++={:5} bytes -> {}",
-                    cl,
-                    speed,
-                    rust_data.len(),
+                print_size_row(
+                    format!("cl={cl:2} speed={speed:2}"),
                     cpp_data.len(),
-                    status
+                    rust_data.len(),
+                    status,
                 );
 
                 let _ = std::fs::remove_file(&cpp_drc_path);
@@ -357,6 +379,7 @@ fn test_compression_levels_compatibility() {
 /// Test edge cases for quantization bits (minimum and maximum values)
 #[test]
 fn test_quantization_edge_cases() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     let tools_path = match get_cpp_tools_path() {
         Some(p) => p,
         None => {
@@ -382,7 +405,7 @@ fn test_quantization_edge_cases() {
     let mut obj_reader = draco_io::ObjReader::open(obj_path).expect("Failed to open obj");
     let mesh = obj_reader.read_mesh().expect("Failed to read obj");
 
-    println!("\n=== Testing Quantization Edge Cases ===");
+    print_size_table_header("C++ vs Rust Quantization Edge Cases");
 
     // Test extreme quantization values
     // Note: C++ Draco supports 1-30 bits, but practical range is typically 8-20
@@ -411,10 +434,7 @@ fn test_quantization_edge_cases() {
         let res = encoder.encode(&options, &mut buffer);
 
         if res.is_err() {
-            println!(
-                "qp={:2} ({}): Rust encode failed (may be expected for edge case)",
-                qp, desc
-            );
+            print_case_status(format!("qp={qp:2} {desc}"), "RUST FAIL");
             continue;
         }
         let rust_data = buffer.data().to_vec();
@@ -449,21 +469,16 @@ fn test_quantization_edge_cases() {
                 if rust_data != cpp_data {
                     all_passed = false;
                 }
-                println!(
-                    "qp={:2} ({:20}): Rust={:5} bytes, C++={:5} bytes -> {}",
-                    qp,
-                    desc,
-                    rust_data.len(),
+                print_size_row(
+                    format!("qp={qp:2} {desc}"),
                     cpp_data.len(),
-                    status
+                    rust_data.len(),
+                    status,
                 );
 
                 let _ = std::fs::remove_file(&cpp_drc_path);
             } else {
-                println!(
-                    "qp={:2} ({}): C++ encoder failed (may be expected)",
-                    qp, desc
-                );
+                print_case_status(format!("qp={qp:2} {desc}"), "C++ FAIL");
             }
         }
 
@@ -494,6 +509,7 @@ fn test_quantization_edge_cases() {
 /// Combined test: different speeds with different quantization bits
 #[test]
 fn test_speed_quantization_matrix() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     let tools_path = match get_cpp_tools_path() {
         Some(p) => p,
         None => {
@@ -519,8 +535,8 @@ fn test_speed_quantization_matrix() {
     let mut obj_reader = draco_io::ObjReader::open(obj_path).expect("Failed to open obj");
     let mesh = obj_reader.read_mesh().expect("Failed to read obj");
 
-    println!("\n=== Speed x Quantization Matrix Test ===");
-    println!("Testing speed 0, 5, 10 with qp 8, 11, 14");
+    print_size_table_header("C++ vs Rust Speed x Quantization Matrix");
+    println!("Note: speed 0, 5, 10 with qp 8, 11, 14\n");
 
     let speeds = [0, 5, 10];
     let qp_values = [8, 11, 14];
@@ -573,13 +589,11 @@ fn test_speed_quantization_matrix() {
                         match_count += 1;
                     }
                     let status = if matched { "MATCH" } else { "MISMATCH" };
-                    println!(
-                        "speed={:2}, qp={:2}: Rust={:5}, C++={:5} -> {}",
-                        speed,
-                        qp,
-                        rust_data.len(),
+                    print_size_row(
+                        format!("speed={speed:2} qp={qp:2}"),
                         cpp_data.len(),
-                        status
+                        rust_data.len(),
+                        status,
                     );
 
                     let _ = std::fs::remove_file(&cpp_drc_path);
@@ -596,7 +610,7 @@ fn test_speed_quantization_matrix() {
     let _ = std::fs::remove_file(obj_path);
 
     println!(
-        "\nMatrix Results: {}/{} combinations matched",
+        "\nMatrix results: {}/{} combinations matched",
         match_count, total_count
     );
     assert_eq!(

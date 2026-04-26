@@ -575,13 +575,14 @@ pub fn decode_cpp_point_cloud_fingerprint(_encoded_data: &[u8]) -> Option<CppDec
     None
 }
 
-/// Benchmark C++ decoding via the Rust wrapper (returns avg time and output sizes)
+/// Benchmark C++ decoding via the Rust wrapper.
+///
+/// Returns the median per-iteration decode time in nanoseconds and output sizes.
 #[cfg(not(cpp_test_bridge_disabled))]
 pub fn benchmark_cpp_decode(encoded_data: &[u8], iterations: u32) -> Option<(i64, u32, u32)> {
     let mut out_num_points = 0u32;
     let mut out_num_faces = 0u32;
-    // draco_benchmark_decode_mesh returns total_time / iterations (the per-iteration average in µs)
-    let avg_us = unsafe {
+    let median_ns = unsafe {
         ffi::draco_benchmark_decode_mesh(
             encoded_data.as_ptr(),
             encoded_data.len(),
@@ -591,10 +592,10 @@ pub fn benchmark_cpp_decode(encoded_data: &[u8], iterations: u32) -> Option<(i64
         )
     };
 
-    if avg_us < 0 {
+    if median_ns < 0 {
         None
     } else {
-        Some((avg_us, out_num_points, out_num_faces))
+        Some((median_ns, out_num_points, out_num_faces))
     }
 }
 

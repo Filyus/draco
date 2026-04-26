@@ -1,4 +1,4 @@
-// Byte-by-byte comparison of Rust vs C++ encoder output
+// Byte-by-byte comparison of C++ vs Rust encoder output
 
 mod common;
 
@@ -10,6 +10,25 @@ use draco_core::mesh::Mesh;
 use draco_core::mesh_encoder::MeshEncoder;
 use draco_core::EncoderOptions;
 use draco_cpp_test_bridge;
+use std::sync::Mutex;
+
+static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
+
+fn print_size_table_header(title: &str) {
+    println!("\n=== {title} ===");
+    println!(
+        "{:<18} {:>11} {:>11} {:>10}",
+        "Case", "C++ bytes", "Rust bytes", "Status"
+    );
+    println!("{}", "-".repeat(55));
+}
+
+fn print_size_row(case: &str, cpp_size: usize, rust_size: usize, status: &str) {
+    println!(
+        "{:<18} {:>11} {:>11} {:>10}",
+        case, cpp_size, rust_size, status
+    );
+}
 
 fn create_simple_mesh_data() -> (Vec<f32>, Vec<u32>) {
     // Simple cube
@@ -158,6 +177,7 @@ fn print_bytes_around(data: &[u8], center: usize, context: usize, label: &str) {
 
 #[test]
 fn test_byte_comparison_speed_10_simple() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
     if !draco_cpp_test_bridge::is_available() {
@@ -165,7 +185,7 @@ fn test_byte_comparison_speed_10_simple() {
         return;
     }
 
-    println!("\n=== Byte Comparison: Speed 10 (Sequential) Simple Cube ===\n");
+    print_size_table_header("C++ vs Rust Byte Comparison: Speed 10 Simple Cube");
 
     let (positions, faces) = create_simple_mesh_data();
     let mesh = create_rust_mesh(&positions, &faces);
@@ -174,32 +194,26 @@ fn test_byte_comparison_speed_10_simple() {
     let cpp_bytes = draco_cpp_test_bridge::encode_cpp_mesh(&positions, &faces, 10, 10, 10)
         .expect("C++ encoding failed");
 
-    println!("Rust size: {} bytes", rust_bytes.len());
-    println!("C++  size: {} bytes", cpp_bytes.len());
+    print_size_row(
+        "simple cube",
+        cpp_bytes.len(),
+        rust_bytes.len(),
+        if cpp_bytes == rust_bytes {
+            "MATCH"
+        } else {
+            "DIFF"
+        },
+    );
 
     if let Some(diff_pos) = find_first_difference(&rust_bytes, &cpp_bytes) {
         println!("\nFirst difference at byte offset: {}", diff_pos);
         println!("Context (5 bytes before/after):");
-        print_bytes_around(&rust_bytes, diff_pos, 5, "Rust");
         print_bytes_around(&cpp_bytes, diff_pos, 5, "C++ ");
+        print_bytes_around(&rust_bytes, diff_pos, 5, "Rust");
 
         // Print hex dump of first 100 bytes
         println!("\n--- First 100 bytes hex dump ---");
-        println!("Rust:");
-        for (i, chunk) in rust_bytes
-            .iter()
-            .take(100)
-            .collect::<Vec<_>>()
-            .chunks(16)
-            .enumerate()
-        {
-            print!("{:04x}: ", i * 16);
-            for b in chunk {
-                print!("{:02x} ", b);
-            }
-            println!();
-        }
-        println!("\nC++:");
+        println!("C++:");
         for (i, chunk) in cpp_bytes
             .iter()
             .take(100)
@@ -213,15 +227,30 @@ fn test_byte_comparison_speed_10_simple() {
             }
             println!();
         }
+        println!("\nRust:");
+        for (i, chunk) in rust_bytes
+            .iter()
+            .take(100)
+            .collect::<Vec<_>>()
+            .chunks(16)
+            .enumerate()
+        {
+            print!("{:04x}: ", i * 16);
+            for b in chunk {
+                print!("{:02x} ", b);
+            }
+            println!();
+        }
 
-        panic!("Rust and C++ outputs differ at byte {}", diff_pos);
+        panic!("C++ and Rust outputs differ at byte {}", diff_pos);
     } else {
-        println!("\n✓ Rust and C++ outputs are IDENTICAL!");
+        println!("\n✓ C++ and Rust outputs are IDENTICAL!");
     }
 }
 
 #[test]
 fn test_byte_comparison_speed_10_grid() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
     if !draco_cpp_test_bridge::is_available() {
@@ -229,7 +258,7 @@ fn test_byte_comparison_speed_10_grid() {
         return;
     }
 
-    println!("\n=== Byte Comparison: Speed 10 (Sequential) 10x10 Grid ===\n");
+    print_size_table_header("C++ vs Rust Byte Comparison: Speed 10 10x10 Grid");
 
     let (positions, faces) = create_grid_mesh_data(10);
     let mesh = create_rust_mesh(&positions, &faces);
@@ -238,14 +267,22 @@ fn test_byte_comparison_speed_10_grid() {
     let cpp_bytes = draco_cpp_test_bridge::encode_cpp_mesh(&positions, &faces, 10, 10, 10)
         .expect("C++ encoding failed");
 
-    println!("Rust size: {} bytes", rust_bytes.len());
-    println!("C++  size: {} bytes", cpp_bytes.len());
+    print_size_row(
+        "10x10 grid",
+        cpp_bytes.len(),
+        rust_bytes.len(),
+        if cpp_bytes == rust_bytes {
+            "MATCH"
+        } else {
+            "DIFF"
+        },
+    );
 
     if let Some(diff_pos) = find_first_difference(&rust_bytes, &cpp_bytes) {
         println!("\nFirst difference at byte offset: {}", diff_pos);
         println!("Context (10 bytes before/after):");
-        print_bytes_around(&rust_bytes, diff_pos, 10, "Rust");
         print_bytes_around(&cpp_bytes, diff_pos, 10, "C++ ");
+        print_bytes_around(&rust_bytes, diff_pos, 10, "Rust");
 
         // Analyze header
         println!("\n--- Header analysis ---");
@@ -257,19 +294,23 @@ fn test_byte_comparison_speed_10_grid() {
         println!("Bytes 9-10: Flags");
 
         println!(
-            "\nRust header: {:?}",
+            "\nC++  header: {:?}",
+            &cpp_bytes[0..11.min(cpp_bytes.len())]
+        );
+        println!(
+            "Rust header: {:?}",
             &rust_bytes[0..11.min(rust_bytes.len())]
         );
-        println!("C++  header: {:?}", &cpp_bytes[0..11.min(cpp_bytes.len())]);
 
-        panic!("Rust and C++ outputs differ at byte {}", diff_pos);
+        panic!("C++ and Rust outputs differ at byte {}", diff_pos);
     } else {
-        println!("\n✓ Rust and C++ outputs are IDENTICAL!");
+        println!("\n✓ C++ and Rust outputs are IDENTICAL!");
     }
 }
 
 #[test]
 fn test_byte_comparison_all_speeds() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
     if !draco_cpp_test_bridge::is_available() {
@@ -277,7 +318,7 @@ fn test_byte_comparison_all_speeds() {
         return;
     }
 
-    println!("\n=== Byte Comparison: All Speeds 10x10 Grid ===\n");
+    print_size_table_header("C++ vs Rust Byte Comparison: All Speeds 10x10 Grid");
 
     let (positions, faces) = create_grid_mesh_data(10);
     let mesh = create_rust_mesh(&positions, &faces);
@@ -298,12 +339,11 @@ fn test_byte_comparison_all_speeds() {
             "✗ SIZE DIFF"
         };
 
-        println!(
-            "Speed {:2}: Rust={:5} C++={:5}  {}",
-            speed,
-            rust_bytes.len(),
+        print_size_row(
+            &format!("speed {speed:2}"),
             cpp_bytes.len(),
-            status
+            rust_bytes.len(),
+            status,
         );
     }
 }

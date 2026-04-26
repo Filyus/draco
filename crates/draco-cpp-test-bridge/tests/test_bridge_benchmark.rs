@@ -11,7 +11,11 @@ use draco_core::mesh::Mesh;
 use draco_core::mesh_encoder::MeshEncoder;
 use draco_core::EncoderOptions;
 use draco_cpp_test_bridge;
+use std::fmt::Write as _;
+use std::sync::Mutex;
 use std::time::Instant;
+
+static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
 fn create_grid_mesh_data(grid_size: usize) -> (Vec<f32>, Vec<u32>) {
     let num_points = grid_size * grid_size;
@@ -101,16 +105,17 @@ fn benchmark_rust_encoding(mesh: &Mesh, speed: i32, iterations: u32) -> (f64, us
     let mut total_time = 0.0;
     let mut output_size = 0;
 
-    for _ in 0..iterations {
-        let mut options = EncoderOptions::new();
-        options.set_global_int("encoding_speed", speed);
-        options.set_global_int("decoding_speed", speed);
-        options.set_attribute_int(0, "quantization_bits", 10);
+    let mut options = EncoderOptions::new();
+    options.set_global_int("encoding_speed", speed);
+    options.set_global_int("decoding_speed", speed);
+    options.set_attribute_int(0, "quantization_bits", 10);
 
-        let start = Instant::now();
+    for _ in 0..iterations {
         let mut encoder = MeshEncoder::new();
         encoder.set_mesh(mesh.clone());
         let mut encoder_buffer = EncoderBuffer::new();
+
+        let start = Instant::now();
         let _ = encoder.encode(&options, &mut encoder_buffer);
         let elapsed = start.elapsed();
 
@@ -123,6 +128,7 @@ fn benchmark_rust_encoding(mesh: &Mesh, speed: i32, iterations: u32) -> (f64, us
 
 #[test]
 fn test_cpp_test_bridge_performance_comparison() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
     if !draco_cpp_test_bridge::is_available() {
@@ -131,18 +137,25 @@ fn test_cpp_test_bridge_performance_comparison() {
     }
 
     let (major, minor, revision) = draco_cpp_test_bridge::get_version();
-    println!("\n=== Rust vs C++ Encoding Performance (C++ test bridge) ===");
-    println!("C++ Draco version: {}.{}.{}\n", major, minor, revision);
+    let mut out = String::new();
+    writeln!(
+        out,
+        "\n=== C++ vs Rust Encoding Performance (C++ test bridge) ==="
+    )
+    .unwrap();
+    writeln!(out, "C++ Draco version: {major}.{minor}.{revision}\n").unwrap();
 
     let grid_sizes = [50, 100];
     let speeds = [0, 1, 5, 10];
     let iterations = 5;
 
-    println!(
-        "{:>6} {:>6} {:>12} {:>12} {:>10} {:>14}",
-        "Grid", "Speed", "Rust (ms)", "C++ (ms)", "Speedup", "Size"
-    );
-    println!("{}", "-".repeat(75));
+    writeln!(
+        out,
+        "{:>6} {:>6} {:>12} {:>12} {:>10} {:>11} {:>11} {:>10}",
+        "Grid", "Speed", "C++ (ms)", "Rust (ms)", "Speedup", "C++ bytes", "Rust bytes", "Status"
+    )
+    .unwrap();
+    writeln!(out, "{}", "-".repeat(92)).unwrap();
 
     for &grid_size in &grid_sizes {
         let (positions, faces) = create_grid_mesh_data(grid_size);
@@ -151,10 +164,12 @@ fn test_cpp_test_bridge_performance_comparison() {
         let num_faces = (grid_size - 1) * (grid_size - 1) * 2;
         let num_points = grid_size * grid_size;
 
-        println!(
+        writeln!(
+            out,
             "\nGrid {}x{} ({} points, {} faces):",
             grid_size, grid_size, num_points, num_faces
-        );
+        )
+        .unwrap();
 
         for &speed in &speeds {
             // Rust benchmark
@@ -181,28 +196,38 @@ fn test_cpp_test_bridge_performance_comparison() {
                 0.0
             };
 
-            let size_status = if rust_size == cpp_size {
-                "✓ match".to_string()
+            let status = if rust_size == cpp_size {
+                "MATCH".to_string()
             } else {
-                format!("✗ R:{} C:{}", rust_size, cpp_size)
+                "MISMATCH".to_string()
             };
 
-            println!(
-                "{:>6} {:>6} {:>10.2}ms {:>10.2}ms {:>9.2}x   {}",
-                grid_size, speed, rust_ms, cpp_time, speedup, size_status
-            );
+            writeln!(
+                out,
+                "{:>6} {:>6} {:>10.2}ms {:>10.2}ms {:>9.2}x {:>11} {:>11} {:>10}",
+                grid_size, speed, cpp_time, rust_ms, speedup, cpp_size, rust_size, status
+            )
+            .unwrap();
         }
     }
 
-    println!("\nNote: Speedup > 1.0 means Rust is faster, < 1.0 means C++ is faster");
-    println!(
+    writeln!(
+        out,
+        "\nNote: Speedup > 1.0 means Rust is faster, < 1.0 means C++ is faster"
+    )
+    .unwrap();
+    writeln!(
+        out,
         "      Times are averaged over {} iterations (no process startup overhead)\n",
         iterations
-    );
+    )
+    .unwrap();
+    print!("{out}");
 }
 
 #[test]
 fn test_encoding_correctness() {
+    let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
     if !draco_cpp_test_bridge::is_available() {
@@ -210,7 +235,15 @@ fn test_encoding_correctness() {
         return;
     }
 
-    println!("\n=== Encoding Output Correctness Test ===\n");
+    let mut out = String::new();
+    writeln!(out, "\n=== C++ vs Rust Encoding Output Correctness ===").unwrap();
+    writeln!(
+        out,
+        "{:>7} {:>5} {:>11} {:>11} {:>10}",
+        "Grid", "Speed", "C++ bytes", "Rust bytes", "Status"
+    )
+    .unwrap();
+    writeln!(out, "{}", "-".repeat(52)).unwrap();
 
     let grid_sizes = [20, 50];
     let speeds = [0, 5, 10];
@@ -247,12 +280,19 @@ fn test_encoding_correctness() {
                 all_pass = false;
                 "FAIL"
             };
-            println!(
-                "Grid {}x{}, speed {}: Rust={} bytes, C++={} bytes [{}]",
-                grid_size, grid_size, speed, rust_size, cpp_size, status
-            );
+            writeln!(
+                out,
+                "{:>7} {:>5} {:>11} {:>11} {:>10}",
+                format!("{grid_size}x{grid_size}"),
+                speed,
+                cpp_size,
+                rust_size,
+                status
+            )
+            .unwrap();
         }
     }
 
+    print!("{out}");
     assert!(all_pass, "Some encoding outputs did not match!");
 }

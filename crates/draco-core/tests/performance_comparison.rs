@@ -127,16 +127,17 @@ fn benchmark_rust_encoding(mesh: &Mesh, speed: i32, iterations: u32) -> (f64, us
     let mut total_time = 0.0;
     let mut output_size = 0;
 
-    for _ in 0..iterations {
-        let mut options = EncoderOptions::new();
-        options.set_global_int("encoding_speed", speed);
-        options.set_global_int("decoding_speed", speed);
-        options.set_attribute_int(0, "quantization_bits", 10);
+    let mut options = EncoderOptions::new();
+    options.set_global_int("encoding_speed", speed);
+    options.set_global_int("decoding_speed", speed);
+    options.set_attribute_int(0, "quantization_bits", 10);
 
-        let start = Instant::now();
+    for _ in 0..iterations {
         let mut encoder = MeshEncoder::new();
         encoder.set_mesh(mesh.clone());
         let mut encoder_buffer = EncoderBuffer::new();
+
+        let start = Instant::now();
         let _ = encoder.encode(&options, &mut encoder_buffer);
         let elapsed = start.elapsed();
 
@@ -152,10 +153,11 @@ fn benchmark_rust_decoding(encoded_data: &[u8], iterations: u32) -> f64 {
     let mut total_time = 0.0;
 
     for _ in 0..iterations {
-        let start = Instant::now();
         let mut decoder_buffer = DecoderBuffer::new(encoded_data);
         let mut out_mesh = Mesh::new();
         let mut decoder = MeshDecoder::new();
+
+        let start = Instant::now();
         let _ = decoder.decode(&mut decoder_buffer, &mut out_mesh);
         let elapsed = start.elapsed();
 
@@ -267,12 +269,12 @@ fn test_performance_comparison() {
     let speeds = [0, 1, 5, 10];
     let iterations = 5;
 
-    println!("\n=== Rust vs C++ Encoding Performance ===\n");
+    println!("\n=== C++ vs Rust Encoding Performance ===\n");
     println!(
-        "{:>6} {:>6} {:>12} {:>12} {:>10} {:>10}",
-        "Grid", "Speed", "Rust (ms)", "C++ (ms)", "Speedup", "Size"
+        "{:>6} {:>6} {:>12} {:>12} {:>10} {:>11} {:>11} {:>10}",
+        "Grid", "Speed", "C++ (ms)", "Rust (ms)", "Speedup", "C++ bytes", "Rust bytes", "Status"
     );
-    println!("{}", "-".repeat(70));
+    println!("{}", "-".repeat(92));
 
     for &grid_size in &grid_sizes {
         let num_faces = (grid_size - 1) * (grid_size - 1) * 2;
@@ -300,11 +302,15 @@ fn test_performance_comparison() {
             let cpp_ms = cpp_time * 1000.0;
             let speedup = if rust_ms > 0.0 { cpp_ms / rust_ms } else { 0.0 };
 
-            let size_match = if rust_size == cpp_size { "✓" } else { "✗" };
+            let status = if rust_size == cpp_size {
+                "MATCH"
+            } else {
+                "MISMATCH"
+            };
 
             println!(
-                "{:>6} {:>6} {:>10.2}ms {:>10.2}ms {:>9.2}x {:>6} {}",
-                grid_size, speed, rust_ms, cpp_ms, speedup, rust_size, size_match
+                "{:>6} {:>6} {:>10.2}ms {:>10.2}ms {:>9.2}x {:>11} {:>11} {:>10}",
+                grid_size, speed, cpp_ms, rust_ms, speedup, cpp_size, rust_size, status
             );
         }
 

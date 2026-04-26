@@ -97,13 +97,13 @@ fn point_cloud_encode_decode_performance_smoke() {
             for _ in 0..iterations {
                 std::hint::black_box(encode_point_cloud(&pc, method));
             }
-            let encode_us = start.elapsed().as_micros() as f64 / iterations as f64;
+            let encode_us = start.elapsed().as_secs_f64() * 1_000_000.0 / f64::from(iterations);
 
             let start = Instant::now();
             for _ in 0..iterations {
                 std::hint::black_box(decode_point_cloud(&encoded));
             }
-            let decode_us = start.elapsed().as_micros() as f64 / iterations as f64;
+            let decode_us = start.elapsed().as_secs_f64() * 1_000_000.0 / f64::from(iterations);
 
             println!(
                 "{:>10} {:>8} {:>7} {:>9} {:>10.1} {:>10.1}",

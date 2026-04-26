@@ -422,9 +422,9 @@ void TestPerformanceMetrics() {
 
     if (encode_result.ok()) {
         auto draco_data = std::move(encode_result).value();
-        auto encode_ms = std::chrono::duration_cast<std::chrono::milliseconds>(encode_time).count();
+        auto encode_ms = std::chrono::duration<double, std::milli>(encode_time).count();
 
-        std::cout << "    ⚡ Encoding time: " << encode_ms << " ms\n";
+        std::cout << "    ⚡ Encoding time: " << std::fixed << std::setprecision(3) << encode_ms << " ms\n";
         std::cout << "    📏 Compressed size: " << draco_data.size() << " bytes\n";
         std::cout << "    📦 Compression ratio: " << std::fixed << std::setprecision(2)
                   << (double)draco_data.size() / (mesh->num_points() * 12) << "\n";
@@ -435,8 +435,8 @@ void TestPerformanceMetrics() {
         auto decode_time = std::chrono::high_resolution_clock::now() - start;
 
         if (decode_result.ok()) {
-            auto decode_ms = std::chrono::duration_cast<std::chrono::milliseconds>(decode_time).count();
-            std::cout << "    ⚡ Decoding time: " << decode_ms << " ms\n";
+            auto decode_ms = std::chrono::duration<double, std::milli>(decode_time).count();
+            std::cout << "    ⚡ Decoding time: " << std::fixed << std::setprecision(3) << decode_ms << " ms\n";
         } else {
             std::cout << "    ❌ Decoding failed: " << decode_result.status().error_msg() << "\n";
         }
