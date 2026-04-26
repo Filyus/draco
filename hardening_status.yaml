@@ -303,7 +303,11 @@ completed:
       - path: "crates/draco-core/src/sequential_generic_attribute_decoder.rs"
         tests:
           - "decode_values_rejects_invalid_attribute_id"
-    note: "PointCloud now exposes fallible attribute lookup helpers, and generic sequential attribute decode uses them so invalid attribute ids return decode errors instead of indexing the attribute array unchecked."
+      - path: "crates/draco-core/src/sequential_normal_attribute_decoder.rs"
+        tests:
+          - "init_rejects_invalid_attribute_id"
+      - path: "crates/draco-core/src/point_cloud_decoder.rs"
+    note: "PointCloud now exposes fallible attribute lookup helpers, and generic/normal/sequential point-cloud decode uses them in decoder-facing paths so invalid attribute ids return decode errors instead of indexing the attribute array unchecked."
 
   - id: point-cloud-raw-attribute-bounds
     status: covered

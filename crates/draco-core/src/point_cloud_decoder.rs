@@ -371,7 +371,7 @@ impl PointCloudDecoder {
                             }
                         }
                         2 => {
-                            let original = pc.attribute(att_id);
+                            let original = pc.try_attribute(att_id)?;
                             let (original_type, original_num_components) =
                                 (original.attribute_type(), original.num_components());
                             let mut portable = PointAttribute::default();
@@ -397,7 +397,7 @@ impl PointCloudDecoder {
                                         DracoError::DracoError("read transform".to_string())
                                     })?;
                                 }
-                                let original = pc.attribute(att_id);
+                                let original = pc.try_attribute(att_id)?;
                                 if !transform.decode_parameters(original, buffer) {
                                     return Err(DracoError::DracoError(
                                         "Failed to decode quantization parameters (v<2.0)"
@@ -554,7 +554,7 @@ impl PointCloudDecoder {
                             // SequentialAttributeDecoder::DecodeValues().
                             decode_raw_attribute_values(
                                 buffer,
-                                pc.attribute_mut(att_id),
+                                pc.try_attribute_mut(att_id)?,
                                 num_points,
                             )?;
                         }
@@ -580,7 +580,7 @@ impl PointCloudDecoder {
                                                 .to_string(),
                                         )
                                     })?;
-                                let original = pc.attribute(att_id);
+                                let original = pc.try_attribute(att_id)?;
                                 if !pending_quant[idx]
                                     .transform
                                     .decode_parameters(original, buffer)
@@ -617,7 +617,7 @@ impl PointCloudDecoder {
                 }
 
                 for q in pending_quant {
-                    let dst = pc.attribute_mut(q.att_id);
+                    let dst = pc.try_attribute_mut(q.att_id)?;
                     if !q.transform.inverse_transform_attribute(&q.portable, dst) {
                         return Err(DracoError::DracoError(
                             "Failed to dequantize attribute".to_string(),
@@ -631,7 +631,7 @@ impl PointCloudDecoder {
                             "Invalid normal quantization bits".to_string(),
                         ));
                     }
-                    let dst = pc.attribute_mut(n.att_id);
+                    let dst = pc.try_attribute_mut(n.att_id)?;
                     if !oct.inverse_transform_attribute(&n.portable, dst) {
                         return Err(DracoError::DracoError(
                             "Failed to decode normals".to_string(),

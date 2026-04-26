@@ -50,7 +50,7 @@ impl SequentialNormalAttributeDecoder {
             return Err(DracoError::DracoError("Failed to init base".to_string()));
         }
 
-        let attribute = point_cloud.attribute(attribute_id);
+        let attribute = point_cloud.try_attribute(attribute_id)?;
         if attribute.num_components() != 3 {
             return Err(DracoError::InvalidParameter(
                 "Attribute must have 3 components".to_string(),
@@ -136,7 +136,7 @@ impl SequentialNormalAttributeDecoder {
 
         // Transform back to original attribute
         let attribute_id = self.base.attribute_id();
-        let attribute = point_cloud.attribute_mut(attribute_id);
+        let attribute = point_cloud.try_attribute_mut(attribute_id)?;
 
         if !self
             .attribute_octahedron_transform
@@ -181,5 +181,14 @@ mod tests {
         assert!(decoder
             .decode_data_needed_by_portable_transform(&mut point_cloud, &mut buffer)
             .is_ok());
+    }
+
+    #[test]
+    fn init_rejects_invalid_attribute_id() {
+        let mut decoder = SequentialNormalAttributeDecoder::new();
+        let point_cloud_decoder = PointCloudDecoder::new();
+        let point_cloud = PointCloud::new();
+
+        assert!(decoder.init(&point_cloud_decoder, &point_cloud, 0).is_err());
     }
 }
