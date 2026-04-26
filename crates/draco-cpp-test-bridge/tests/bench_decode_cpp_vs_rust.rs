@@ -117,7 +117,7 @@ fn winner(rust_ns: u128, cpp_ns: u128) -> &'static str {
 }
 
 #[test]
-fn bench_decode_comparison() {
+fn bench_decode_cpp_vs_rust() {
     common::disable_noisy_debug_env();
     if common::skip_if_cpp_bridge_unavailable() {
         return;

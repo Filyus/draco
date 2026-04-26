@@ -166,11 +166,11 @@ target_compile_features(annulus_test PRIVATE cxx_std_11)
 
 # Enhanced real I/O test with actual file operations
 # Temporarily disabled due to complex transcoder integration issues
-# add_executable(enhanced_io_test examples/enhanced_io_test.cpp)
-# target_link_libraries(enhanced_io_test draco_io)
-# target_compile_features(enhanced_io_test PRIVATE cxx_std_11)
-# target_compile_definitions(enhanced_io_test PRIVATE DRACO_TRANSCODER_SUPPORTED=1)
-# target_include_directories(enhanced_io_test PRIVATE
+# add_executable(enhanced_io_smoke_test examples/enhanced_io_smoke_test.cpp)
+# target_link_libraries(enhanced_io_smoke_test draco_io)
+# target_compile_features(enhanced_io_smoke_test PRIVATE cxx_std_11)
+# target_compile_definitions(enhanced_io_smoke_test PRIVATE DRACO_TRANSCODER_SUPPORTED=1)
+# target_include_directories(enhanced_io_smoke_test PRIVATE
 #     ${DRACO_TINYGLTF_INCLUDE_DIR}
 #     ${DRACO_EIGEN_INCLUDE_DIR})
 

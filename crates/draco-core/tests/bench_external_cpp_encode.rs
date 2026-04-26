@@ -256,7 +256,7 @@ fn benchmark_cpp_encoding(
 }
 
 #[test]
-fn test_performance_comparison() {
+fn bench_external_cpp_encode() {
     let encoder_path = match get_cpp_encoder_path() {
         Some(p) => p,
         None => {

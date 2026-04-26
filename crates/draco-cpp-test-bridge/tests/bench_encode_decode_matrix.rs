@@ -99,7 +99,7 @@ fn create_mesh_from_data(positions: &[f32], faces: &[u32]) -> Mesh {
 }
 
 #[test]
-fn comprehensive_performance_test() {
+fn bench_encode_decode_matrix() {
     common::disable_noisy_debug_env();
 
     if !draco_cpp_test_bridge::is_available() {

@@ -127,7 +127,7 @@ fn benchmark_rust_encoding(mesh: &Mesh, speed: i32, iterations: u32) -> (f64, us
 }
 
 #[test]
-fn test_cpp_test_bridge_performance_comparison() {
+fn bench_encode_cpp_vs_rust() {
     let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 

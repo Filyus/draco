@@ -100,7 +100,7 @@ fn create_grid_mesh(grid_size: usize) -> (Mesh, Vec<f32>, Vec<u32>) {
 }
 
 #[test]
-fn profile_sequential_encoding() {
+fn profile_sequential_pipeline() {
     let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
     if common::skip_if_cpp_bridge_unavailable() {

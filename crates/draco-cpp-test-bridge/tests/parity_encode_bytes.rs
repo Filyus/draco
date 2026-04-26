@@ -176,7 +176,7 @@ fn print_bytes_around(data: &[u8], center: usize, context: usize, label: &str) {
 }
 
 #[test]
-fn test_byte_comparison_speed_10_simple() {
+fn parity_encode_bytes_speed_10_simple() {
     let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
@@ -249,7 +249,7 @@ fn test_byte_comparison_speed_10_simple() {
 }
 
 #[test]
-fn test_byte_comparison_speed_10_grid() {
+fn parity_encode_bytes_speed_10_grid() {
     let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 
@@ -309,7 +309,7 @@ fn test_byte_comparison_speed_10_grid() {
 }
 
 #[test]
-fn test_byte_comparison_all_speeds() {
+fn parity_encode_bytes_all_speeds() {
     let _output_lock = OUTPUT_LOCK.lock().unwrap();
     common::disable_noisy_debug_env();
 

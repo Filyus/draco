@@ -104,7 +104,7 @@ fn create_complex_mesh() -> Mesh {
 }
 
 #[test]
-fn test_speed_compatibility() {
+fn compat_encoding_speed() {
     let tools_path = match get_cpp_tools_path() {
         Some(p) => p,
         None => {

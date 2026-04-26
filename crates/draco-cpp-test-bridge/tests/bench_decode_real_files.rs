@@ -63,7 +63,7 @@ struct FileCase {
 }
 
 #[test]
-fn decode_real_files_comparison() {
+fn bench_decode_real_files() {
     common::disable_noisy_debug_env();
 
     if !draco_cpp_test_bridge::is_available() {

@@ -45,10 +45,10 @@ fn get_cpp_tools_path() -> Option<PathBuf> {
 }
 
 /// Create a mesh with position, normals, and texture coordinates
-/// Uses 50x50 grid to match the original speed_compatibility test
+/// Uses 50x50 grid to match the original encoding-speed compatibility test
 fn create_mesh_with_attributes() -> Mesh {
     let mut mesh = Mesh::new();
-    let grid_size = 50; // Must match speed_compatibility.rs for consistent results
+    let grid_size = 50; // Must match compat_encoding_speed.rs for consistent results
     let num_points = grid_size * grid_size;
     let num_faces = (grid_size - 1) * (grid_size - 1) * 2;
 
@@ -70,7 +70,7 @@ fn create_mesh_with_attributes() -> Mesh {
             let index = y * grid_size + x;
             let px = x as f32;
             let py = y as f32;
-            // Use same sinusoidal variation as speed_compatibility.rs (0.2 not 0.3)
+            // Use same sinusoidal variation as compat_encoding_speed.rs (0.2 not 0.3)
             let pz = (x as f32 * 0.2).sin() * (y as f32 * 0.2).cos() * 2.0;
 
             let offset = index as usize * 3 * 4;
@@ -284,7 +284,7 @@ fn test_compression_levels_compatibility() {
     // Test compression levels 0-10
     for cl in 0..=10 {
         let speed = 10 - cl; // Rust speed is inverse of C++ compression level
-        let qp = 10; // Match original speed_compatibility test
+        let qp = 10; // Match original encoding-speed compatibility test
 
         // Rust encode
         let mut options = EncoderOptions::new();
