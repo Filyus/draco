@@ -132,8 +132,7 @@ impl AttributeTransform for AttributeOctahedronTransform {
                 return false;
             }
             if let Some(bits) = transform_data.get_parameter_value(0) {
-                self.quantization_bits = bits;
-                return true;
+                return self.set_parameters(bits);
             }
         }
         false
@@ -259,6 +258,8 @@ impl AttributeTransform for AttributeOctahedronTransform {
 mod tests {
     use super::AttributeOctahedronTransform;
     use crate::attribute_transform::AttributeTransform;
+    use crate::attribute_transform::AttributeTransformType;
+    use crate::attribute_transform_data::AttributeTransformData;
     use crate::decoder_buffer::DecoderBuffer;
     use crate::draco_types::DataType;
     use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
@@ -323,5 +324,18 @@ mod tests {
 
         assert!(transform.decode_parameters(&attribute, &mut buffer));
         assert_eq!(transform.quantization_bits(), 10);
+    }
+
+    #[test]
+    fn init_from_attribute_rejects_invalid_quantization_bits() {
+        let mut transform_data = AttributeTransformData::new();
+        transform_data.set_transform_type(AttributeTransformType::OctahedronTransform);
+        transform_data.append_parameter_value(31i32);
+
+        let mut attribute = PointAttribute::new();
+        attribute.set_attribute_transform_data(transform_data);
+
+        let mut transform = AttributeOctahedronTransform::new(-1);
+        assert!(!transform.init_from_attribute(&attribute));
     }
 }
