@@ -309,6 +309,12 @@ completed:
       - path: "crates/draco-core/src/point_cloud_decoder.rs"
     note: "PointCloud now exposes fallible attribute lookup helpers, and generic/normal/sequential point-cloud decode uses them in decoder-facing paths so invalid attribute ids return decode errors instead of indexing the attribute array unchecked."
 
+  - id: mesh-sequential-attribute-id-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/mesh_decoder.rs"
+    note: "Sequential mesh attribute decode now uses fallible Mesh/PointCloud attribute lookups while resizing attributes, decoding transform parameters, applying inverse transforms, updating point maps, and copying portable mappings."
+
   - id: point-cloud-raw-attribute-bounds
     status: covered
     evidence:

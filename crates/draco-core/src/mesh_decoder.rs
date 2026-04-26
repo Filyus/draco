@@ -973,7 +973,7 @@ impl MeshDecoder {
             for (local_i, &att_id) in att_ids.iter().enumerate() {
                 let decoder_type = decoder_types[local_i];
                 {
-                    let att = mesh.attribute_mut(att_id);
+                    let att = mesh.try_attribute_mut(att_id)?;
                     if att.size() != point_ids_for_values.len() {
                         att.resize_unique_entries(point_ids_for_values.len())?;
                     }
@@ -1016,7 +1016,7 @@ impl MeshDecoder {
                     2 => {
                         let mut portable = PointAttribute::default();
                         let (original_type, original_num_components) = {
-                            let original = mesh.attribute(att_id);
+                            let original = mesh.try_attribute(att_id)?;
                             (original.attribute_type(), original.num_components())
                         };
                         portable.try_init(
@@ -1052,7 +1052,7 @@ impl MeshDecoder {
                                         )
                                     })?;
                                 }
-                                let original = mesh.attribute(att_id);
+                                let original = mesh.try_attribute(att_id)?;
                                 if !transform.decode_parameters(original, buffer) {
                                     return Err(DracoError::DracoError(
                                         "Failed to decode quantization parameters (v<2.0)"
@@ -1252,7 +1252,7 @@ impl MeshDecoder {
                                         "Missing pending quant entry".to_string(),
                                     )
                                 })?;
-                            let original = mesh.attribute(att_id);
+                            let original = mesh.try_attribute(att_id)?;
                             if !pending_quant[idx]
                                 .transform
                                 .decode_parameters(original, buffer)
@@ -1290,7 +1290,7 @@ impl MeshDecoder {
 
             // Apply inverse transforms.
             for q in &pending_quant {
-                let dst = mesh.attribute_mut(q.att_id);
+                let dst = mesh.try_attribute_mut(q.att_id)?;
                 if dst.size() != q.portable.size() {
                     dst.resize_unique_entries(q.portable.size())?;
                 }
@@ -1307,7 +1307,7 @@ impl MeshDecoder {
                         "Invalid normal quantization bits".to_string(),
                     ));
                 }
-                let dst = mesh.attribute_mut(n.att_id);
+                let dst = mesh.try_attribute_mut(n.att_id)?;
                 if dst.size() != n.portable.size() {
                     dst.resize_unique_entries(n.portable.size())?;
                 }
@@ -1360,7 +1360,7 @@ impl MeshDecoder {
                     }
 
                     for &att_id in att_ids {
-                        let att = mesh.attribute_mut(att_id);
+                        let att = mesh.try_attribute_mut(att_id)?;
                         att.set_explicit_mapping(num_points);
                         for (point, value) in point_to_value.iter().enumerate() {
                             if let Some(value) = value {
@@ -1373,12 +1373,20 @@ impl MeshDecoder {
 
             for q in pending_quant {
                 let mut portable = q.portable;
-                copy_point_mapping(mesh.attribute(q.att_id), &mut portable, mesh.num_points())?;
+                copy_point_mapping(
+                    mesh.try_attribute(q.att_id)?,
+                    &mut portable,
+                    mesh.num_points(),
+                )?;
                 upsert_portable_attribute(&mut portable_attributes_by_id, q.att_id, portable);
             }
             for n in pending_normals {
                 let mut portable = n.portable;
-                copy_point_mapping(mesh.attribute(n.att_id), &mut portable, mesh.num_points())?;
+                copy_point_mapping(
+                    mesh.try_attribute(n.att_id)?,
+                    &mut portable,
+                    mesh.num_points(),
+                )?;
                 upsert_portable_attribute(&mut portable_attributes_by_id, n.att_id, portable);
             }
         }
