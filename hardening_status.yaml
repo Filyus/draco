@@ -302,6 +302,15 @@ completed:
           - "decode_values_rejects_invalid_attribute_id"
     note: "PointCloud now exposes fallible attribute lookup helpers, and generic sequential attribute decode uses them so invalid attribute ids return decode errors instead of indexing the attribute array unchecked."
 
+  - id: point-cloud-raw-attribute-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/point_cloud_decoder.rs"
+        tests:
+          - "decode_raw_attribute_values_rejects_required_size_overflow"
+          - "decode_raw_attribute_values_rejects_truncated_input"
+    note: "Raw point-cloud attribute decode now uses checked byte-size/offset arithmetic and returns decode errors for truncated raw payloads."
+
   - id: fuzz-decode-entrypoint
     status: covered
     evidence:

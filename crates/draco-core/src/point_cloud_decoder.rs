@@ -113,6 +113,38 @@ fn validate_num_components(num_components: u8) -> Result<(), DracoError> {
     Ok(())
 }
 
+#[cfg(feature = "point_cloud_decode")]
+fn decode_raw_attribute_values(
+    buffer: &mut DecoderBuffer<'_>,
+    attribute: &mut PointAttribute,
+    num_points: usize,
+) -> Result<(), DracoError> {
+    let entry_size = attribute.byte_stride() as usize;
+    if entry_size == 0 {
+        return Err(DracoError::DracoError(
+            "Invalid point cloud attribute entry size".to_string(),
+        ));
+    }
+    let required_size = entry_size.checked_mul(num_points).ok_or_else(|| {
+        DracoError::DracoError("Point cloud raw attribute byte count overflow".to_string())
+    })?;
+
+    let dst = attribute.buffer_mut().data_mut();
+    if dst.len() < required_size {
+        return Err(DracoError::DracoError(
+            "Point cloud attribute buffer too small".to_string(),
+        ));
+    }
+
+    for chunk in dst[..required_size].chunks_exact_mut(entry_size) {
+        buffer.decode_bytes(chunk).map_err(|_| {
+            DracoError::DracoError("Failed to decode raw point cloud attribute values".to_string())
+        })?;
+    }
+
+    Ok(())
+}
+
 impl PointCloudDecoder {
     pub fn new() -> Self {
         Self {
@@ -513,30 +545,11 @@ impl PointCloudDecoder {
                         0 => {
                             // Generic sequential values (raw), matching C++
                             // SequentialAttributeDecoder::DecodeValues().
-                            let entry_size = pc.attribute(att_id).byte_stride() as usize;
-                            if entry_size == 0 {
-                                return Err(DracoError::DracoError(
-                                    "Invalid point cloud attribute entry size".to_string(),
-                                ));
-                            }
-
-                            let dst = pc.attribute_mut(att_id).buffer_mut().data_mut();
-                            if dst.len() < entry_size * num_points {
-                                return Err(DracoError::DracoError(
-                                    "Point cloud attribute buffer too small".to_string(),
-                                ));
-                            }
-
-                            for i in 0..num_points {
-                                let start = i * entry_size;
-                                let end = start + entry_size;
-                                buffer.decode_bytes(&mut dst[start..end]).map_err(|_| {
-                                    DracoError::DracoError(
-                                        "Failed to decode raw point cloud attribute values"
-                                            .to_string(),
-                                    )
-                                })?;
-                            }
+                            decode_raw_attribute_values(
+                                buffer,
+                                pc.attribute_mut(att_id),
+                                num_points,
+                            )?;
                         }
                         _ => {
                             return Err(DracoError::DracoError(format!(
@@ -614,5 +627,46 @@ impl PointCloudDecoder {
 
     pub fn get_geometry_type(&self) -> EncodedGeometryType {
         self.geometry_type
+    }
+}
+
+#[cfg(all(test, feature = "point_cloud_decode"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_raw_attribute_values_rejects_required_size_overflow() {
+        let bytes = [];
+        let mut buffer = DecoderBuffer::new(&bytes);
+        let mut attribute = PointAttribute::new();
+        attribute.init(
+            GeometryAttributeType::Generic,
+            1,
+            DataType::Uint32,
+            false,
+            1,
+        );
+
+        let status = decode_raw_attribute_values(&mut buffer, &mut attribute, usize::MAX);
+
+        assert!(status.is_err());
+    }
+
+    #[test]
+    fn decode_raw_attribute_values_rejects_truncated_input() {
+        let bytes = [1u8, 2, 3];
+        let mut buffer = DecoderBuffer::new(&bytes);
+        let mut attribute = PointAttribute::new();
+        attribute.init(
+            GeometryAttributeType::Generic,
+            1,
+            DataType::Uint32,
+            false,
+            1,
+        );
+
+        let status = decode_raw_attribute_values(&mut buffer, &mut attribute, 1);
+
+        assert!(status.is_err());
     }
 }
