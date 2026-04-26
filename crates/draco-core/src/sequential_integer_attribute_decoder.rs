@@ -110,7 +110,10 @@ impl SequentialIntegerAttributeDecoder {
         let attribute = if let Some(ref pa) = portable_attribute {
             &**pa
         } else {
-            point_cloud.attribute(att_id)
+            let Ok(attribute) = point_cloud.try_attribute(att_id) else {
+                return false;
+            };
+            attribute
         };
 
         let num_components = attribute.num_components() as usize;
@@ -490,8 +493,14 @@ impl SequentialIntegerAttributeDecoder {
                         crate::geometry_attribute::GeometryAttributeType::Position,
                     );
                     if pos_att_id >= 0 {
-                        let pos_att = portable_parent_attribute
-                            .unwrap_or_else(|| point_cloud.attribute(pos_att_id));
+                        let pos_att = if let Some(attribute) = portable_parent_attribute {
+                            attribute
+                        } else {
+                            let Ok(attribute) = point_cloud.try_attribute(pos_att_id) else {
+                                return false;
+                            };
+                            attribute
+                        };
                         if !predictor.set_parent_attribute(pos_att) {
                             eprintln!("Failed to set parent attribute for TexCoordsDeprecated");
                             return false;
@@ -576,8 +585,14 @@ impl SequentialIntegerAttributeDecoder {
                         crate::geometry_attribute::GeometryAttributeType::Position,
                     );
                     if pos_att_id >= 0 {
-                        let pos_att = portable_parent_attribute
-                            .unwrap_or_else(|| point_cloud.attribute(pos_att_id));
+                        let pos_att = if let Some(attribute) = portable_parent_attribute {
+                            attribute
+                        } else {
+                            let Ok(attribute) = point_cloud.try_attribute(pos_att_id) else {
+                                return false;
+                            };
+                            attribute
+                        };
                         if !predictor.set_parent_attribute(pos_att) {
                             eprintln!("Failed to set parent attribute for TexCoordsPortable");
                             return false;
@@ -662,8 +677,14 @@ impl SequentialIntegerAttributeDecoder {
                         crate::geometry_attribute::GeometryAttributeType::Position,
                     );
                     if pos_att_id >= 0 {
-                        let pos_att = portable_parent_attribute
-                            .unwrap_or_else(|| point_cloud.attribute(pos_att_id));
+                        let pos_att = if let Some(attribute) = portable_parent_attribute {
+                            attribute
+                        } else {
+                            let Ok(attribute) = point_cloud.try_attribute(pos_att_id) else {
+                                return false;
+                            };
+                            attribute
+                        };
                         if !predictor.set_parent_attribute(pos_att) {
                             eprintln!("Failed to set parent attribute for GeometricNormal");
                             return false;
@@ -1155,7 +1176,9 @@ impl SequentialIntegerAttributeDecoder {
                 return false;
             }
         } else {
-            let dst_attribute = point_cloud.attribute_mut(att_id);
+            let Ok(dst_attribute) = point_cloud.try_attribute_mut(att_id) else {
+                return false;
+            };
             if !store_i32_values_to_attribute(dst_attribute, &values, num_points, num_components) {
                 return false;
             }
@@ -1275,6 +1298,7 @@ mod tests {
     use super::*;
     use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
     use crate::geometry_indices::VertexIndex;
+    use crate::point_cloud::PointCloud;
 
     #[test]
     fn store_i32_values_rejects_short_decoded_values() {
@@ -1321,6 +1345,51 @@ mod tests {
             &corner_table,
             &[3],
             &mut vertex_to_data_map,
+        ));
+    }
+
+    #[test]
+    fn decode_values_rejects_invalid_attribute_id() {
+        let mut decoder = SequentialIntegerAttributeDecoder::new();
+        decoder.init(&PointCloudDecoder::new(), 0);
+        let mut point_cloud = PointCloud::new();
+        let mut buffer = DecoderBuffer::new(&[]);
+        let point_ids = [PointIndex(0)];
+
+        assert!(!decoder.decode_values(
+            &mut point_cloud,
+            &point_ids,
+            &mut buffer,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn decode_values_with_portable_attribute_allows_missing_destination_id() {
+        let mut decoder = SequentialIntegerAttributeDecoder::new();
+        decoder.init(&PointCloudDecoder::new(), 0);
+        let mut point_cloud = PointCloud::new();
+        let mut portable = PointAttribute::new();
+        portable.init(GeometryAttributeType::Generic, 1, DataType::Int32, false, 1);
+        let bytes = [0xfe, 0, 0, 0, 0];
+        let mut buffer = DecoderBuffer::new(&bytes);
+        let point_ids = [PointIndex(0)];
+
+        assert!(decoder.decode_values(
+            &mut point_cloud,
+            &point_ids,
+            &mut buffer,
+            None,
+            None,
+            None,
+            Some(&mut portable),
+            None,
+            None,
         ));
     }
 }

@@ -168,9 +168,11 @@ completed:
     evidence:
       - path: "crates/draco-core/src/sequential_integer_attribute_decoder.rs"
         tests:
+          - "decode_values_rejects_invalid_attribute_id"
+          - "decode_values_with_portable_attribute_allows_missing_destination_id"
           - "store_i32_values_rejects_short_decoded_values"
           - "store_i32_values_rejects_impossible_required_size"
-    note: "Sequential integer attribute decode now validates decoded value counts, required buffer sizes, and per-component writes before storing reconstructed i32 values into attribute buffers."
+    note: "Sequential integer attribute decode now validates destination attribute ids, decoded value counts, required buffer sizes, and per-component writes before storing reconstructed i32 values into attribute buffers."
 
   - id: sequential-integer-prediction-map-bounds
     status: covered
