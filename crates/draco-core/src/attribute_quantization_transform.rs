@@ -365,11 +365,14 @@ impl AttributeTransform for AttributeQuantizationTransform {
         let src_data = src_buffer.data();
         let dst_data = dst_buffer.data_mut();
 
-        const VEC3_U32_STRIDE: usize = 3 * std::mem::size_of::<u32>();
+        const COMPONENT_SIZE: usize = std::mem::size_of::<u32>();
+        let Some(tight_stride) = num_components.checked_mul(COMPONENT_SIZE) else {
+            return false;
+        };
         if attribute.data_type() == DataType::Uint32
-            && num_components == 3
-            && src_stride == VEC3_U32_STRIDE
-            && dst_stride == VEC3_U32_STRIDE
+            && (1..=4).contains(&num_components)
+            && src_stride == tight_stride
+            && dst_stride == tight_stride
         {
             let Some(required_src) = num_values.checked_mul(src_stride) else {
                 return false;
@@ -381,34 +384,115 @@ impl AttributeTransform for AttributeQuantizationTransform {
                 return false;
             }
 
-            for i in 0..num_values {
-                let offset = i * VEC3_U32_STRIDE;
-                let q_x = i32::from_le_bytes([
-                    src_data[offset],
-                    src_data[offset + 1],
-                    src_data[offset + 2],
-                    src_data[offset + 3],
-                ]);
-                let q_y = i32::from_le_bytes([
-                    src_data[offset + 4],
-                    src_data[offset + 5],
-                    src_data[offset + 6],
-                    src_data[offset + 7],
-                ]);
-                let q_z = i32::from_le_bytes([
-                    src_data[offset + 8],
-                    src_data[offset + 9],
-                    src_data[offset + 10],
-                    src_data[offset + 11],
-                ]);
+            match num_components {
+                1 => {
+                    for i in 0..num_values {
+                        let offset = i * tight_stride;
+                        let q_x = i32::from_le_bytes([
+                            src_data[offset],
+                            src_data[offset + 1],
+                            src_data[offset + 2],
+                            src_data[offset + 3],
+                        ]);
 
-                let x = dequantizer.dequantize_float(q_x) + self.min_values[0];
-                let y = dequantizer.dequantize_float(q_y) + self.min_values[1];
-                let z = dequantizer.dequantize_float(q_z) + self.min_values[2];
+                        let x = dequantizer.dequantize_float(q_x) + self.min_values[0];
+                        dst_data[offset..offset + COMPONENT_SIZE].copy_from_slice(&x.to_le_bytes());
+                    }
+                }
+                2 => {
+                    for i in 0..num_values {
+                        let offset = i * tight_stride;
+                        let q_x = i32::from_le_bytes([
+                            src_data[offset],
+                            src_data[offset + 1],
+                            src_data[offset + 2],
+                            src_data[offset + 3],
+                        ]);
+                        let q_y = i32::from_le_bytes([
+                            src_data[offset + 4],
+                            src_data[offset + 5],
+                            src_data[offset + 6],
+                            src_data[offset + 7],
+                        ]);
 
-                dst_data[offset..offset + 4].copy_from_slice(&x.to_le_bytes());
-                dst_data[offset + 4..offset + 8].copy_from_slice(&y.to_le_bytes());
-                dst_data[offset + 8..offset + 12].copy_from_slice(&z.to_le_bytes());
+                        let x = dequantizer.dequantize_float(q_x) + self.min_values[0];
+                        let y = dequantizer.dequantize_float(q_y) + self.min_values[1];
+
+                        dst_data[offset..offset + COMPONENT_SIZE].copy_from_slice(&x.to_le_bytes());
+                        dst_data[offset + 4..offset + 8].copy_from_slice(&y.to_le_bytes());
+                    }
+                }
+                3 => {
+                    for i in 0..num_values {
+                        let offset = i * tight_stride;
+                        let q_x = i32::from_le_bytes([
+                            src_data[offset],
+                            src_data[offset + 1],
+                            src_data[offset + 2],
+                            src_data[offset + 3],
+                        ]);
+                        let q_y = i32::from_le_bytes([
+                            src_data[offset + 4],
+                            src_data[offset + 5],
+                            src_data[offset + 6],
+                            src_data[offset + 7],
+                        ]);
+                        let q_z = i32::from_le_bytes([
+                            src_data[offset + 8],
+                            src_data[offset + 9],
+                            src_data[offset + 10],
+                            src_data[offset + 11],
+                        ]);
+
+                        let x = dequantizer.dequantize_float(q_x) + self.min_values[0];
+                        let y = dequantizer.dequantize_float(q_y) + self.min_values[1];
+                        let z = dequantizer.dequantize_float(q_z) + self.min_values[2];
+
+                        dst_data[offset..offset + COMPONENT_SIZE].copy_from_slice(&x.to_le_bytes());
+                        dst_data[offset + 4..offset + 8].copy_from_slice(&y.to_le_bytes());
+                        dst_data[offset + 8..offset + 12].copy_from_slice(&z.to_le_bytes());
+                    }
+                }
+                4 => {
+                    for i in 0..num_values {
+                        let offset = i * tight_stride;
+                        let q_x = i32::from_le_bytes([
+                            src_data[offset],
+                            src_data[offset + 1],
+                            src_data[offset + 2],
+                            src_data[offset + 3],
+                        ]);
+                        let q_y = i32::from_le_bytes([
+                            src_data[offset + 4],
+                            src_data[offset + 5],
+                            src_data[offset + 6],
+                            src_data[offset + 7],
+                        ]);
+                        let q_z = i32::from_le_bytes([
+                            src_data[offset + 8],
+                            src_data[offset + 9],
+                            src_data[offset + 10],
+                            src_data[offset + 11],
+                        ]);
+                        let q_w = i32::from_le_bytes([
+                            src_data[offset + 12],
+                            src_data[offset + 13],
+                            src_data[offset + 14],
+                            src_data[offset + 15],
+                        ]);
+
+                        let x = dequantizer.dequantize_float(q_x) + self.min_values[0];
+                        let y = dequantizer.dequantize_float(q_y) + self.min_values[1];
+                        let z = dequantizer.dequantize_float(q_z) + self.min_values[2];
+                        let w = dequantizer.dequantize_float(q_w) + self.min_values[3];
+
+                        dst_data[offset..offset + COMPONENT_SIZE].copy_from_slice(&x.to_le_bytes());
+                        dst_data[offset + 4..offset + 8].copy_from_slice(&y.to_le_bytes());
+                        dst_data[offset + 8..offset + 12].copy_from_slice(&z.to_le_bytes());
+                        dst_data[offset + 12..offset + 16].copy_from_slice(&w.to_le_bytes());
+                    }
+                }
+                _ => return false,
             }
 
             return true;
