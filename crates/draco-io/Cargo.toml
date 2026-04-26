@@ -2,9 +2,13 @@
 name = "draco-io"
 version = "0.1.0"
 edition = "2021"
+description = "Rust IO helpers for Draco geometry compression formats"
+license = "Apache-2.0"
+repository = "https://github.com/Filyus/draco"
+readme = "README.md"
 
 [dependencies]
-draco-core = { path = "../draco-core", default-features = false }
+draco-core = { version = "0.1.0", path = "../draco-core", default-features = false }
 thiserror = "2.0.17"
 byteorder = "1.5.0"
 serde = { version = "1.0.228", features = ["derive"] }

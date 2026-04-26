@@ -2,6 +2,10 @@
 name = "draco-core"
 version = "0.1.0"
 edition = "2021"
+description = "Pure Rust core encoder and decoder for Draco geometry compression"
+license = "Apache-2.0"
+repository = "https://github.com/Filyus/draco"
+readme = "README.md"
 
 [features]
 default = [
