@@ -5,7 +5,8 @@ param(
     [switch]$Serve,
     [int]$Port = 8080,
     [int]$Jobs = 0,
-    [switch]$VerboseBuild
+    [switch]$VerboseBuild,
+    [switch]$Force
 )
 
 # Build script for Draco Web WASM modules
@@ -19,6 +20,7 @@ param(
 #  .\build.ps1 -Serve -Port 9000  # Build and start web server on port 9000
 #  .\build.ps1 -Jobs 4        # Build up to 4 WASM modules in parallel
 #  .\build.ps1 -VerboseBuild  # Print wasm-pack and wasm-opt output
+#  .\build.ps1 -Force         # Rebuild even if outputs are up to date
 
 $ErrorActionPreference = "Stop"
 
@@ -63,7 +65,9 @@ function Format-BuildLogLine {
 function Write-BuildResult {
     param([object]$Result)
 
-    if ($Result.Success) {
+    if ($Result.Skipped) {
+        Write-Host ("Skip {0} -> {1} (unchanged)" -f $Result.Module, $Result.WasmFile) -ForegroundColor DarkGray
+    } elseif ($Result.Success) {
         Write-Host ("Done {0} -> {1} ({2:n2}s)" -f $Result.Module, $Result.WasmFile, $Result.ElapsedSeconds) -ForegroundColor Green
     } else {
         Write-Host ("Failed {0} ({1:n2}s)" -f $Result.Module, $Result.ElapsedSeconds) -ForegroundColor Red
@@ -82,6 +86,111 @@ function Write-BuildResult {
 function Get-OutputName {
     param([string]$Module)
     ($Module -replace '-wasm$', '') -replace '-', '_'
+}
+
+function Get-EffectiveFeatures {
+    $featuresForModule = @($Features)
+    if ($Debug) {
+        if (-not $featuresForModule -or $featuresForModule.Count -eq 0) {
+            $featuresForModule = @('console_error_panic_hook')
+        } elseif (-not ($featuresForModule -contains 'console_error_panic_hook')) {
+            $featuresForModule += 'console_error_panic_hook'
+        }
+    }
+
+    @($featuresForModule | Sort-Object -Unique)
+}
+
+function Get-BuildConfigKey {
+    $featureKey = (Get-EffectiveFeatures) -join ','
+    "debug=$([bool]$Debug);no_optimize=$([bool]$NoOptimize);features=$featureKey"
+}
+
+function Get-InputLatestTicks {
+    param([string]$Module)
+
+    $modulePath = Join-Path $webDir $Module
+    $repoRoot = Split-Path -Parent $webDir
+    $inputPaths = @(
+        (Join-Path $modulePath "Cargo.toml"),
+        (Join-Path $modulePath "src"),
+        (Join-Path $webDir "Cargo.toml"),
+        (Join-Path $webDir "Cargo.lock"),
+        (Join-Path $repoRoot "crates\draco-core\Cargo.toml"),
+        (Join-Path $repoRoot "crates\draco-core\src"),
+        (Join-Path $repoRoot "crates\draco-io\Cargo.toml"),
+        (Join-Path $repoRoot "crates\draco-io\src")
+    )
+
+    $latestTicks = 0L
+    foreach ($inputPath in $inputPaths) {
+        if (-not (Test-Path $inputPath)) {
+            continue
+        }
+
+        $item = Get-Item $inputPath
+        $files = if ($item.PSIsContainer) {
+            Get-ChildItem $inputPath -File -Recurse
+        } else {
+            @($item)
+        }
+
+        foreach ($file in $files) {
+            if ($file.LastWriteTimeUtc.Ticks -gt $latestTicks) {
+                $latestTicks = $file.LastWriteTimeUtc.Ticks
+            }
+        }
+    }
+
+    $latestTicks
+}
+
+function Get-StampPath {
+    param([string]$OutputName)
+    Join-Path $outputDir ($OutputName + ".build-stamp.json")
+}
+
+function Test-ModuleUpToDate {
+    param(
+        [string]$Module,
+        [string]$OutputName,
+        [long]$InputLatestTicks
+    )
+
+    $wasmFile = Join-Path $outputDir ($OutputName + ".wasm")
+    $jsFile = Join-Path $outputDir ($OutputName + ".js")
+    $stampPath = Get-StampPath $OutputName
+
+    if (-not (Test-Path $wasmFile) -or -not (Test-Path $jsFile) -or -not (Test-Path $stampPath)) {
+        return $false
+    }
+
+    try {
+        $stamp = Get-Content $stampPath -Raw | ConvertFrom-Json
+        return $stamp.Module -eq $Module `
+            -and $stamp.ConfigKey -eq (Get-BuildConfigKey) `
+            -and [int64]$stamp.InputLatestTicks -eq $InputLatestTicks
+    }
+    catch {
+        return $false
+    }
+}
+
+function Write-BuildStamp {
+    param(
+        [string]$Module,
+        [string]$OutputName,
+        [long]$InputLatestTicks
+    )
+
+    $stamp = [PSCustomObject]@{
+        Module = $Module
+        ConfigKey = Get-BuildConfigKey
+        InputLatestTicks = $InputLatestTicks
+        BuiltAtUtc = [DateTime]::UtcNow.ToString("o")
+    }
+
+    $stamp | ConvertTo-Json -Compress | Set-Content -Path (Get-StampPath $OutputName) -NoNewline
 }
 
 function Get-WasmPackArgs {
@@ -151,6 +260,7 @@ function Start-ModuleBuild {
     }
 
     $outputName = Get-OutputName $Module
+    $inputLatestTicks = Get-InputLatestTicks $Module
     $moduleOutputDir = Join-Path ([System.IO.Path]::GetTempPath()) ("draco-web-build-{0}-{1}" -f $Module, [System.Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $moduleOutputDir -Force | Out-Null
 
@@ -178,6 +288,7 @@ function Start-ModuleBuild {
     [PSCustomObject]@{
         Module = $Module
         OutputName = $outputName
+        InputLatestTicks = $inputLatestTicks
         ModuleOutputDir = $moduleOutputDir
         Process = $process
         Args = $args
@@ -270,6 +381,7 @@ function Complete-ModuleBuild {
                 [System.IO.File]::Copy($builtFile.FullName, $destination, $true)
             }
         }
+        Write-BuildStamp $Build.Module $Build.OutputName $Build.InputLatestTicks
         $success = $true
     }
     catch {
@@ -286,6 +398,7 @@ function Complete-ModuleBuild {
     [PSCustomObject]@{
         Module = $Build.Module
         Success = $success
+        Skipped = $false
         WasmFile = $Build.OutputName + ".wasm"
         ElapsedSeconds = $Build.Timer.Elapsed.TotalSeconds
         Log = $log.ToArray()
@@ -307,6 +420,20 @@ foreach ($module in $modules) {
         if (-not $result.Success) {
             $failedModules += $result.Module
         }
+    }
+
+    $outputName = Get-OutputName $module
+    $inputLatestTicks = Get-InputLatestTicks $module
+    if (-not $Force -and (Test-ModuleUpToDate $module $outputName $inputLatestTicks)) {
+        Write-BuildResult ([PSCustomObject]@{
+            Module = $module
+            Success = $true
+            Skipped = $true
+            WasmFile = $outputName + ".wasm"
+            ElapsedSeconds = 0
+            Log = @()
+        })
+        continue
     }
 
     Write-Host "Starting $module..." -ForegroundColor Yellow
