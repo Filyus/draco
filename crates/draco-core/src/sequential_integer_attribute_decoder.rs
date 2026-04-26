@@ -28,6 +28,29 @@ pub struct SequentialIntegerAttributeDecoder {
     prediction_scheme: Option<Box<dyn PredictionSchemeDecoder<'static, i32, i32>>>,
 }
 
+fn build_vertex_to_data_map_from_data_to_corner_map(
+    corner_table: &CornerTable,
+    data_to_corner_map: &[u32],
+    vertex_to_data_map: &mut Vec<i32>,
+) -> bool {
+    vertex_to_data_map.resize(corner_table.num_vertices(), -1);
+    for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
+        let corner_id = CornerIndex(corner_u32);
+        if corner_id == INVALID_CORNER_INDEX {
+            continue;
+        }
+        if corner_id.0 as usize >= corner_table.num_corners() {
+            return false;
+        }
+        let v = corner_table.vertex(corner_id).0 as usize;
+        let Some(slot) = vertex_to_data_map.get_mut(v) else {
+            return false;
+        };
+        *slot = data_id as i32;
+    }
+    true
+}
+
 impl Default for SequentialIntegerAttributeDecoder {
     fn default() -> Self {
         Self::new()
@@ -247,30 +270,24 @@ impl SequentialIntegerAttributeDecoder {
                         // When using an override, the corner table may contain seam-split
                         // vertices with ids outside the original point range. Build the
                         // vertex->data map from the data->corner map.
-                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                            let corner_id = CornerIndex(corner_u32);
-                            if corner_id == INVALID_CORNER_INDEX {
-                                continue;
-                            }
-                            let v = corner_table.vertex(corner_id).0 as usize;
-                            if v < vertex_to_data_map.len() {
-                                vertex_to_data_map[v] = data_id as i32;
-                            }
+                        if !build_vertex_to_data_map_from_data_to_corner_map(
+                            corner_table,
+                            &data_to_corner_map,
+                            &mut vertex_to_data_map,
+                        ) {
+                            eprintln!("Invalid data_to_corner_map corner id");
+                            return false;
                         }
                     } else {
                         // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
                         // This is the same logic as the 'if' branch above
-                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                            let corner_id = CornerIndex(corner_u32);
-                            if corner_id == INVALID_CORNER_INDEX {
-                                continue;
-                            }
-                            let v = corner_table.vertex(corner_id).0 as usize;
-                            if v < vertex_to_data_map.len() {
-                                vertex_to_data_map[v] = data_id as i32;
-                            }
+                        if !build_vertex_to_data_map_from_data_to_corner_map(
+                            corner_table,
+                            &data_to_corner_map,
+                            &mut vertex_to_data_map,
+                        ) {
+                            eprintln!("Invalid data_to_corner_map corner id");
+                            return false;
                         }
                     }
 
@@ -314,28 +331,22 @@ impl SequentialIntegerAttributeDecoder {
                         }
                         data_to_corner_map.copy_from_slice(map);
 
-                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                            let corner_id = CornerIndex(corner_u32);
-                            if corner_id == INVALID_CORNER_INDEX {
-                                continue;
-                            }
-                            let v = corner_table.vertex(corner_id).0 as usize;
-                            if v < vertex_to_data_map.len() {
-                                vertex_to_data_map[v] = data_id as i32;
-                            }
+                        if !build_vertex_to_data_map_from_data_to_corner_map(
+                            corner_table,
+                            &data_to_corner_map,
+                            &mut vertex_to_data_map,
+                        ) {
+                            eprintln!("Invalid data_to_corner_map corner id");
+                            return false;
                         }
                     } else {
-                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                            let corner_id = CornerIndex(corner_u32);
-                            if corner_id == INVALID_CORNER_INDEX {
-                                continue;
-                            }
-                            let v = corner_table.vertex(corner_id).0 as usize;
-                            if v < vertex_to_data_map.len() {
-                                vertex_to_data_map[v] = data_id as i32;
-                            }
+                        if !build_vertex_to_data_map_from_data_to_corner_map(
+                            corner_table,
+                            &data_to_corner_map,
+                            &mut vertex_to_data_map,
+                        ) {
+                            eprintln!("Invalid data_to_corner_map corner id");
+                            return false;
                         }
                     }
 
@@ -387,30 +398,24 @@ impl SequentialIntegerAttributeDecoder {
                         }
                         data_to_corner_map.copy_from_slice(map);
 
-                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                            let corner_id = CornerIndex(corner_u32);
-                            if corner_id == INVALID_CORNER_INDEX {
-                                continue;
-                            }
-                            let v = corner_table.vertex(corner_id).0 as usize;
-                            if v < vertex_to_data_map.len() {
-                                vertex_to_data_map[v] = data_id as i32;
-                            }
+                        if !build_vertex_to_data_map_from_data_to_corner_map(
+                            corner_table,
+                            &data_to_corner_map,
+                            &mut vertex_to_data_map,
+                        ) {
+                            eprintln!("Invalid data_to_corner_map corner id");
+                            return false;
                         }
                     } else {
                         // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
                         // This is the same logic as the 'if' branch above
-                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                            let corner_id = CornerIndex(corner_u32);
-                            if corner_id == INVALID_CORNER_INDEX {
-                                continue;
-                            }
-                            let v = corner_table.vertex(corner_id).0 as usize;
-                            if v < vertex_to_data_map.len() {
-                                vertex_to_data_map[v] = data_id as i32;
-                            }
+                        if !build_vertex_to_data_map_from_data_to_corner_map(
+                            corner_table,
+                            &data_to_corner_map,
+                            &mut vertex_to_data_map,
+                        ) {
+                            eprintln!("Invalid data_to_corner_map corner id");
+                            return false;
                         }
                     }
 
@@ -454,28 +459,22 @@ impl SequentialIntegerAttributeDecoder {
                         }
                         data_to_corner_map.copy_from_slice(map);
 
-                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                            let corner_id = CornerIndex(corner_u32);
-                            if corner_id == INVALID_CORNER_INDEX {
-                                continue;
-                            }
-                            let v = corner_table.vertex(corner_id).0 as usize;
-                            if v < vertex_to_data_map.len() {
-                                vertex_to_data_map[v] = data_id as i32;
-                            }
+                        if !build_vertex_to_data_map_from_data_to_corner_map(
+                            corner_table,
+                            &data_to_corner_map,
+                            &mut vertex_to_data_map,
+                        ) {
+                            eprintln!("Invalid data_to_corner_map corner id");
+                            return false;
                         }
                     } else {
-                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                            let corner_id = CornerIndex(corner_u32);
-                            if corner_id == INVALID_CORNER_INDEX {
-                                continue;
-                            }
-                            let v = corner_table.vertex(corner_id).0 as usize;
-                            if v < vertex_to_data_map.len() {
-                                vertex_to_data_map[v] = data_id as i32;
-                            }
+                        if !build_vertex_to_data_map_from_data_to_corner_map(
+                            corner_table,
+                            &data_to_corner_map,
+                            &mut vertex_to_data_map,
+                        ) {
+                            eprintln!("Invalid data_to_corner_map corner id");
+                            return false;
                         }
                     }
 
@@ -543,30 +542,24 @@ impl SequentialIntegerAttributeDecoder {
                         }
                         data_to_corner_map.copy_from_slice(map);
 
-                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                            let corner_id = CornerIndex(corner_u32);
-                            if corner_id == INVALID_CORNER_INDEX {
-                                continue;
-                            }
-                            let v = corner_table.vertex(corner_id).0 as usize;
-                            if v < vertex_to_data_map.len() {
-                                vertex_to_data_map[v] = data_id as i32;
-                            }
+                        if !build_vertex_to_data_map_from_data_to_corner_map(
+                            corner_table,
+                            &data_to_corner_map,
+                            &mut vertex_to_data_map,
+                        ) {
+                            eprintln!("Invalid data_to_corner_map corner id");
+                            return false;
                         }
                     } else {
                         // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
                         // This is the same logic as the 'if' branch above
-                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                            let corner_id = CornerIndex(corner_u32);
-                            if corner_id == INVALID_CORNER_INDEX {
-                                continue;
-                            }
-                            let v = corner_table.vertex(corner_id).0 as usize;
-                            if v < vertex_to_data_map.len() {
-                                vertex_to_data_map[v] = data_id as i32;
-                            }
+                        if !build_vertex_to_data_map_from_data_to_corner_map(
+                            corner_table,
+                            &data_to_corner_map,
+                            &mut vertex_to_data_map,
+                        ) {
+                            eprintln!("Invalid data_to_corner_map corner id");
+                            return false;
                         }
                     }
 
@@ -630,30 +623,24 @@ impl SequentialIntegerAttributeDecoder {
                         }
                         data_to_corner_map.copy_from_slice(map);
 
-                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                            let corner_id = CornerIndex(corner_u32);
-                            if corner_id == INVALID_CORNER_INDEX {
-                                continue;
-                            }
-                            let v = corner_table.vertex(corner_id).0 as usize;
-                            if v < vertex_to_data_map.len() {
-                                vertex_to_data_map[v] = data_id as i32;
-                            }
+                        if !build_vertex_to_data_map_from_data_to_corner_map(
+                            corner_table,
+                            &data_to_corner_map,
+                            &mut vertex_to_data_map,
+                        ) {
+                            eprintln!("Invalid data_to_corner_map corner id");
+                            return false;
                         }
                     } else {
                         // Build vertex_to_data_map from data_to_corner_map using corner table vertex IDs
                         // This is the same logic as the 'if' branch above
-                        vertex_to_data_map.resize(corner_table.num_vertices(), -1);
-                        for (data_id, &corner_u32) in data_to_corner_map.iter().enumerate() {
-                            let corner_id = CornerIndex(corner_u32);
-                            if corner_id == INVALID_CORNER_INDEX {
-                                continue;
-                            }
-                            let v = corner_table.vertex(corner_id).0 as usize;
-                            if v < vertex_to_data_map.len() {
-                                vertex_to_data_map[v] = data_id as i32;
-                            }
+                        if !build_vertex_to_data_map_from_data_to_corner_map(
+                            corner_table,
+                            &data_to_corner_map,
+                            &mut vertex_to_data_map,
+                        ) {
+                            eprintln!("Invalid data_to_corner_map corner id");
+                            return false;
                         }
                     }
 
@@ -1287,6 +1274,7 @@ fn write_value_from_i32(
 mod tests {
     use super::*;
     use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
+    use crate::geometry_indices::VertexIndex;
 
     #[test]
     fn store_i32_values_rejects_short_decoded_values() {
@@ -1306,6 +1294,33 @@ mod tests {
             &[1],
             usize::MAX,
             1,
+        ));
+    }
+
+    #[test]
+    fn vertex_to_data_map_builder_accepts_valid_corners() {
+        let mut corner_table = CornerTable::new(1);
+        assert!(corner_table.init(&[[VertexIndex(0), VertexIndex(1), VertexIndex(2),]]));
+        let mut vertex_to_data_map = Vec::new();
+
+        assert!(build_vertex_to_data_map_from_data_to_corner_map(
+            &corner_table,
+            &[0, 1, 2],
+            &mut vertex_to_data_map,
+        ));
+        assert_eq!(vertex_to_data_map, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn vertex_to_data_map_builder_rejects_out_of_range_corner() {
+        let mut corner_table = CornerTable::new(1);
+        assert!(corner_table.init(&[[VertexIndex(0), VertexIndex(1), VertexIndex(2),]]));
+        let mut vertex_to_data_map = Vec::new();
+
+        assert!(!build_vertex_to_data_map_from_data_to_corner_map(
+            &corner_table,
+            &[3],
+            &mut vertex_to_data_map,
         ));
     }
 }

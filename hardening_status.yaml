@@ -169,6 +169,15 @@ completed:
           - "store_i32_values_rejects_impossible_required_size"
     note: "Sequential integer attribute decode now validates decoded value counts, required buffer sizes, and per-component writes before storing reconstructed i32 values into attribute buffers."
 
+  - id: sequential-integer-prediction-map-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/sequential_integer_attribute_decoder.rs"
+        tests:
+          - "vertex_to_data_map_builder_accepts_valid_corners"
+          - "vertex_to_data_map_builder_rejects_out_of_range_corner"
+    note: "Sequential integer mesh prediction setup now validates data-to-corner map entries before converting them through CornerTable::vertex, so malformed prediction maps fail cleanly instead of indexing outside the corner table."
+
   - id: attribute-transform-data-buffer-bounds
     status: covered
     evidence:
