@@ -61,6 +61,35 @@ fn copy_point_mapping(
     Ok(())
 }
 
+fn build_vertex_to_data_map_from_corner_map(
+    corner_table: &CornerTable,
+    data_to_corner_map: &[u32],
+) -> Result<Vec<i32>, DracoError> {
+    let mut vertex_to_data_map = vec![-1i32; corner_table.num_vertices()];
+    for (i, &corner_id) in data_to_corner_map.iter().enumerate() {
+        let corner = CornerIndex(corner_id);
+        if corner == INVALID_CORNER_INDEX {
+            continue;
+        }
+        if corner.0 as usize >= corner_table.num_corners() {
+            return Err(DracoError::DracoError(
+                "Data-to-corner map references an invalid corner".to_string(),
+            ));
+        }
+        let vertex = corner_table.vertex(corner);
+        if vertex == INVALID_VERTEX_INDEX {
+            continue;
+        }
+        let Some(slot) = vertex_to_data_map.get_mut(vertex.0 as usize) else {
+            return Err(DracoError::DracoError(
+                "Data-to-corner map references an invalid vertex".to_string(),
+            ));
+        };
+        *slot = i as i32;
+    }
+    Ok(vertex_to_data_map)
+}
+
 fn upsert_portable_attribute(
     portable_attributes_by_id: &mut Vec<(i32, PointAttribute)>,
     att_id: i32,
@@ -908,14 +937,8 @@ impl MeshDecoder {
                             "Edgebreaker attribute traversal missing corner table".to_string(),
                         )
                     })?;
-                    let mut v_map = vec![-1i32; ct.num_vertices()];
-                    for (i, &c_id) in map.iter().enumerate() {
-                        let v = ct.vertex(CornerIndex(c_id));
-                        if v != INVALID_VERTEX_INDEX {
-                            v_map[v.0 as usize] = i as i32;
-                        }
-                    }
-                    sequenced_vertex_to_data_map = Some(v_map);
+                    sequenced_vertex_to_data_map =
+                        Some(build_vertex_to_data_map_from_corner_map(ct, map)?);
                 }
             }
 
@@ -1954,6 +1977,17 @@ mod tests {
 
         let invalid_corner = corner_table.num_corners() as u32;
         let status = MeshDecoder::make_attribute_corner_table(&corner_table, &[invalid_corner]);
+
+        assert!(status.is_err());
+    }
+
+    #[test]
+    fn vertex_to_data_map_rejects_out_of_range_corner() {
+        let mut corner_table = CornerTable::new(1);
+        corner_table.set_face_vertices(FaceIndex(0), PointIndex(0), PointIndex(1), PointIndex(2));
+
+        let invalid_corner = corner_table.num_corners() as u32;
+        let status = build_vertex_to_data_map_from_corner_map(&corner_table, &[invalid_corner]);
 
         assert!(status.is_err());
     }

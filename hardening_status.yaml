@@ -178,6 +178,14 @@ completed:
           - "vertex_to_data_map_builder_rejects_out_of_range_corner"
     note: "Sequential integer mesh prediction setup now validates data-to-corner map entries before converting them through CornerTable::vertex, so malformed prediction maps fail cleanly instead of indexing outside the corner table."
 
+  - id: mesh-decoder-traversal-map-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/mesh_decoder.rs"
+        tests:
+          - "vertex_to_data_map_rejects_out_of_range_corner"
+    note: "Mesh attribute traversal map setup now validates data-to-corner map entries before deriving vertex-to-data maps for prediction decode."
+
   - id: attribute-transform-data-buffer-bounds
     status: covered
     evidence:
