@@ -3,7 +3,9 @@ param(
     [switch]$NoOptimize,
     [string[]]$Features,
     [switch]$Serve,
-    [int]$Port = 8080
+    [int]$Port = 8080,
+    [int]$Jobs = 0,
+    [switch]$VerboseBuild
 )
 
 # Build script for Draco Web WASM modules
@@ -15,6 +17,8 @@ param(
 #  .\build.ps1 -Features console_error_panic_hook  # Pass cargo features to wasm-pack
 #  .\build.ps1 -Serve         # Build and start web server on port 8080
 #  .\build.ps1 -Serve -Port 9000  # Build and start web server on port 9000
+#  .\build.ps1 -Jobs 4        # Build up to 4 WASM modules in parallel
+#  .\build.ps1 -VerboseBuild  # Print wasm-pack and wasm-opt output
 
 $ErrorActionPreference = "Stop"
 
@@ -43,97 +47,285 @@ if (-not (Test-Path $outputDir)) {
 
 Write-Host "`nOutput directory: $outputDir" -ForegroundColor Gray
 
-foreach ($module in $modules) {
-    Write-Host "`nBuilding $module..." -ForegroundColor Yellow
-    
-    $modulePath = Join-Path $webDir $module
-    
-    if (-not (Test-Path $modulePath)) {
-        Write-Host "  Module not found: $modulePath" -ForegroundColor Red
-        continue
+$maxJobs = if ($Jobs -gt 0) { $Jobs } else { [Math]::Min([Environment]::ProcessorCount, $modules.Count) }
+$maxJobs = [Math]::Max(1, [Math]::Min($maxJobs, $modules.Count))
+Write-Host "Parallel jobs: $maxJobs" -ForegroundColor Gray
+
+function Format-BuildLogLine {
+    param([object]$Line)
+
+    $text = [string]$Line
+    $text = $text -replace '[^\x09\x0A\x0D\x20-\x7E]', ''
+    $text = $text -replace '\s+', ' '
+    $text.TrimEnd()
+}
+
+function Write-BuildResult {
+    param([object]$Result)
+
+    if ($Result.Success) {
+        Write-Host ("Done {0} -> {1} ({2:n2}s)" -f $Result.Module, $Result.WasmFile, $Result.ElapsedSeconds) -ForegroundColor Green
+    } else {
+        Write-Host ("Failed {0} ({1:n2}s)" -f $Result.Module, $Result.ElapsedSeconds) -ForegroundColor Red
     }
-    
-    Push-Location $modulePath
-    
+
+    if ($VerboseBuild -or -not $Result.Success) {
+        foreach ($line in $Result.Log) {
+            $formattedLine = Format-BuildLogLine $line
+            if ($formattedLine) {
+                Write-Host $formattedLine
+            }
+        }
+    }
+}
+
+function Get-OutputName {
+    param([string]$Module)
+    ($Module -replace '-wasm$', '') -replace '-', '_'
+}
+
+function Get-WasmPackArgs {
+    param(
+        [string]$OutputName,
+        [string]$ModuleOutputDir,
+        [bool]$DebugBuild,
+        [string[]]$CargoFeatures,
+        [System.Collections.Generic.List[string]]$Log
+    )
+
+    $wasmPackArgs = @('build')
+    if ($DebugBuild) {
+        $wasmPackArgs += '--dev'
+    } else {
+        $wasmPackArgs += '--release'
+        $wasmPackArgs += '--no-opt'
+    }
+
+    $wasmPackArgs += '--target'
+    $wasmPackArgs += 'web'
+    $wasmPackArgs += '--out-dir'
+    $wasmPackArgs += $ModuleOutputDir
+    $wasmPackArgs += '--out-name'
+    $wasmPackArgs += $OutputName
+
+    $featuresForModule = @($CargoFeatures)
+    if ($DebugBuild) {
+        if (-not $featuresForModule -or $featuresForModule.Count -eq 0) {
+            $featuresForModule = @('console_error_panic_hook')
+            $Log.Add("  Debug build: enabling feature 'console_error_panic_hook'")
+        } elseif (-not ($featuresForModule -contains 'console_error_panic_hook')) {
+            $featuresForModule += 'console_error_panic_hook'
+            $Log.Add("  Debug build: appending feature 'console_error_panic_hook'")
+        }
+    }
+
+    if ($featuresForModule -and $featuresForModule.Count -gt 0) {
+        $featStr = $featuresForModule -join ","
+        $wasmPackArgs += '--'
+        $wasmPackArgs += '--features'
+        $wasmPackArgs += $featStr
+    }
+
+    $wasmPackArgs
+}
+
+function Add-LogFile {
+    param(
+        [System.Collections.Generic.List[string]]$Log,
+        [string]$Path
+    )
+
+    if (Test-Path $Path) {
+        foreach ($line in Get-Content $Path) {
+            $Log.Add("  $line")
+        }
+    }
+}
+
+function Start-ModuleBuild {
+    param([string]$Module)
+
+    $modulePath = Join-Path $webDir $Module
+    if (-not (Test-Path $modulePath)) {
+        throw "Module not found: $modulePath"
+    }
+
+    $outputName = Get-OutputName $Module
+    $moduleOutputDir = Join-Path ([System.IO.Path]::GetTempPath()) ("draco-web-build-{0}-{1}" -f $Module, [System.Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $moduleOutputDir -Force | Out-Null
+
+    $staleFiles = Get-ChildItem $outputDir -Filter ($outputName + "*") -ErrorAction SilentlyContinue
+    foreach ($staleFile in $staleFiles) {
+        if ($staleFile -and -not $staleFile.PSIsContainer) {
+            [System.IO.File]::Delete($staleFile.FullName)
+        }
+    }
+
+    $log = New-Object System.Collections.Generic.List[string]
+    $args = Get-WasmPackArgs $outputName $moduleOutputDir ([bool]$Debug) $Features $log
+    $stdout = Join-Path $moduleOutputDir "wasm-pack.stdout.log"
+    $stderr = Join-Path $moduleOutputDir "wasm-pack.stderr.log"
+    $timer = [System.Diagnostics.Stopwatch]::StartNew()
+
+    $process = Start-Process -FilePath "wasm-pack" `
+        -ArgumentList $args `
+        -WorkingDirectory $modulePath `
+        -RedirectStandardOutput $stdout `
+        -RedirectStandardError $stderr `
+        -WindowStyle Hidden `
+        -PassThru
+
+    [PSCustomObject]@{
+        Module = $Module
+        OutputName = $outputName
+        ModuleOutputDir = $moduleOutputDir
+        Process = $process
+        Args = $args
+        Stdout = $stdout
+        Stderr = $stderr
+        Log = $log
+        Timer = $timer
+    }
+}
+
+function Wait-ModuleBuild {
+    param([object[]]$Builds)
+
+    while ($true) {
+        $completedBuild = $Builds |
+            Where-Object { $_.Process.HasExited } |
+            Select-Object -First 1
+
+        if ($completedBuild) {
+            return $completedBuild
+        }
+
+        Start-Sleep -Milliseconds 100
+    }
+}
+
+function Complete-ModuleBuild {
+    param([object]$Build)
+
+    $log = $Build.Log
+    $success = $false
+
     try {
-        # Build with wasm-pack. Debug builds use --dev; release builds use --release and run wasm-opt by default.
-        # Remove -wasm suffix and convert remaining dashes to underscores
-        $outputName = ($module -replace '-wasm$', '') -replace '-', '_'
-        Get-ChildItem $outputDir -Filter ($outputName + "*_bg.wasm") -ErrorAction SilentlyContinue |
-            Remove-Item -Force
+        $Build.Process.WaitForExit()
+        $log.Insert(0, "Finished $($Build.Module)...")
+        $log.Insert(1, "  Running: wasm-pack $($Build.Args -join ' ')")
+        Add-LogFile $log $Build.Stdout
+        Add-LogFile $log $Build.Stderr
 
-        $wasmPackArgs = @('build')
-        if ($Debug) { $wasmPackArgs += '--dev' } else { $wasmPackArgs += '--release'; $wasmPackArgs += '--no-opt' }
-        $wasmPackArgs += '--target'; $wasmPackArgs += 'web'
-        $wasmPackArgs += '--out-dir'; $wasmPackArgs += $outputDir
-        $wasmPackArgs += '--out-name'; $wasmPackArgs += $outputName
+        if ($Build.Process.ExitCode -ne 0) {
+            throw "wasm-pack failed with exit code $($Build.Process.ExitCode)"
+        }
 
-        # Auto-enable console_error_panic_hook for Debug builds unless the user specified features.
-        if ($Debug) {
-            if (-not $Features -or $Features.Count -eq 0) {
-                $Features = @('console_error_panic_hook')
-                Write-Host "  Debug build: enabling feature 'console_error_panic_hook'" -ForegroundColor Gray
-            } elseif (-not ($Features -contains 'console_error_panic_hook')) {
-                $Features += 'console_error_panic_hook'
-                Write-Host "  Debug build: appending feature 'console_error_panic_hook'" -ForegroundColor Gray
+        $log.Add("  Success!")
+
+        $wasmFile = Join-Path $Build.ModuleOutputDir ($Build.OutputName + "_bg.wasm")
+        if (-not $Debug -and -not $NoOptimize -and (Test-Path $wasmFile)) {
+            $log.Add("  Optimizing with wasm-opt...")
+            $wasmOptPath = "$env:USERPROFILE\.cargo\bin\wasm-opt.exe"
+            if (-not (Test-Path $wasmOptPath)) {
+                $wasmOptPath = (Get-ChildItem "$env:LOCALAPPDATA\.wasm-pack\wasm-opt-*\bin\wasm-opt.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
             }
-        }
-
-        if ($Features -and $Features.Count -gt 0) {
-            $featStr = $Features -join ","
-            $wasmPackArgs += '--'; $wasmPackArgs += '--features'; $wasmPackArgs += $featStr
-        }
-
-        Write-Host "  Running: wasm-pack $($wasmPackArgs -join ' ')" -ForegroundColor Gray
-        & wasm-pack @wasmPackArgs
-        
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "  Success!" -ForegroundColor Green
-            
-            # Run wasm-opt manually with all necessary WASM features enabled (skip during Debug or when NoOptimize is set)
-            $wasmFile = Join-Path $outputDir ($outputName + "_bg.wasm")
-            if (-not $Debug -and -not $NoOptimize -and (Test-Path $wasmFile)) {
-                Write-Host "  Optimizing with wasm-opt..." -ForegroundColor Gray
-                $wasmOptPath = "$env:USERPROFILE\.cargo\bin\wasm-opt.exe"
-                if (-not (Test-Path $wasmOptPath)) {
-                    # Try to find wasm-opt in wasm-pack cache
-                    $wasmOptPath = (Get-ChildItem "$env:LOCALAPPDATA\.wasm-pack\wasm-opt-*\bin\wasm-opt.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+            if ($wasmOptPath -and (Test-Path $wasmOptPath)) {
+                $wasmOptOutput = & $wasmOptPath $wasmFile -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals -o $wasmFile 2>&1
+                foreach ($line in $wasmOptOutput) {
+                    $log.Add("  $line")
                 }
-                if ($wasmOptPath -and (Test-Path $wasmOptPath)) {
-                    & $wasmOptPath $wasmFile -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals -o $wasmFile
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Host "  Optimization complete!" -ForegroundColor Green
-                    }
+                if ($LASTEXITCODE -eq 0) {
+                    $log.Add("  Optimization complete!")
+                } else {
+                    throw "wasm-opt failed with exit code $LASTEXITCODE"
                 }
             }
-
-            # Rename _bg.wasm to .wasm to remove the suffix if present
-            if (Test-Path $wasmFile) {
-                $cleanWasmFile = Join-Path $outputDir ($outputName + ".wasm")
-                Move-Item -Path $wasmFile -Destination $cleanWasmFile -Force
-                Write-Host "  Renamed to $(Split-Path $cleanWasmFile -Leaf)" -ForegroundColor Gray
-            }
-
-            Get-ChildItem $outputDir -Filter ($outputName + "*_bg.wasm") -ErrorAction SilentlyContinue |
-                Remove-Item -Force
-            
-            # Update the .js file to reference the new filename
-            $jsFile = Join-Path $outputDir ($outputName + ".js")
-            if (Test-Path $jsFile) {
-                $jsContent = Get-Content $jsFile -Raw
-                $jsContent = $jsContent -replace '_bg\.wasm', '.wasm'
-                Set-Content $jsFile $jsContent -NoNewline
-            }
-        } else {
-            Write-Host "  Build failed with exit code $LASTEXITCODE" -ForegroundColor Red
         }
+
+        if (Test-Path $wasmFile) {
+            $cleanWasmFile = Join-Path $Build.ModuleOutputDir ($Build.OutputName + ".wasm")
+            Move-Item -Path $wasmFile -Destination $cleanWasmFile -Force
+            $log.Add("  Renamed to $(Split-Path $cleanWasmFile -Leaf)")
+        }
+
+        $staleWasmFiles = Get-ChildItem $Build.ModuleOutputDir -Filter ($Build.OutputName + "*_bg.wasm") -ErrorAction SilentlyContinue
+        foreach ($staleWasmFile in $staleWasmFiles) {
+            if ($staleWasmFile -and -not $staleWasmFile.PSIsContainer) {
+                [System.IO.File]::Delete($staleWasmFile.FullName)
+            }
+        }
+
+        $jsFile = Join-Path $Build.ModuleOutputDir ($Build.OutputName + ".js")
+        if (Test-Path $jsFile) {
+            $jsContent = Get-Content $jsFile -Raw
+            $jsContent = $jsContent -replace '_bg\.wasm', '.wasm'
+            Set-Content $jsFile $jsContent -NoNewline
+        }
+
+        $builtFiles = Get-ChildItem $Build.ModuleOutputDir -Filter ($Build.OutputName + "*")
+        foreach ($builtFile in $builtFiles) {
+            if ($builtFile -and -not $builtFile.PSIsContainer) {
+                $destination = Join-Path $outputDir $builtFile.Name
+                [System.IO.File]::Copy($builtFile.FullName, $destination, $true)
+            }
+        }
+        $success = $true
     }
     catch {
-        Write-Host "  Error: $_" -ForegroundColor Red
+        $log.Add("  Error: $_")
     }
     finally {
-        Pop-Location
+        $Build.Timer.Stop()
+        $log.Add(("  Elapsed: {0:n2}s" -f $Build.Timer.Elapsed.TotalSeconds))
+        if (Test-Path $Build.ModuleOutputDir) {
+            Remove-Item -Path $Build.ModuleOutputDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
+
+    [PSCustomObject]@{
+        Module = $Build.Module
+        Success = $success
+        WasmFile = $Build.OutputName + ".wasm"
+        ElapsedSeconds = $Build.Timer.Elapsed.TotalSeconds
+        Log = $log.ToArray()
+    }
+}
+
+$env:NO_COLOR = "1"
+$env:CARGO_TERM_COLOR = "never"
+$runningBuilds = @()
+$failedModules = @()
+
+foreach ($module in $modules) {
+    while ($runningBuilds.Count -ge $maxJobs) {
+        $completedBuild = Wait-ModuleBuild $runningBuilds
+        $result = Complete-ModuleBuild $completedBuild
+        $runningBuilds = @($runningBuilds | Where-Object { $_.Module -ne $completedBuild.Module })
+
+        Write-BuildResult $result
+        if (-not $result.Success) {
+            $failedModules += $result.Module
+        }
+    }
+
+    Write-Host "Starting $module..." -ForegroundColor Yellow
+    $runningBuilds += Start-ModuleBuild $module
+}
+
+while ($runningBuilds.Count -gt 0) {
+    $completedBuild = Wait-ModuleBuild $runningBuilds
+    $result = Complete-ModuleBuild $completedBuild
+    $runningBuilds = @($runningBuilds | Where-Object { $_.Module -ne $completedBuild.Module })
+
+    Write-BuildResult $result
+    if (-not $result.Success) {
+        $failedModules += $result.Module
+    }
+}
+
+if ($failedModules.Count -gt 0) {
+    throw "Build failed for modules: $($failedModules -join ', ')"
 }
 
 Write-Host "`n================================" -ForegroundColor Cyan
@@ -151,5 +343,5 @@ if ($Serve) {
 } else {
     Write-Host "`nTo serve the web app, run:" -ForegroundColor White
     Write-Host "  .\build.ps1 -Serve" -ForegroundColor Gray
-    Write-Host "`nThen open http://localhost:8080 in your browser" -ForegroundColor White
+    Write-Host "`nThen open one of the printed server URLs in your browser" -ForegroundColor White
 }
