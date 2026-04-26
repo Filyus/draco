@@ -665,8 +665,12 @@ impl MeshDecoder {
         // For Edgebreaker, traversal sequencing is controlled per attribute decoder.
         // We'll derive the correct (point_ids, data_to_corner_map) later for each decoder payload
         // based on its traversal_method.
-        let (point_ids, data_to_corner_map): (Vec<PointIndex>, Option<Vec<u32>>) =
-            (make_point_ids(num_points)?, None);
+        let point_ids = if self.method == 0 {
+            make_point_ids(num_points)?
+        } else {
+            Vec::new()
+        };
+        let data_to_corner_map: Option<Vec<u32>> = None;
 
         let pc_decoder = PointCloudDecoder::new();
         let bitstream_version: u16 =
@@ -755,8 +759,11 @@ impl MeshDecoder {
                 if self.method == 1 {
                     let att_mut = mesh.attribute_mut(att_id);
                     att_mut.set_explicit_mapping(num_points);
-                    for (i, &pid) in point_ids.iter().enumerate() {
-                        att_mut.try_set_point_map_entry(pid, AttributeValueIndex(i as u32))?;
+                    for i in 0..num_points {
+                        att_mut.try_set_point_map_entry(
+                            PointIndex(i as u32),
+                            AttributeValueIndex(i as u32),
+                        )?;
                     }
                 }
             }
@@ -858,8 +865,8 @@ impl MeshDecoder {
                     // identity mapping [0, 1, 2, ..., num_points-1] and calls
                     // SetIdentityMapping() for attributes. No corner table or
                     // data_to_corner_map is needed.
-                    let ids = make_point_ids(mesh.num_points())?;
-                    sequenced_point_ids = Some(ids);
+                    // Use the mesh-wide identity sequence allocated above instead
+                    // of rebuilding an identical vector for each decoder.
                     // sequenced_data_to_corner_map remains None - not needed for sequential
                 } else {
                     // Edgebreaker decoding: traversal method depends on the per-decoder

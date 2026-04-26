@@ -362,6 +362,57 @@ impl AttributeTransform for AttributeQuantizationTransform {
         };
         let src_buffer = attribute.buffer();
         let dst_buffer = target_attribute.buffer_mut();
+        let src_data = src_buffer.data();
+        let dst_data = dst_buffer.data_mut();
+
+        const VEC3_U32_STRIDE: usize = 3 * std::mem::size_of::<u32>();
+        if attribute.data_type() == DataType::Uint32
+            && num_components == 3
+            && src_stride == VEC3_U32_STRIDE
+            && dst_stride == VEC3_U32_STRIDE
+        {
+            let Some(required_src) = num_values.checked_mul(src_stride) else {
+                return false;
+            };
+            let Some(required_dst) = num_values.checked_mul(dst_stride) else {
+                return false;
+            };
+            if src_data.len() < required_src || dst_data.len() < required_dst {
+                return false;
+            }
+
+            for i in 0..num_values {
+                let offset = i * VEC3_U32_STRIDE;
+                let q_x = i32::from_le_bytes([
+                    src_data[offset],
+                    src_data[offset + 1],
+                    src_data[offset + 2],
+                    src_data[offset + 3],
+                ]);
+                let q_y = i32::from_le_bytes([
+                    src_data[offset + 4],
+                    src_data[offset + 5],
+                    src_data[offset + 6],
+                    src_data[offset + 7],
+                ]);
+                let q_z = i32::from_le_bytes([
+                    src_data[offset + 8],
+                    src_data[offset + 9],
+                    src_data[offset + 10],
+                    src_data[offset + 11],
+                ]);
+
+                let x = dequantizer.dequantize_float(q_x) + self.min_values[0];
+                let y = dequantizer.dequantize_float(q_y) + self.min_values[1];
+                let z = dequantizer.dequantize_float(q_z) + self.min_values[2];
+
+                dst_data[offset..offset + 4].copy_from_slice(&x.to_le_bytes());
+                dst_data[offset + 4..offset + 8].copy_from_slice(&y.to_le_bytes());
+                dst_data[offset + 8..offset + 12].copy_from_slice(&z.to_le_bytes());
+            }
+
+            return true;
+        }
 
         for i in 0..num_values {
             let Some(src_offset) = i.checked_mul(src_stride) else {
@@ -378,19 +429,26 @@ impl AttributeTransform for AttributeQuantizationTransform {
                 let Some(src_pos) = src_offset.checked_add(component_offset) else {
                     return false;
                 };
-                let mut q_bytes = [0u8; 4];
-                if !src_buffer.try_read(src_pos, &mut q_bytes) {
+                let Some(src_end) = src_pos.checked_add(4) else {
                     return false;
-                }
-                let q_val = i32::from_le_bytes(q_bytes);
+                };
+                let Some(src_bytes) = src_data.get(src_pos..src_end) else {
+                    return false;
+                };
+                let q_val =
+                    i32::from_le_bytes([src_bytes[0], src_bytes[1], src_bytes[2], src_bytes[3]]);
 
                 let val = dequantizer.dequantize_float(q_val) + self.min_values[c];
                 let Some(dst_pos) = dst_offset.checked_add(component_offset) else {
                     return false;
                 };
-                if !dst_buffer.try_write(dst_pos, &val.to_le_bytes()) {
+                let Some(dst_end) = dst_pos.checked_add(4) else {
                     return false;
-                }
+                };
+                let Some(dst_bytes) = dst_data.get_mut(dst_pos..dst_end) else {
+                    return false;
+                };
+                dst_bytes.copy_from_slice(&val.to_le_bytes());
             }
         }
 
