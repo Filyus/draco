@@ -55,7 +55,16 @@ fn main() -> io::Result<()> {
 
 fn spawn_connection_handler(stream: TcpStream, root: PathBuf) {
     thread::spawn(move || {
+        if let Err(err) = stream.set_nonblocking(false) {
+            eprintln!("Request failed: {err}");
+            return;
+        }
+
         if let Err(err) = handle_connection(stream, &root) {
+            if err.kind() == io::ErrorKind::WouldBlock {
+                return;
+            }
+
             eprintln!("Request failed: {err}");
         }
     });
