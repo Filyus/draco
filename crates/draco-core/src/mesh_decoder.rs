@@ -786,7 +786,7 @@ impl MeshDecoder {
                 att_ids.push(att_id);
 
                 if self.method == 1 {
-                    let att_mut = mesh.attribute_mut(att_id);
+                    let att_mut = mesh.try_attribute_mut(att_id)?;
                     att_mut.set_explicit_mapping(num_points);
                     for i in 0..num_points {
                         att_mut.try_set_point_map_entry(
