@@ -272,14 +272,22 @@ completed:
           - "decode_values_rejects_invalid_attribute_id"
     note: "PointCloud now exposes fallible attribute lookup helpers, and generic sequential attribute decode uses them so invalid attribute ids return decode errors instead of indexing the attribute array unchecked."
 
+  - id: fuzz-decode-entrypoint
+    status: covered
+    evidence:
+      - path: "fuzz/fuzz_targets/decode_drc.rs"
+        commands:
+          - "cargo check --manifest-path fuzz/Cargo.toml --bins"
+    note: "A cargo-fuzz/libFuzzer entrypoint now feeds arbitrary byte slices through both MeshDecoder and PointCloudDecoder so sustained no-panic decode fuzzing can run outside the normal test suite."
+
 open_risks:
-  - id: no-sustained-fuzzing
+  - id: fuzzing-not-yet-operationalized
     priority: high
-    summary: "There is deterministic no-panic mutation coverage, but no sustained fuzz/property harness that continuously feeds arbitrary bytes into MeshDecoder and PointCloudDecoder."
-    why_it_matters: "Deterministic mutations, synthetic byte streams, and hand-written malformed cases catch known classes, but hostile inputs can combine format sections in unexpected ways."
+    summary: "A cargo-fuzz entrypoint exists, but it is not yet part of CI or a documented pre-release fuzzing routine."
+    why_it_matters: "The harness enables sustained arbitrary-byte decode fuzzing, but it only improves hostile-input confidence when run regularly with corpus persistence and sanitizer-relevant configurations."
     next_steps:
-      - "Add a small fuzz/property entrypoint that asserts decode never panics for arbitrary byte slices."
-      - "Seed it with supported fixtures and current malformed edge cases."
+      - "Seed the fuzz corpus with supported fixtures and current malformed edge cases."
+      - "Document the local fuzz command, corpus location, and recommended runtime."
       - "Run native and wasm-relevant configurations before making hostile-input claims."
 
   - id: resource-policy-boundary
@@ -314,7 +322,7 @@ exit_criteria:
     - "Legacy Draco 1.0.0+ smoke fixtures remain covered."
     - "Malformed edge-case regression tests pass."
   arbitrary_hostile_input:
-    - "Fuzz/property entrypoint exists and runs in CI or documented pre-release process."
+    - "Fuzz/property entrypoint runs in CI or documented pre-release process."
     - "DRC-level Edgebreaker corruption cases fail without panic."
     - "Caller resource policy is documented."
     - "Decode-path panic/indexing audit has no known reachable malformed-input panics."
