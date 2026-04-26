@@ -131,9 +131,15 @@ fn bench_decode_real_files() {
 
     // ── Reference files (synthetic, all speeds) ──────────────────────────────
     println!("── Synthetic reference files (C++ encoder output, speeds 0–10) ─────────────");
-    println!("┌──────────────────────┬────────┬───────────┬───────────┬─────────┬─────────┐");
-    println!("│ File                 │ Bytes  │ C++ (µs)  │ Rust (µs) │ Speedup │ Winner  │");
-    println!("├──────────────────────┼────────┼───────────┼───────────┼─────────┼─────────┤");
+    println!(
+        "┌──────────────────────┬────────┬────────┬────────┬───────────┬───────────┬─────────┬─────────┐"
+    );
+    println!(
+        "│ File                 │ Bytes  │ Points │ Faces  │ C++ (µs)  │ Rust (µs) │ Speedup │ Winner  │"
+    );
+    println!(
+        "├──────────────────────┼────────┼────────┼────────┼───────────┼───────────┼─────────┼─────────┤"
+    );
 
     for case in &reference_files {
         let mut p = base.clone();
@@ -144,7 +150,7 @@ fn bench_decode_real_files() {
             Ok(d) => d,
             Err(_) => {
                 println!(
-                    "│ {:<20} │  n/a   │   MISSING │   MISSING │    -    │    -    │",
+                    "│ {:<20} │  n/a   │   n/a  │   n/a  │   MISSING │   MISSING │    -    │    -    │",
                     case.label
                 );
                 continue;
@@ -164,9 +170,11 @@ fn bench_decode_real_files() {
                     "✗"
                 };
                 println!(
-                    "│ {:<20} │{:>7} │ {:>9.1} │ {:>9.1} │ {:>6.2}x{} │ {:>7} │",
+                    "│ {:<20} │{:>7} │{:>7} │{:>7} │ {:>9.1} │ {:>9.1} │ {:>6.2}x{} │ {:>7} │",
                     case.label,
                     data.len(),
+                    r_pts,
+                    r_faces,
                     c_us,
                     r_us,
                     speedup,
@@ -175,13 +183,13 @@ fn bench_decode_real_files() {
                 );
             }
             (None, _) => println!(
-                "│ {:<20} │{:>7} │ {:>9.1} │ RUST FAIL │    -    │    -    │",
+                "│ {:<20} │{:>7} │   n/a  │   n/a  │ {:>9.1} │ RUST FAIL │    -    │    -    │",
                 case.label,
                 data.len(),
                 cpp.map(|c| c.0).unwrap_or(0.0)
             ),
             (_, None) => println!(
-                "│ {:<20} │{:>7} │  BRIDGE FAIL │ {:>9.1} │    -    │    -    │",
+                "│ {:<20} │{:>7} │   n/a  │   n/a  │  BRIDGE FAIL │ {:>9.1} │    -    │    -    │",
                 case.label,
                 data.len(),
                 rust.map(|r| r.0).unwrap_or(0.0)
@@ -189,14 +197,22 @@ fn bench_decode_real_files() {
         }
     }
 
-    println!("└──────────────────────┴────────┴───────────┴───────────┴─────────┴─────────┘");
+    println!(
+        "└──────────────────────┴────────┴────────┴────────┴───────────┴───────────┴─────────┴─────────┘"
+    );
 
     // ── Real-world files ──────────────────────────────────────────────────────
     println!();
     println!("── Real-world .drc files ─────────────────────────────────────────────────────");
-    println!("┌──────────────────────┬────────┬───────────┬───────────┬─────────┬─────────┐");
-    println!("│ File                 │ Bytes  │ C++ (µs)  │ Rust (µs) │ Speedup │ Winner  │");
-    println!("├──────────────────────┼────────┼───────────┼───────────┼─────────┼─────────┤");
+    println!(
+        "┌──────────────────────┬────────┬────────┬────────┬───────────┬───────────┬─────────┬─────────┐"
+    );
+    println!(
+        "│ File                 │ Bytes  │ Points │ Faces  │ C++ (µs)  │ Rust (µs) │ Speedup │ Winner  │"
+    );
+    println!(
+        "├──────────────────────┼────────┼────────┼────────┼───────────┼───────────┼─────────┼─────────┤"
+    );
 
     for case in real_files {
         let mut p = base.clone();
@@ -207,7 +223,7 @@ fn bench_decode_real_files() {
             Ok(d) => d,
             Err(_) => {
                 println!(
-                    "│ {:<20} │  n/a   │   MISSING │   MISSING │    -    │    -    │",
+                    "│ {:<20} │  n/a   │   n/a  │   n/a  │   MISSING │   MISSING │    -    │    -    │",
                     case.label
                 );
                 continue;
@@ -227,9 +243,11 @@ fn bench_decode_real_files() {
                     "✗"
                 };
                 println!(
-                    "│ {:<20} │{:>7} │ {:>9.1} │ {:>9.1} │ {:>6.2}x{} │ {:>7} │",
+                    "│ {:<20} │{:>7} │{:>7} │{:>7} │ {:>9.1} │ {:>9.1} │ {:>6.2}x{} │ {:>7} │",
                     case.label,
                     data.len(),
+                    r_pts,
+                    r_faces,
                     c_us,
                     r_us,
                     speedup,
@@ -238,13 +256,13 @@ fn bench_decode_real_files() {
                 );
             }
             (None, _) => println!(
-                "│ {:<20} │{:>7} │ {:>9.1} │ RUST FAIL │    -    │    -    │",
+                "│ {:<20} │{:>7} │   n/a  │   n/a  │ {:>9.1} │ RUST FAIL │    -    │    -    │",
                 case.label,
                 data.len(),
                 cpp.map(|c| c.0).unwrap_or(0.0)
             ),
             (_, None) => println!(
-                "│ {:<20} │{:>7} │  BRIDGE FAIL │ {:>9.1} │    -    │    -    │",
+                "│ {:<20} │{:>7} │   n/a  │   n/a  │  BRIDGE FAIL │ {:>9.1} │    -    │    -    │",
                 case.label,
                 data.len(),
                 rust.map(|r| r.0).unwrap_or(0.0)
@@ -252,7 +270,9 @@ fn bench_decode_real_files() {
         }
     }
 
-    println!("└──────────────────────┴────────┴───────────┴───────────┴─────────┴─────────┘");
+    println!(
+        "└──────────────────────┴────────┴────────┴────────┴───────────┴───────────┴─────────┴─────────┘"
+    );
     println!();
     println!("Notes:");
     println!("  • Speedup > 1.0x means Rust is faster");
