@@ -141,31 +141,15 @@ Write-Host "Build complete!" -ForegroundColor Green
 
 if ($Serve) {
     $wwwDir = Join-Path $webDir "www"
+    $serverManifest = Join-Path $webDir "dev-server\Cargo.toml"
+
     Write-Host "`nStarting web server..." -ForegroundColor Cyan
     Write-Host "Serving from: $wwwDir" -ForegroundColor Gray
-    Write-Host "URL: http://localhost:$Port" -ForegroundColor White
-    Write-Host "Press Ctrl+C to stop the server" -ForegroundColor Gray
+    Write-Host "WASM gzip compression: enabled" -ForegroundColor Gray
     
-    Push-Location $wwwDir
-    try {
-        python -m http.server $Port
-    }
-    catch {
-        Write-Host "Failed to start Python web server. Trying npx serve..." -ForegroundColor Yellow
-        try {
-            npx serve -l $Port
-        }
-        catch {
-            Write-Host "Failed to start any web server." -ForegroundColor Red
-        }
-    }
-    finally {
-        Pop-Location
-    }
+    cargo run --manifest-path $serverManifest -- $wwwDir $Port
 } else {
     Write-Host "`nTo serve the web app, run:" -ForegroundColor White
-    Write-Host "  cd www" -ForegroundColor Gray
-    Write-Host "  python -m http.server 8080" -ForegroundColor Gray
-    Write-Host "  # Or use any static file server" -ForegroundColor Gray
+    Write-Host "  .\build.ps1 -Serve" -ForegroundColor Gray
     Write-Host "`nThen open http://localhost:8080 in your browser" -ForegroundColor White
 }
