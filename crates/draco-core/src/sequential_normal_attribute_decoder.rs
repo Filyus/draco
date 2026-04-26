@@ -13,7 +13,7 @@ use crate::status::{DracoError, Status};
 use crate::prediction_scheme_delta::PredictionSchemeDeltaDecoder;
 
 fn validate_normal_quantization_bits(quantization_bits: u8) -> Status {
-    if !(2..=30).contains(&quantization_bits) {
+    if !AttributeOctahedronTransform::is_valid_quantization_bits(quantization_bits as i32) {
         return Err(DracoError::DracoError(
             "Invalid normal quantization bits".to_string(),
         ));

@@ -19,8 +19,16 @@ impl AttributeOctahedronTransform {
         Self { quantization_bits }
     }
 
-    pub fn set_parameters(&mut self, quantization_bits: i32) {
+    pub fn is_valid_quantization_bits(quantization_bits: i32) -> bool {
+        (2..=30).contains(&quantization_bits)
+    }
+
+    pub fn set_parameters(&mut self, quantization_bits: i32) -> bool {
+        if !Self::is_valid_quantization_bits(quantization_bits) {
+            return false;
+        }
         self.quantization_bits = quantization_bits;
+        true
     }
 
     pub fn is_initialized(&self) -> bool {
@@ -232,8 +240,7 @@ impl AttributeTransform for AttributeOctahedronTransform {
         decoder_buffer: &mut DecoderBuffer,
     ) -> bool {
         if let Ok(quantization_bits) = decoder_buffer.decode::<u8>() {
-            self.quantization_bits = quantization_bits as i32;
-            true
+            self.set_parameters(quantization_bits as i32)
         } else {
             false
         }
@@ -252,6 +259,7 @@ impl AttributeTransform for AttributeOctahedronTransform {
 mod tests {
     use super::AttributeOctahedronTransform;
     use crate::attribute_transform::AttributeTransform;
+    use crate::decoder_buffer::DecoderBuffer;
     use crate::draco_types::DataType;
     use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
 
@@ -293,5 +301,27 @@ mod tests {
         assert!(transform
             .generate_portable_attribute(&source, &[], 1, &mut target)
             .is_err());
+    }
+
+    #[test]
+    fn decode_parameters_rejects_invalid_quantization_bits() {
+        let attribute = PointAttribute::new();
+        let mut transform = AttributeOctahedronTransform::new(-1);
+
+        let mut zero_bits = DecoderBuffer::new(&[0]);
+        assert!(!transform.decode_parameters(&attribute, &mut zero_bits));
+
+        let mut too_many_bits = DecoderBuffer::new(&[31]);
+        assert!(!transform.decode_parameters(&attribute, &mut too_many_bits));
+    }
+
+    #[test]
+    fn decode_parameters_accepts_valid_quantization_bits() {
+        let attribute = PointAttribute::new();
+        let mut transform = AttributeOctahedronTransform::new(-1);
+        let mut buffer = DecoderBuffer::new(&[10]);
+
+        assert!(transform.decode_parameters(&attribute, &mut buffer));
+        assert_eq!(transform.quantization_bits(), 10);
     }
 }

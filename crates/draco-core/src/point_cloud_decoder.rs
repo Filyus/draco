@@ -486,6 +486,13 @@ impl PointCloudDecoder {
                                 quant_bits = buffer.decode_u8().map_err(|_| {
                                     DracoError::DracoError("read normal quant_bits".to_string())
                                 })?;
+                                if !AttributeOctahedronTransform::is_valid_quantization_bits(
+                                    quant_bits as i32,
+                                ) {
+                                    return Err(DracoError::DracoError(
+                                        "Invalid normal quantization bits".to_string(),
+                                    ));
+                                }
                                 let bytes_consumed = buffer.position() - saved_pos;
                                 let pred_header_bytes = if method_byte != 0xFF { 2 } else { 1 };
                                 let skip = bytes_consumed - pred_header_bytes;
@@ -594,7 +601,15 @@ impl PointCloudDecoder {
                                         "Missing pending normal attribute transform".to_string(),
                                     )
                                 })?;
-                                pending_normals[idx].quantization_bits = buffer.decode_u8()?;
+                                let quantization_bits = buffer.decode_u8()?;
+                                if !AttributeOctahedronTransform::is_valid_quantization_bits(
+                                    quantization_bits as i32,
+                                ) {
+                                    return Err(DracoError::DracoError(
+                                        "Invalid normal quantization bits".to_string(),
+                                    ));
+                                }
+                                pending_normals[idx].quantization_bits = quantization_bits;
                             }
                         }
                         _ => {}
@@ -611,7 +626,11 @@ impl PointCloudDecoder {
                 }
                 for n in pending_normals {
                     let mut oct = AttributeOctahedronTransform::new(-1);
-                    oct.set_parameters(n.quantization_bits as i32);
+                    if !oct.set_parameters(n.quantization_bits as i32) {
+                        return Err(DracoError::DracoError(
+                            "Invalid normal quantization bits".to_string(),
+                        ));
+                    }
                     let dst = pc.attribute_mut(n.att_id);
                     if !oct.inverse_transform_attribute(&n.portable, dst) {
                         return Err(DracoError::DracoError(

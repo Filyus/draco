@@ -314,11 +314,17 @@ completed:
   - id: normal-attribute-quantization-bounds
     status: covered
     evidence:
+      - path: "crates/draco-core/src/attribute_octahedron_transform.rs"
+        tests:
+          - "decode_parameters_rejects_invalid_quantization_bits"
+          - "decode_parameters_accepts_valid_quantization_bits"
+      - path: "crates/draco-core/src/mesh_decoder.rs"
+      - path: "crates/draco-core/src/point_cloud_decoder.rs"
       - path: "crates/draco-core/src/sequential_normal_attribute_decoder.rs"
         tests:
           - "decode_portable_transform_rejects_invalid_normal_quantization_bits"
           - "decode_portable_transform_accepts_valid_normal_quantization_bits"
-    note: "Sequential normal attribute decode now rejects invalid octahedral quantization bits at parameter decode time instead of carrying an invalid transform until inverse reconstruction fails later."
+    note: "Normal attribute decode now rejects invalid octahedral quantization bits at parameter decode time in sequential normal, mesh, point-cloud, and generic octahedron transform paths instead of carrying an invalid transform until inverse reconstruction fails later."
 
   - id: fuzz-decode-entrypoint
     status: covered

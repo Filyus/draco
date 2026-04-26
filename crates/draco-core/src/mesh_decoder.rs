@@ -1160,6 +1160,13 @@ impl MeshDecoder {
                                         "Failed to read normal quant_bits".to_string(),
                                     )
                                 })?;
+                                if !AttributeOctahedronTransform::is_valid_quantization_bits(
+                                    quant_bits as i32,
+                                ) {
+                                    return Err(DracoError::DracoError(
+                                        "Invalid normal quantization bits".to_string(),
+                                    ));
+                                }
                                 let bytes_consumed = buffer.position() - saved_pos;
                                 let pred_header_bytes = if method_byte != 0xFF { 2 } else { 1 };
                                 let skip = bytes_consumed - pred_header_bytes;
@@ -1267,6 +1274,13 @@ impl MeshDecoder {
                                     )
                                 })?;
                             let bits = buffer.decode_u8()?;
+                            if !AttributeOctahedronTransform::is_valid_quantization_bits(
+                                bits as i32,
+                            ) {
+                                return Err(DracoError::DracoError(
+                                    "Invalid normal quantization bits".to_string(),
+                                ));
+                            }
                             pending_normals[idx].quantization_bits = bits;
                         }
                     }
@@ -1288,7 +1302,11 @@ impl MeshDecoder {
             }
             for n in &pending_normals {
                 let mut oct = AttributeOctahedronTransform::new(-1);
-                oct.set_parameters(n.quantization_bits as i32);
+                if !oct.set_parameters(n.quantization_bits as i32) {
+                    return Err(DracoError::DracoError(
+                        "Invalid normal quantization bits".to_string(),
+                    ));
+                }
                 let dst = mesh.attribute_mut(n.att_id);
                 if dst.size() != n.portable.size() {
                     dst.resize_unique_entries(n.portable.size())?;
