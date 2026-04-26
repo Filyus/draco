@@ -53,6 +53,105 @@ fn create_grid_mesh_data(grid_size: usize) -> (Vec<f32>, Vec<u32>) {
     (positions, faces)
 }
 
+fn create_uv_sphere_data(lat_segments: usize, lon_segments: usize) -> (Vec<f32>, Vec<u32>) {
+    assert!(lat_segments >= 2);
+    assert!(lon_segments >= 3);
+
+    let mut positions = Vec::with_capacity((1 + (lat_segments - 1) * lon_segments + 1) * 3);
+    positions.extend_from_slice(&[0.0, 1.0, 0.0]);
+
+    for lat in 1..lat_segments {
+        let theta = std::f32::consts::PI * lat as f32 / lat_segments as f32;
+        let y = theta.cos();
+        let radius = theta.sin();
+        for lon in 0..lon_segments {
+            let phi = 2.0 * std::f32::consts::PI * lon as f32 / lon_segments as f32;
+            positions.push(radius * phi.cos());
+            positions.push(y);
+            positions.push(radius * phi.sin());
+        }
+    }
+
+    let bottom = (positions.len() / 3) as u32;
+    positions.extend_from_slice(&[0.0, -1.0, 0.0]);
+
+    let ring = |lat_ring: usize, lon: usize| -> u32 {
+        1 + ((lat_ring - 1) * lon_segments + lon % lon_segments) as u32
+    };
+
+    let mut faces =
+        Vec::with_capacity((lon_segments * 2 + (lat_segments - 2) * lon_segments * 2) * 3);
+
+    for lon in 0..lon_segments {
+        faces.extend_from_slice(&[0, ring(1, lon + 1), ring(1, lon)]);
+    }
+
+    for lat in 1..lat_segments - 1 {
+        for lon in 0..lon_segments {
+            let a = ring(lat, lon);
+            let b = ring(lat, lon + 1);
+            let c = ring(lat + 1, lon);
+            let d = ring(lat + 1, lon + 1);
+            faces.extend_from_slice(&[a, b, c]);
+            faces.extend_from_slice(&[b, d, c]);
+        }
+    }
+
+    for lon in 0..lon_segments {
+        faces.extend_from_slice(&[
+            ring(lat_segments - 1, lon),
+            ring(lat_segments - 1, lon + 1),
+            bottom,
+        ]);
+    }
+
+    (positions, faces)
+}
+
+fn create_subdivided_cube_data(subdivisions: usize) -> (Vec<f32>, Vec<u32>) {
+    assert!(subdivisions >= 1);
+
+    let mut positions = Vec::with_capacity(6 * (subdivisions + 1) * (subdivisions + 1) * 3);
+    let mut faces = Vec::with_capacity(6 * subdivisions * subdivisions * 2 * 3);
+
+    let mut add_face = |axis: usize, sign: f32| {
+        let base = (positions.len() / 3) as u32;
+        for v in 0..=subdivisions {
+            for u in 0..=subdivisions {
+                let a = -1.0 + 2.0 * u as f32 / subdivisions as f32;
+                let b = -1.0 + 2.0 * v as f32 / subdivisions as f32;
+                let p = match axis {
+                    0 => [sign, b, if sign > 0.0 { -a } else { a }],
+                    1 => [a, sign, if sign > 0.0 { b } else { -b }],
+                    _ => [if sign > 0.0 { a } else { -a }, b, sign],
+                };
+                positions.extend_from_slice(&p);
+            }
+        }
+
+        let row = subdivisions + 1;
+        for v in 0..subdivisions {
+            for u in 0..subdivisions {
+                let p0 = base + (v * row + u) as u32;
+                let p1 = base + (v * row + u + 1) as u32;
+                let p2 = base + ((v + 1) * row + u) as u32;
+                let p3 = base + ((v + 1) * row + u + 1) as u32;
+                faces.extend_from_slice(&[p0, p1, p2]);
+                faces.extend_from_slice(&[p1, p3, p2]);
+            }
+        }
+    };
+
+    add_face(0, 1.0);
+    add_face(0, -1.0);
+    add_face(1, 1.0);
+    add_face(1, -1.0);
+    add_face(2, 1.0);
+    add_face(2, -1.0);
+
+    (positions, faces)
+}
+
 fn create_mesh_from_data(positions: &[f32], faces: &[u32]) -> Mesh {
     let num_points = positions.len() / 3;
     let num_faces = faces.len() / 3;
@@ -303,4 +402,151 @@ fn bench_encode_decode_matrix() {
     println!("  • Speedup < 1.0 means C++ is faster");
     println!("  • Match: Binary output size comparison");
     println!("  • Correct: Decoded mesh matches original\n");
+}
+
+#[test]
+fn bench_generated_encode_decode_matrix() {
+    common::disable_noisy_debug_env();
+
+    if !draco_cpp_test_bridge::is_available() {
+        eprintln!("SKIPPING: C++ test bridge not available");
+        return;
+    }
+
+    let speeds = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    let encode_iterations = 10;
+    let decode_iterations = 40;
+
+    let cases = [
+        ("sphere 24x48", create_uv_sphere_data(24, 48)),
+        ("cube subdiv20", create_subdivided_cube_data(20)),
+    ];
+
+    println!("\n╔═══════════════════════════════════════════════════════════════════════╗");
+    println!("║     GENERATED MESH PERFORMANCE TEST (C++ vs Rust)                    ║");
+    println!("╚═══════════════════════════════════════════════════════════════════════╝");
+
+    for (label, (positions, faces)) in cases {
+        let mesh = create_mesh_from_data(&positions, &faces);
+        let num_points = positions.len() / 3;
+        let num_faces = faces.len() / 3;
+
+        println!("\nMesh: {label} ({num_points} points, {num_faces} faces)");
+        println!(
+            "{:>5} {:>8} {:>10} {:>10} {:>9} {:>10} {:>10} {:>9} {:>7}",
+            "Speed", "Bytes", "C++ enc", "Rust enc", "Enc x", "C++ dec", "Rust dec", "Dec x", "OK"
+        );
+        println!("{}", "-".repeat(91));
+
+        for speed in speeds {
+            let mut options = EncoderOptions::new();
+            options.set_global_int("encoding_speed", speed);
+            options.set_global_int("decoding_speed", speed);
+            options.set_attribute_int(0, "quantization_bits", 10);
+
+            let mut rust_total_us = 0.0;
+            let mut rust_data = Vec::new();
+
+            for _ in 0..encode_iterations {
+                let mut encoder = MeshEncoder::new();
+                encoder.set_mesh(mesh.clone());
+                let mut encoder_buffer = EncoderBuffer::new();
+
+                let start = Instant::now();
+                encoder
+                    .encode(&options, &mut encoder_buffer)
+                    .expect("Rust encode failed");
+                rust_total_us += start.elapsed().as_secs_f64() * 1_000_000.0;
+                rust_data = encoder_buffer.data().to_vec();
+            }
+            let rust_encode_us = rust_total_us / f64::from(encode_iterations);
+
+            let Some(cpp_encode) = draco_cpp_test_bridge::benchmark_cpp_encode(
+                &positions,
+                &faces,
+                speed,
+                speed,
+                10,
+                encode_iterations,
+            ) else {
+                println!(
+                    "{speed:>5} {:>8} {:>10} {:>10.1} {:>9} {:>10} {:>10} {:>9} {:>7}",
+                    rust_data.len(),
+                    "FAILED",
+                    rust_encode_us,
+                    "-",
+                    "-",
+                    "-",
+                    "-",
+                    "-"
+                );
+                continue;
+            };
+
+            let encode_speedup = cpp_encode.avg_time_us as f64 / rust_encode_us;
+            let size_match = cpp_encode.output_size == rust_data.len();
+
+            let Some(cpp_decode) =
+                draco_cpp_test_bridge::profile_cpp_decode(&rust_data, decode_iterations)
+            else {
+                println!(
+                    "{speed:>5} {:>8} {:>10.1} {:>10.1} {:>8.2}x {:>10} {:>10} {:>9} {:>7}",
+                    rust_data.len(),
+                    cpp_encode.avg_time_us,
+                    rust_encode_us,
+                    encode_speedup,
+                    "FAILED",
+                    "-",
+                    "-",
+                    "-"
+                );
+                continue;
+            };
+
+            let mut rust_decode_total = Duration::ZERO;
+            let mut rust_points = 0usize;
+            let mut rust_faces = 0usize;
+            for _ in 0..decode_iterations {
+                let mut decoder_buffer = DecoderBuffer::new(&rust_data);
+                let mut out_mesh = Mesh::new();
+                let mut decoder = MeshDecoder::new();
+                let start = Instant::now();
+                decoder
+                    .decode(&mut decoder_buffer, &mut out_mesh)
+                    .expect("Rust decode failed");
+                rust_decode_total += start.elapsed();
+                rust_points = out_mesh.num_points();
+                rust_faces = out_mesh.num_faces();
+            }
+
+            let rust_decode_us =
+                rust_decode_total.as_secs_f64() * 1_000_000.0 / f64::from(decode_iterations);
+            let decode_speedup = cpp_decode.decode_time_us as f64 / rust_decode_us;
+            let decode_match = rust_points == cpp_decode.num_points as usize
+                && rust_faces == cpp_decode.num_faces as usize;
+            let ok = if size_match && decode_match {
+                "✓"
+            } else {
+                "✗"
+            };
+
+            println!(
+                "{speed:>5} {:>8} {:>10.1} {:>10.1} {:>8.2}x {:>10.1} {:>10.1} {:>8.2}x {:>7}",
+                rust_data.len(),
+                cpp_encode.avg_time_us,
+                rust_encode_us,
+                encode_speedup,
+                cpp_decode.decode_time_us,
+                rust_decode_us,
+                decode_speedup,
+                ok
+            );
+        }
+    }
+
+    println!("\nNotes:");
+    println!("  • Encoding iterations: {encode_iterations}");
+    println!("  • Decoding iterations: {decode_iterations}");
+    println!("  • Enc x / Dec x = C++ time divided by Rust time.");
+    println!("  • OK requires matching encoded byte size and decoded point/face counts.");
 }
