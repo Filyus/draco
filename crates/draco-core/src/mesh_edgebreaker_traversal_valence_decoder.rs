@@ -92,6 +92,39 @@ impl<'a> MeshEdgebreakerTraversalValenceDecoder<'a> {
 
         true
     }
+
+    fn checked_add_corner_vertex_valence(
+        &mut self,
+        corner_table: &CornerTable,
+        corner: CornerIndex,
+        delta: i32,
+    ) -> bool {
+        if corner == crate::geometry_indices::INVALID_CORNER_INDEX
+            || corner.0 as usize >= corner_table.num_corners()
+        {
+            return false;
+        }
+        let vertex = corner_table.vertex(corner);
+        let Some(valence) = self.vertex_valences.get_mut(vertex.0 as usize) else {
+            return false;
+        };
+        *valence += delta;
+        true
+    }
+
+    fn checked_corner_vertex_valence(
+        &self,
+        corner_table: &CornerTable,
+        corner: CornerIndex,
+    ) -> Option<i32> {
+        if corner == crate::geometry_indices::INVALID_CORNER_INDEX
+            || corner.0 as usize >= corner_table.num_corners()
+        {
+            return None;
+        }
+        let vertex = corner_table.vertex(corner);
+        self.vertex_valences.get(vertex.0 as usize).copied()
+    }
 }
 
 impl<'a> EdgebreakerTraversalDecoder for MeshEdgebreakerTraversalValenceDecoder<'a> {
@@ -176,39 +209,53 @@ impl<'a> EdgebreakerTraversalDecoder for MeshEdgebreakerTraversalValenceDecoder<
     }
 
     fn new_active_corner_reached(&mut self, corner: CornerIndex, corner_table: &CornerTable) {
+        if corner == crate::geometry_indices::INVALID_CORNER_INDEX
+            || corner.0 as usize >= corner_table.num_corners()
+        {
+            self.active_context = -1;
+            return;
+        }
+
         // Update valences based on last_symbol
         // Rust uses symbol_id values (0-4) not C++ TOPOLOGY bit patterns (0,1,3,5,7)
         // Mapping: C=0, S=1, L=2, R=3, E=4
         let next = corner_table.next(corner);
         let prev = corner_table.previous(corner);
-        match self.last_symbol {
+        let updated = match self.last_symbol {
             0 | 1 => {
                 // Center (C) or Split (S)
-                self.vertex_valences[corner_table.vertex(next).0 as usize] += 1;
-                self.vertex_valences[corner_table.vertex(prev).0 as usize] += 1;
+                self.checked_add_corner_vertex_valence(corner_table, next, 1)
+                    && self.checked_add_corner_vertex_valence(corner_table, prev, 1)
             }
             3 => {
                 // Right (R)
-                self.vertex_valences[corner_table.vertex(corner).0 as usize] += 1;
-                self.vertex_valences[corner_table.vertex(next).0 as usize] += 1;
-                self.vertex_valences[corner_table.vertex(prev).0 as usize] += 2;
+                self.checked_add_corner_vertex_valence(corner_table, corner, 1)
+                    && self.checked_add_corner_vertex_valence(corner_table, next, 1)
+                    && self.checked_add_corner_vertex_valence(corner_table, prev, 2)
             }
             2 => {
                 // Left (L)
-                self.vertex_valences[corner_table.vertex(corner).0 as usize] += 1;
-                self.vertex_valences[corner_table.vertex(next).0 as usize] += 2;
-                self.vertex_valences[corner_table.vertex(prev).0 as usize] += 1;
+                self.checked_add_corner_vertex_valence(corner_table, corner, 1)
+                    && self.checked_add_corner_vertex_valence(corner_table, next, 2)
+                    && self.checked_add_corner_vertex_valence(corner_table, prev, 1)
             }
             4 => {
                 // End (E)
-                self.vertex_valences[corner_table.vertex(corner).0 as usize] += 2;
-                self.vertex_valences[corner_table.vertex(next).0 as usize] += 2;
-                self.vertex_valences[corner_table.vertex(prev).0 as usize] += 2;
+                self.checked_add_corner_vertex_valence(corner_table, corner, 2)
+                    && self.checked_add_corner_vertex_valence(corner_table, next, 2)
+                    && self.checked_add_corner_vertex_valence(corner_table, prev, 2)
             }
-            _ => {}
+            _ => true,
+        };
+        if !updated {
+            self.active_context = -1;
+            return;
         }
 
-        let active_valence = self.vertex_valences[corner_table.vertex(next).0 as usize];
+        let Some(active_valence) = self.checked_corner_vertex_valence(corner_table, next) else {
+            self.active_context = -1;
+            return;
+        };
         let clamped = if active_valence < self.min_valence {
             self.min_valence
         } else if active_valence > self.max_valence {
@@ -220,5 +267,53 @@ impl<'a> EdgebreakerTraversalDecoder for MeshEdgebreakerTraversalValenceDecoder<
 
         // Record processed connectivity corner (like InternalTraversalDecoder)
         self.processed_connectivity_corners.push(corner.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry_indices::VertexIndex;
+
+    #[test]
+    fn valence_active_corner_rejects_out_of_range_corner_without_panic() {
+        let start_face_decoder = RAnsBitDecoder::new();
+        let mut decoder = MeshEdgebreakerTraversalValenceDecoder::new(
+            start_face_decoder,
+            false,
+            Vec::new(),
+            None,
+        );
+        decoder.vertex_valences = vec![0; 3];
+        decoder.last_symbol = 4;
+
+        let mut corner_table = CornerTable::new(1);
+        assert!(corner_table.init(&[[VertexIndex(0), VertexIndex(1), VertexIndex(2),]]));
+
+        decoder.new_active_corner_reached(CornerIndex(3), &corner_table);
+
+        assert_eq!(decoder.active_context, -1);
+        assert!(decoder.processed_connectivity_corners.is_empty());
+    }
+
+    #[test]
+    fn valence_active_corner_rejects_out_of_range_vertex_without_panic() {
+        let start_face_decoder = RAnsBitDecoder::new();
+        let mut decoder = MeshEdgebreakerTraversalValenceDecoder::new(
+            start_face_decoder,
+            false,
+            Vec::new(),
+            None,
+        );
+        decoder.vertex_valences = vec![0; 3];
+        decoder.last_symbol = 4;
+
+        let mut corner_table = CornerTable::new(1);
+        assert!(corner_table.init(&[[VertexIndex(0), VertexIndex(99), VertexIndex(2),]]));
+
+        decoder.new_active_corner_reached(CornerIndex(0), &corner_table);
+
+        assert_eq!(decoder.active_context, -1);
+        assert!(decoder.processed_connectivity_corners.is_empty());
     }
 }

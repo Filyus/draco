@@ -206,6 +206,15 @@ completed:
       - path: "crates/draco-core/src/mesh_edgebreaker_traversal_valence_decoder.rs"
     note: "Edgebreaker traversal symbol decoding is now fallible, so truncated or inconsistent traversal symbol streams return controlled connectivity errors instead of indexing past the symbol buffer."
 
+  - id: edgebreaker-valence-context-bounds
+    status: covered
+    evidence:
+      - path: "crates/draco-core/src/mesh_edgebreaker_traversal_valence_decoder.rs"
+        tests:
+          - "valence_active_corner_rejects_out_of_range_corner_without_panic"
+          - "valence_active_corner_rejects_out_of_range_vertex_without_panic"
+    note: "Valence traversal active-corner updates now validate corner ids and vertex-valence slots before updating context state, avoiding panics on inconsistent connectivity tables."
+
   - id: rans-symbol-decoder-bounds
     status: covered
     evidence:
