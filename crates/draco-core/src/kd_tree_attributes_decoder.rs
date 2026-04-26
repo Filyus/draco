@@ -167,7 +167,9 @@ impl KdTreeAttributesDecoder {
         let mut float_specs: Vec<(i32, usize, usize)> = Vec::new();
 
         for &att_id in &self.attribute_ids {
-            let att = point_cloud.attribute(att_id);
+            let Ok(att) = point_cloud.try_attribute(att_id) else {
+                return false;
+            };
             let num_components = att.num_components() as usize;
             self.attribute_specs.push(AttributeSpec {
                 att_id,
@@ -224,7 +226,9 @@ impl KdTreeAttributesDecoder {
 
         // Fill non-float attributes directly, and create portable attributes for float.
         for (att_id, offset, num_components) in float_specs {
-            let att = point_cloud.attribute(att_id);
+            let Ok(att) = point_cloud.try_attribute(att_id) else {
+                return false;
+            };
             let mut portable = PointAttribute::default();
             if portable
                 .try_init(
@@ -260,7 +264,9 @@ impl KdTreeAttributesDecoder {
                 spec.data_type,
                 DataType::Uint32 | DataType::Uint16 | DataType::Uint8
             ) {
-                let att = point_cloud.attribute_mut(spec.att_id);
+                let Ok(att) = point_cloud.try_attribute_mut(spec.att_id) else {
+                    return false;
+                };
                 if !write_u32_components_from_decoded(
                     &decoded,
                     total_dimensionality,
@@ -294,7 +300,9 @@ impl KdTreeAttributesDecoder {
     ) -> bool {
         // Float quantization parameters in attribute order.
         for &att_id in &self.attribute_ids {
-            let att = point_cloud.attribute(att_id);
+            let Ok(att) = point_cloud.try_attribute(att_id) else {
+                return false;
+            };
             if att.data_type() == DataType::Float32 {
                 let mut min_values = vec![0.0f32; att.num_components() as usize];
                 for v in &mut min_values {
@@ -345,12 +353,23 @@ impl KdTreeAttributesDecoder {
         // Floats.
         let mut float_attr_index = 0usize;
         for &att_id in &self.attribute_ids {
-            let dt = point_cloud.attribute(att_id).data_type();
+            let Ok(attribute) = point_cloud.try_attribute(att_id) else {
+                return false;
+            };
+            let dt = attribute.data_type();
             if dt == DataType::Float32 {
-                let portable = &self.quantized_portable_attributes[float_attr_index];
-                let transform = &self.attribute_quantization_transforms[float_attr_index];
+                let Some(portable) = self.quantized_portable_attributes.get(float_attr_index)
+                else {
+                    return false;
+                };
+                let Some(transform) = self.attribute_quantization_transforms.get(float_attr_index)
+                else {
+                    return false;
+                };
 
-                let target = point_cloud.attribute_mut(att_id);
+                let Ok(target) = point_cloud.try_attribute_mut(att_id) else {
+                    return false;
+                };
                 if !transform.inverse_transform_attribute(portable, target) {
                     return false;
                 }
@@ -362,7 +381,9 @@ impl KdTreeAttributesDecoder {
         // Signed ints.
         let mut min_index = 0usize;
         for spec in &self.signed_attribute_specs {
-            let att = point_cloud.attribute_mut(spec.att_id);
+            let Ok(att) = point_cloud.try_attribute_mut(spec.att_id) else {
+                return false;
+            };
             let num_points = att.size();
             if num_points == 0 {
                 continue;
@@ -495,10 +516,15 @@ fn write_signed_component(
 
 #[cfg(test)]
 mod tests {
-    use super::{write_u32_components_from_decoded, write_unsigned_component};
+    use super::{
+        write_u32_components_from_decoded, write_unsigned_component, CachedDecoded,
+        KdTreeAttributesDecoder,
+    };
     use crate::data_buffer::DataBuffer;
+    use crate::decoder_buffer::DecoderBuffer;
     use crate::draco_types::DataType;
     use crate::geometry_attribute::{GeometryAttributeType, PointAttribute};
+    use crate::point_cloud::PointCloud;
 
     #[test]
     fn kd_tree_component_write_rejects_out_of_bounds_buffer() {
@@ -533,5 +559,37 @@ mod tests {
             &mut attribute,
             DataType::Uint32,
         ));
+    }
+
+    #[test]
+    fn kd_tree_portable_decode_rejects_invalid_attribute_id() {
+        let mut decoder = KdTreeAttributesDecoder::new(-1);
+        let mut point_cloud = PointCloud::new();
+        let bytes = [0u8];
+        let mut buffer = DecoderBuffer::new(&bytes);
+
+        assert!(!decoder.decode_portable_attributes(&mut point_cloud, &mut buffer));
+    }
+
+    #[test]
+    fn kd_tree_transform_data_rejects_invalid_attribute_id() {
+        let mut decoder = KdTreeAttributesDecoder::new(-1);
+        let mut point_cloud = PointCloud::new();
+        let bytes = [];
+        let mut buffer = DecoderBuffer::new(&bytes);
+
+        assert!(!decoder.decode_data_needed_by_portable_transforms(&mut point_cloud, &mut buffer,));
+    }
+
+    #[test]
+    fn kd_tree_original_transform_rejects_invalid_attribute_id() {
+        let mut decoder = KdTreeAttributesDecoder::new(-1);
+        decoder.cached_decoded = Some(CachedDecoded {
+            decoded: Vec::new(),
+            total_dimensionality: 1,
+        });
+        let mut point_cloud = PointCloud::new();
+
+        assert!(!decoder.transform_attributes_to_original_format(&mut point_cloud));
     }
 }

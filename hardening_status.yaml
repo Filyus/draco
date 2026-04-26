@@ -147,7 +147,10 @@ completed:
         tests:
           - "kd_tree_component_write_rejects_out_of_bounds_buffer"
           - "kd_tree_decoded_component_write_rejects_short_decoded_stream"
-    note: "KD-tree decoded component writes now use fallible DataBuffer writes and checked decoded-stream indexing, returning controlled failure instead of panicking on inconsistent decoded lengths or attribute buffer ranges."
+          - "kd_tree_portable_decode_rejects_invalid_attribute_id"
+          - "kd_tree_transform_data_rejects_invalid_attribute_id"
+          - "kd_tree_original_transform_rejects_invalid_attribute_id"
+    note: "KD-tree decoded component writes and attribute lookups now use fallible DataBuffer/PointCloud helpers and checked decoded-stream indexing, returning controlled failure instead of panicking on inconsistent decoded lengths, invalid attribute ids, or attribute buffer ranges."
 
   - id: texcoord-prediction-position-buffer-bounds
     status: covered
