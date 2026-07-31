@@ -69,8 +69,11 @@ ShannonEntropyTracker::EntropyData ShannonEntropyTracker::UpdateSymbols(
   ret_data.num_values += num_symbols;
   for (int i = 0; i < num_symbols; ++i) {
     const uint32_t symbol = symbols[i];
-    if (frequencies_.size() <= symbol) {
-      frequencies_.resize(symbol + 1, 0);
+    // Note the casts: |symbol| + 1 is evaluated in uint32_t and wraps to 0 for
+    // the maximum symbol value, which resizes the table to empty and makes the
+    // indexing below read out of bounds.
+    if (frequencies_.size() <= static_cast<size_t>(symbol)) {
+      frequencies_.resize(static_cast<size_t>(symbol) + 1, 0);
     }
 
     // Update the entropy of the stream. Note that entropy of |N| values
