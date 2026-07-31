@@ -69,11 +69,29 @@ ShannonEntropyTracker::EntropyData ShannonEntropyTracker::UpdateSymbols(
   ret_data.num_values += num_symbols;
   for (int i = 0; i < num_symbols; ++i) {
     const uint32_t symbol = symbols[i];
-    // Note the casts: |symbol| + 1 is evaluated in uint32_t and wraps to 0 for
-    // the maximum symbol value, which resizes the table to empty and makes the
-    // indexing below read out of bounds.
-    if (frequencies_.size() <= static_cast<size_t>(symbol)) {
+    // |frequencies_| is indexed by symbol value, so covering a symbol costs
+    // memory proportional to it, and symbol values are bounded only by
+    // uint32_t. Grow the table only when the symbols are really being added:
+    // a Peek() is scoring a candidate the caller may well reject, and growing
+    // for one holds that memory for the rest of the encode.
+    //
+    // A symbol the table does not cover has frequency zero by definition, so
+    // while peeking its count is just the number of times it has already
+    // appeared in this same call.
+    int frequency = 0;
+    if (static_cast<size_t>(symbol) < frequencies_.size()) {
+      frequency = frequencies_[symbol];
+    } else if (push_changes) {
+      // Note the casts: |symbol| + 1 is evaluated in uint32_t and wraps to 0
+      // for the maximum symbol value, which would resize the table to empty
+      // and make the indexing below read out of bounds.
       frequencies_.resize(static_cast<size_t>(symbol) + 1, 0);
+    } else {
+      for (int j = 0; j < i; ++j) {
+        if (symbols[j] == symbol) {
+          ++frequency;
+        }
+      }
     }
 
     // Update the entropy of the stream. Note that entropy of |N| values
@@ -95,7 +113,6 @@ ShannonEntropyTracker::EntropyData ShannonEntropyTracker::UpdateSymbols(
     //  entropy = log2(N) - entropy_norm / N
     //
     double old_symbol_entropy_norm = 0;
-    int &frequency = frequencies_[symbol];
     if (frequency > 1) {
       old_symbol_entropy_norm = frequency * std::log2(frequency);
     } else if (frequency == 0) {
@@ -105,6 +122,9 @@ ShannonEntropyTracker::EntropyData ShannonEntropyTracker::UpdateSymbols(
       }
     }
     frequency++;
+    if (static_cast<size_t>(symbol) < frequencies_.size()) {
+      frequencies_[symbol] = frequency;
+    }
     const double new_symbol_entropy_norm = frequency * std::log2(frequency);
 
     // Update the final entropy.
@@ -115,10 +135,13 @@ ShannonEntropyTracker::EntropyData ShannonEntropyTracker::UpdateSymbols(
     entropy_data_ = ret_data;
   } else {
     // We are only peeking so do not update the stream.
-    // Revert changes in the frequency table.
+    // Revert changes in the frequency table. Symbols the table does not cover
+    // were never written above, so there is nothing to revert for them.
     for (int i = 0; i < num_symbols; ++i) {
       const uint32_t symbol = symbols[i];
-      frequencies_[symbol]--;
+      if (static_cast<size_t>(symbol) < frequencies_.size()) {
+        frequencies_[symbol]--;
+      }
     }
   }
   return ret_data;
